@@ -390,19 +390,25 @@ export default function Ledger() {
       const res = await apiRequest("PATCH", `/api/transactions/${id}`, data);
       return res.json();
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({
-        predicate: (query) => typeof query.queryKey[0] === "string" && query.queryKey[0].startsWith("/api/transactions"),
-      });
-      queryClient.invalidateQueries({
-        predicate: (query) => typeof query.queryKey[0] === "string" && query.queryKey[0].startsWith("/api/cashflow"),
-      });
-      queryClient.invalidateQueries({
-        predicate: (query) => typeof query.queryKey[0] === "string" && query.queryKey[0].startsWith("/api/leaks"),
-      });
-      queryClient.invalidateQueries({
-        predicate: (query) => typeof query.queryKey[0] === "string" && query.queryKey[0].startsWith("/api/analysis"),
-      });
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({
+          predicate: (query) => typeof query.queryKey[0] === "string" && query.queryKey[0].startsWith("/api/transactions"),
+          refetchType: "all",
+        }),
+        queryClient.invalidateQueries({
+          predicate: (query) => typeof query.queryKey[0] === "string" && query.queryKey[0].startsWith("/api/cashflow"),
+          refetchType: "all",
+        }),
+        queryClient.invalidateQueries({
+          predicate: (query) => typeof query.queryKey[0] === "string" && query.queryKey[0].startsWith("/api/leaks"),
+          refetchType: "all",
+        }),
+        queryClient.invalidateQueries({
+          predicate: (query) => typeof query.queryKey[0] === "string" && query.queryKey[0].startsWith("/api/analysis"),
+          refetchType: "all",
+        }),
+      ]);
     },
     onError: (err: Error) => {
       toast({ title: "Update failed", description: err.message, variant: "destructive" });

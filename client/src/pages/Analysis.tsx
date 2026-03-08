@@ -73,6 +73,8 @@ interface LeakItem {
   label: string;
   monthlyAmount: number;
   recentSpend: number;
+  merchantFilter?: string;
+  recurrenceType?: "recurring" | "one-time";
 }
 
 interface AnalysisResponse {
@@ -105,6 +107,59 @@ interface AnalysisResponse {
 }
 
 const fmt = (n: number) => n.toLocaleString("en-US", { style: "currency", currency: "USD" });
+const LEDGER_DRILLDOWN_KEY = "ledger-drilldown";
+const ANALYSIS_METRIC_FILTERS: Record<string, Record<string, string>> = {
+  totalInflows: {
+    transactionClass: "income",
+  },
+  totalOutflows: {
+    transactionClass: "expense",
+  },
+  recurringIncome: {
+    transactionClass: "income",
+    recurrenceType: "recurring",
+  },
+  recurringExpenses: {
+    transactionClass: "expense",
+    recurrenceType: "recurring",
+  },
+  safeToSpend: {
+    transactionClass: "income,expense",
+    recurrenceType: "recurring",
+  },
+  netCashflow: {
+    transactionClass: "income,expense",
+  },
+  discretionarySpend: {
+    transactionClass: "expense",
+    category: "dining,shopping,entertainment",
+  },
+};
+
+type DrilldownConfig = {
+  metric?: keyof typeof ANALYSIS_METRIC_FILTERS;
+  filters?: Record<string, string>;
+};
+
+function interactiveCardProps(onClick?: () => void, disabled = false) {
+  const interactive = Boolean(onClick) && !disabled;
+
+  return {
+    interactive,
+    className: interactive ? "cursor-pointer hover:border-primary/30 transition-colors" : "",
+    onClick: interactive ? onClick : undefined,
+    onKeyDown: interactive
+      ? (event: React.KeyboardEvent) => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            onClick?.();
+          }
+        }
+      : undefined,
+    role: interactive ? "button" as const : undefined,
+    tabIndex: interactive ? 0 : undefined,
+  };
+}
 
 export default function Analysis() {
   const currentYear = new Date().getFullYear();
@@ -119,6 +174,12 @@ export default function Analysis() {
       if (startDate) params.set("startDate", startDate);
       if (endDate) params.set("endDate", endDate);
       params.set("preset", "custom");
+    } else if (preset === "last30") {
+      params.set("days", "30");
+    } else if (preset === "last60") {
+      params.set("days", "60");
+    } else if (preset === "last90") {
+      params.set("days", "90");
     } else if (preset === "year") {
       params.set("preset", "year");
       params.set("year", year);
@@ -162,6 +223,45 @@ export default function Analysis() {
   const categories = data?.analysis.categoryBreakdown.slice(0, 6) ?? [];
   const leaks = data?.analysis.leakPreview ?? [];
   const hasCurrentRows = (data?.currentTransactionCount ?? 0) > 0;
+  const range = data?.range;
+
+  const openLedgerDrilldown = (config: DrilldownConfig = {}) => {
+    if (!range) {
+      return;
+    }
+
+    const payload = {
+      startDate: range.startDate,
+      endDate: range.endDate,
+      ...(config.metric ? { metric: config.metric } : {}),
+      ...(config.metric ? ANALYSIS_METRIC_FILTERS[config.metric] : {}),
+      ...(config.filters ?? {}),
+    };
+    const params = new URLSearchParams(payload);
+
+    window.sessionStorage.setItem(LEDGER_DRILLDOWN_KEY, JSON.stringify(payload));
+    window.location.href = `/transactions?${params.toString()}`;
+  };
+
+  const openCategoryLedger = (category: string) => {
+    openLedgerDrilldown({
+      filters: {
+        transactionClass: "expense",
+        category,
+      },
+    });
+  };
+
+  const openLeakLedger = (leak: LeakItem) => {
+    openLedgerDrilldown({
+      filters: {
+        transactionClass: "expense",
+        merchant: leak.merchantFilter || leak.merchant,
+        category: leak.category,
+        ...(leak.recurrenceType ? { recurrenceType: leak.recurrenceType } : {}),
+      },
+    });
+  };
 
   return (
     <div className="space-y-6">
@@ -244,10 +344,39 @@ export default function Analysis() {
       </Card>
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <SummaryCard label="Range" value={data?.range.label ?? ""} isText loading={isLoading} />
-        <SummaryCard label="Net Cashflow" value={summary?.netCashflow} loading={isLoading} />
-        <SummaryCard label="Safe to Spend" value={summary?.safeToSpend} loading={isLoading} />
-        <SummaryCard label="Recurring Confidence" value={`${data?.analysis.recurringConfidence ?? 0}%`} isText loading={isLoading} />
+        <SummaryCard
+          label="Range"
+          value={data?.range.label ?? ""}
+          isText
+          loading={isLoading}
+          onClick={() => openLedgerDrilldown()}
+        />
+        <SummaryCard
+          label="Net Cashflow"
+          value={summary?.netCashflow}
+          loading={isLoading}
+          onClick={() => openLedgerDrilldown({ metric: "netCashflow" })}
+        />
+        <SummaryCard
+          label="Safe to Spend"
+          value={summary?.safeToSpend}
+          loading={isLoading}
+          onClick={() => openLedgerDrilldown({ metric: "safeToSpend" })}
+        />
+        <SummaryCard
+          label="Recurring Confidence"
+          value={`${data?.analysis.recurringConfidence ?? 0}%`}
+          isText
+          loading={isLoading}
+          onClick={() =>
+            openLedgerDrilldown({
+              filters: {
+                transactionClass: "income,expense",
+                recurrenceType: "recurring",
+              },
+            })
+          }
+        />
       </div>
 
       {isError && (
@@ -269,11 +398,36 @@ export default function Analysis() {
       )}
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
-        <DeltaCard label="Inflows" metric={comparisons?.inflows} loading={isLoading} />
-        <DeltaCard label="Outflows" metric={comparisons?.outflows} loading={isLoading} />
-        <DeltaCard label="Net Cashflow" metric={comparisons?.netCashflow} loading={isLoading} />
-        <DeltaCard label="Safe to Spend" metric={comparisons?.safeToSpend} loading={isLoading} />
-        <DeltaCard label="Discretionary" metric={comparisons?.discretionarySpend} loading={isLoading} />
+        <DeltaCard
+          label="Inflows"
+          metric={comparisons?.inflows}
+          loading={isLoading}
+          onClick={() => openLedgerDrilldown({ metric: "totalInflows" })}
+        />
+        <DeltaCard
+          label="Outflows"
+          metric={comparisons?.outflows}
+          loading={isLoading}
+          onClick={() => openLedgerDrilldown({ metric: "totalOutflows" })}
+        />
+        <DeltaCard
+          label="Net Cashflow"
+          metric={comparisons?.netCashflow}
+          loading={isLoading}
+          onClick={() => openLedgerDrilldown({ metric: "netCashflow" })}
+        />
+        <DeltaCard
+          label="Safe to Spend"
+          metric={comparisons?.safeToSpend}
+          loading={isLoading}
+          onClick={() => openLedgerDrilldown({ metric: "safeToSpend" })}
+        />
+        <DeltaCard
+          label="Discretionary"
+          metric={comparisons?.discretionarySpend}
+          loading={isLoading}
+          onClick={() => openLedgerDrilldown({ metric: "discretionarySpend" })}
+        />
       </div>
 
       <div className="grid gap-6 xl:grid-cols-5">
@@ -336,8 +490,18 @@ export default function Analysis() {
             ) : !hasCurrentRows || categories.length === 0 ? (
               <p className="text-sm text-muted-foreground">No expense categories in this range yet.</p>
             ) : (
-              categories.map((category) => (
-                <div key={category.category} className="flex items-center justify-between rounded-lg border p-3">
+              categories.map((category) => {
+                const cardProps = interactiveCardProps(() => openCategoryLedger(category.category));
+
+                return (
+                <div
+                  key={category.category}
+                  className={`flex items-center justify-between rounded-lg border p-3 ${cardProps.className}`}
+                  onClick={cardProps.onClick}
+                  onKeyDown={cardProps.onKeyDown}
+                  role={cardProps.role}
+                  tabIndex={cardProps.tabIndex}
+                >
                   <div>
                     <p className="font-medium capitalize">{category.category.replace(/_/g, " ")}</p>
                     <p className="text-xs text-muted-foreground">
@@ -349,7 +513,7 @@ export default function Analysis() {
                     <p className="text-xs text-muted-foreground">{fmt(category.monthlyBaseline)}/mo baseline</p>
                   </div>
                 </div>
-              ))
+              )})
             )}
           </CardContent>
         </Card>
@@ -365,8 +529,18 @@ export default function Analysis() {
             ) : !hasCurrentRows || leaks.length === 0 ? (
               <p className="text-sm text-muted-foreground">No leak-like patterns were flagged for this period.</p>
             ) : (
-              leaks.map((leak) => (
-                <div key={`${leak.merchant}-${leak.category}`} className="rounded-lg border p-3">
+              leaks.map((leak) => {
+                const cardProps = interactiveCardProps(() => openLeakLedger(leak));
+
+                return (
+                <div
+                  key={`${leak.merchant}-${leak.category}`}
+                  className={`rounded-lg border p-3 ${cardProps.className}`}
+                  onClick={cardProps.onClick}
+                  onKeyDown={cardProps.onKeyDown}
+                  role={cardProps.role}
+                  tabIndex={cardProps.tabIndex}
+                >
                   <p className="font-medium">{leak.merchant}</p>
                   <p className="text-xs text-muted-foreground">
                     {leak.label} · {leak.category.replace(/_/g, " ")}
@@ -376,7 +550,7 @@ export default function Analysis() {
                     <span className="font-semibold text-destructive">{fmt(leak.recentSpend)} in range</span>
                   </div>
                 </div>
-              ))
+              )})
             )}
           </CardContent>
         </Card>
@@ -411,14 +585,24 @@ function SummaryCard({
   value,
   loading,
   isText = false,
+  onClick,
 }: {
   label: string;
   value?: number | string;
   loading: boolean;
   isText?: boolean;
+  onClick?: () => void;
 }) {
+  const cardProps = interactiveCardProps(onClick, loading);
+
   return (
-    <Card className="shadow-sm">
+    <Card
+      className={`shadow-sm ${cardProps.className}`}
+      onClick={cardProps.onClick}
+      onKeyDown={cardProps.onKeyDown}
+      role={cardProps.role}
+      tabIndex={cardProps.tabIndex}
+    >
       <CardHeader className="pb-2">
         <CardDescription>{label}</CardDescription>
       </CardHeader>
@@ -435,12 +619,29 @@ function SummaryCard({
   );
 }
 
-function DeltaCard({ label, metric, loading }: { label: string; metric?: MetricDelta; loading: boolean }) {
+function DeltaCard({
+  label,
+  metric,
+  loading,
+  onClick,
+}: {
+  label: string;
+  metric?: MetricDelta;
+  loading: boolean;
+  onClick?: () => void;
+}) {
   const deltaValue = metric?.delta ?? 0;
   const deltaPct = metric?.deltaPct;
+  const cardProps = interactiveCardProps(onClick, loading);
 
   return (
-    <Card className="shadow-sm">
+    <Card
+      className={`shadow-sm ${cardProps.className}`}
+      onClick={cardProps.onClick}
+      onKeyDown={cardProps.onKeyDown}
+      role={cardProps.role}
+      tabIndex={cardProps.tabIndex}
+    >
       <CardHeader className="pb-2">
         <CardDescription>{label}</CardDescription>
       </CardHeader>

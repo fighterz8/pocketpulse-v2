@@ -111,6 +111,12 @@ export function resolveDateRange(input: DateRangeInput = {}): ResolvedDateRange 
   }
 
   switch (preset) {
+    case "last30":
+      return buildRange("last30", addDays(today, -29), today, "Last 30 days");
+    case "last60":
+      return buildRange("last60", addDays(today, -59), today, "Last 60 days");
+    case "last90":
+      return buildRange("last90", addDays(today, -89), today, "Last 90 days");
     case "thisMonth":
       return buildRange("thisMonth", startOfMonth(today), today, "This month");
     case "lastMonth": {

@@ -67,6 +67,12 @@
 5. Create a deployment checklist specifically for Replit secrets, custom domains, and rotation procedures.
 6. Run the Replit security scan after the above and fix any platform-specific findings it surfaces.
 
+## Additional Product Follow-Up
+
+1. Update `Analysis` page cards so each summary/delta card is clickable.
+2. Route each click to the corresponding filtered ledger view for the active analysis range.
+3. Match the drilldown behavior already used on the main dashboard so users can verify how each analysis metric is calculated.
+
 ## Validation Snapshot
 
 - `npm run check`: passed

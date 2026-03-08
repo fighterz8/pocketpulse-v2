@@ -2,7 +2,7 @@ import type { Express, Request, Response } from "express";
 import { type Server } from "http";
 import multer from "multer";
 import { storage } from "./storage";
-import { setupAuth, requireAuth } from "./auth";
+import { setupAuth, requireAuth, requireTrustedOrigin } from "./auth";
 import { parseCSV } from "./csvParser";
 import {
   buildCashflowAnalysis,
@@ -104,7 +104,7 @@ export async function registerRoutes(
     res.json(accounts);
   });
 
-  app.post("/api/accounts", requireAuth, async (req: Request, res: Response) => {
+  app.post("/api/accounts", requireAuth, requireTrustedOrigin, async (req: Request, res: Response) => {
     const parsed = insertAccountSchema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ message: "Invalid account data" });
     const account = await storage.createAccount(req.user!.id, parsed.data);
@@ -112,7 +112,7 @@ export async function registerRoutes(
   });
 
   // ── CSV Upload ────────────────────────────────────────
-  app.post("/api/upload", requireAuth, upload.single("file"), async (req: Request, res: Response) => {
+  app.post("/api/upload", requireAuth, requireTrustedOrigin, upload.single("file"), async (req: Request, res: Response) => {
     if (!req.file) return res.status(400).json({ message: "No file uploaded" });
 
     const accountId = parseInt(String(req.body.accountId), 10);
@@ -228,7 +228,7 @@ export async function registerRoutes(
     });
   });
 
-  app.patch("/api/transactions/:id", requireAuth, async (req: Request, res: Response) => {
+  app.patch("/api/transactions/:id", requireAuth, requireTrustedOrigin, async (req: Request, res: Response) => {
     const id = parseInt(String(req.params.id), 10);
     const parsed = updateTransactionSchema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ message: "Invalid update data" });
@@ -238,17 +238,17 @@ export async function registerRoutes(
     res.json(updated);
   });
 
-  app.post("/api/transactions/reprocess", requireAuth, async (req: Request, res: Response) => {
+  app.post("/api/transactions/reprocess", requireAuth, requireTrustedOrigin, async (req: Request, res: Response) => {
     const result = await storage.reprocessTransactions(req.user!.id);
     res.json(result);
   });
 
-  app.delete("/api/transactions", requireAuth, async (req: Request, res: Response) => {
+  app.delete("/api/transactions", requireAuth, requireTrustedOrigin, async (req: Request, res: Response) => {
     const result = await storage.wipeImportedData(req.user!.id);
     res.json(result);
   });
 
-  app.delete("/api/workspace-data", requireAuth, async (req: Request, res: Response) => {
+  app.delete("/api/workspace-data", requireAuth, requireTrustedOrigin, async (req: Request, res: Response) => {
     const result = await storage.wipeWorkspaceData(req.user!.id);
     res.json(result);
   });

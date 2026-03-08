@@ -100,6 +100,57 @@ function validatePassword(password: string) {
   return password.length >= 10 && password.length <= 128;
 }
 
+function normalizeOrigin(value?: string | null) {
+  if (!value) {
+    return undefined;
+  }
+
+  try {
+    return new URL(value).origin;
+  } catch {
+    return undefined;
+  }
+}
+
+function buildAllowedOrigins(req: Request) {
+  const allowedOrigins = new Set<string>();
+  const forwardedProto = String(req.get("x-forwarded-proto") || req.protocol || "http")
+    .split(",")[0]
+    .trim();
+  const forwardedHost = String(req.get("x-forwarded-host") || req.get("host") || "")
+    .split(",")[0]
+    .trim();
+
+  if (forwardedHost) {
+    allowedOrigins.add(`${forwardedProto}://${forwardedHost}`);
+    if (!IS_PRODUCTION) {
+      allowedOrigins.add(`http://${forwardedHost}`);
+      allowedOrigins.add(`https://${forwardedHost}`);
+    }
+  }
+
+  for (const configuredOrigin of [
+    process.env.APP_ORIGIN,
+    process.env.PUBLIC_APP_ORIGIN,
+    process.env.REPLIT_DEV_DOMAIN ? `https://${process.env.REPLIT_DEV_DOMAIN}` : undefined,
+  ]) {
+    const normalized = normalizeOrigin(configuredOrigin);
+    if (normalized) {
+      allowedOrigins.add(normalized);
+    }
+  }
+
+  const replitDomains = String(process.env.REPLIT_DOMAINS || "")
+    .split(",")
+    .map((domain) => domain.trim())
+    .filter(Boolean);
+  for (const domain of replitDomains) {
+    allowedOrigins.add(`https://${domain}`);
+  }
+
+  return allowedOrigins;
+}
+
 export function setupAuth(app: Express) {
   const PgSession = connectPg(session);
 
@@ -219,7 +270,7 @@ export function setupAuth(app: Express) {
     })(req, res, next);
   });
 
-  app.post("/api/auth/logout", (req: Request, res: Response) => {
+  app.post("/api/auth/logout", requireTrustedOrigin, (req: Request, res: Response) => {
     req.logout((err) => {
       if (err) return res.status(500).json({ message: "Logout failed" });
       req.session.destroy(() => {
@@ -244,4 +295,29 @@ export function requireAuth(req: Request, res: Response, next: NextFunction) {
     return res.status(401).json({ message: "Authentication required" });
   }
   next();
+}
+
+export function requireTrustedOrigin(req: Request, res: Response, next: NextFunction) {
+  const method = req.method.toUpperCase();
+  if (!["POST", "PUT", "PATCH", "DELETE"].includes(method)) {
+    return next();
+  }
+
+  const allowedOrigins = buildAllowedOrigins(req);
+  const requestOrigin = normalizeOrigin(req.get("origin"));
+  const refererOrigin = normalizeOrigin(req.get("referer"));
+
+  if (requestOrigin && allowedOrigins.has(requestOrigin)) {
+    return next();
+  }
+
+  if (refererOrigin && allowedOrigins.has(refererOrigin)) {
+    return next();
+  }
+
+  if (!IS_PRODUCTION && !requestOrigin && !refererOrigin) {
+    return next();
+  }
+
+  return res.status(403).json({ message: "Cross-origin request blocked." });
 }
