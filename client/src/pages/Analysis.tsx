@@ -408,6 +408,7 @@ export default function Analysis() {
           label="Outflows"
           metric={comparisons?.outflows}
           loading={isLoading}
+          favorableDirection="down"
           onClick={() => openLedgerDrilldown({ metric: "totalOutflows" })}
         />
         <DeltaCard
@@ -623,16 +624,20 @@ function DeltaCard({
   label,
   metric,
   loading,
+  favorableDirection = "up",
   onClick,
 }: {
   label: string;
   metric?: MetricDelta;
   loading: boolean;
+  favorableDirection?: "up" | "down";
   onClick?: () => void;
 }) {
   const deltaValue = metric?.delta ?? 0;
   const deltaPct = metric?.deltaPct;
   const cardProps = interactiveCardProps(onClick, loading);
+  const isPositiveOutcome = favorableDirection === "up" ? deltaValue >= 0 : deltaValue <= 0;
+  const deltaToneClass = isPositiveOutcome ? "text-emerald-600" : "text-destructive";
 
   return (
     <Card
@@ -657,7 +662,7 @@ function DeltaCard({
             <p className="text-xs text-muted-foreground">
               Prior: {fmt(metric?.previous ?? 0)}
             </p>
-            <p className={`text-xs font-medium ${deltaValue >= 0 ? "text-emerald-600" : "text-destructive"}`}>
+            <p className={`text-xs font-medium ${deltaToneClass}`}>
               {deltaValue >= 0 ? "+" : ""}
               {fmt(deltaValue)}
               {deltaPct === null || deltaPct === undefined ? "" : ` (${deltaPct >= 0 ? "+" : ""}${deltaPct}%)`}

@@ -1,85 +1,98 @@
-# Next Update: Security Hardening
+# Update Status Snapshot
 
-## What Was Completed In This Pass
+This file is now a status snapshot of the work already reviewed against the codebase.
 
-- Hardened session handling for deployment:
-  - `SESSION_SECRET` is now required in production.
-  - Session cookies use `Secure` in production.
-  - The app trusts the Replit proxy so secure cookies work correctly behind TLS termination.
-  - Logout now destroys the server session and clears the session cookie.
-- Added basic auth throttling on `POST /api/auth/login` and `POST /api/auth/register` to reduce brute-force pressure.
-- Added stricter auth input validation:
-  - normalized emails
-  - password length guardrails
-  - company name length checks
-- Removed API response body logging so transaction payloads and user data are no longer copied into application logs.
-- Changed server error handling to avoid returning raw internal 5xx error messages to end users.
-- Added lightweight security headers:
+For the remaining forward-looking backlog, refer to `NEXT_UPDATE_ROADMAP.md`.
+
+## Completed
+
+### Session and auth hardening
+
+- `SESSION_SECRET` is required in production.
+- Sessions are stored server-side in PostgreSQL.
+- Session cookies use `httpOnly`, `sameSite="lax"`, and `secure` in production.
+- Logout destroys the server session and clears the cookie.
+- The app trusts the proxy so secure cookies work correctly behind TLS termination.
+
+### Basic authentication protections
+
+- Login and registration have basic rate limiting.
+- Emails are normalized before auth flows.
+- Passwords are length-validated and bcrypt-hashed.
+- Company name length is validated on registration.
+
+### API and response hardening
+
+- API response body logging has been removed.
+- Internal 5xx responses are generalized instead of exposing raw server errors.
+- Baseline security headers are set:
   - `X-Content-Type-Options`
   - `X-Frame-Options`
   - `Referrer-Policy`
   - `Permissions-Policy`
   - `Strict-Transport-Security` in production
-- Hardened CSV upload validation by requiring a CSV filename and expected CSV MIME types.
-- Hardened transaction CSV export against spreadsheet formula injection by neutralizing cells that begin with `=`, `+`, `-`, or `@`.
-- Confirmed the runtime dependency surface is clean with `npm audit --omit=dev`.
 
-## Current Security Status
+### Upload and export hardening
 
-### Good Now
+- CSV uploads require a CSV filename and accepted CSV-like MIME types.
+- Exported transaction CSV cells are neutralized against spreadsheet formula injection.
 
-- Passwords are bcrypt-hashed.
-- Sessions are server-side in PostgreSQL instead of browser-stored tokens.
+### Authorization boundaries
+
 - Transaction, upload, and account access is scoped by authenticated `userId`.
-- Production runtime dependencies currently audit clean.
 
-### Still Needs Work
+### Analysis drilldowns and UX
 
-1. Add explicit CSRF protection for cookie-authenticated write routes.
-   - Best next step: reject unsafe cross-origin requests with `Origin` / `Referer` validation first, then add CSRF tokens if needed.
+- Analysis summary cards are clickable.
+- Analysis delta cards are clickable.
+- Analysis category breakdown rows are clickable.
+- Analysis leak preview cards are clickable.
+- Analysis drilldowns carry the active date range into the ledger.
 
-2. Replace in-memory auth throttling with a durable shared limiter.
-   - The current limiter is a good first layer, but it resets on restart and would not coordinate across multiple app instances.
-   - Best next step: move it to PostgreSQL-backed counters or a dedicated rate-limit store.
+### Manual ledger edits
 
-3. Add privacy controls around LLM labeling.
-   - Right now LLM labeling is opt-in by env flag, which is good.
-   - Before wider sharing, add a product-level disclosure and user-controlled consent because transaction descriptions may be sent to Anthropic/OpenAI when enabled.
+- Manual ledger edits auto-save through the transaction update endpoint.
+- Manual edits are persisted as manual/user-corrected updates.
+- Ledger updates now invalidate and refetch transaction, cashflow, leak, and analysis queries.
 
-4. Add stricter upload abuse controls.
-   - Good next step: cap CSV row count, reject obviously malformed files earlier, and consider per-user upload throttling.
-
-5. Review secret hygiene around deployment artifacts and local caches.
-   - Confirm Replit secrets are only set in the deployment environment.
-   - Confirm no environment snapshots or secret-bearing cache files are exposed in shipped assets or shared backups.
-
-6. Add a security-focused environment checklist for production.
-   - Required values: `SESSION_SECRET`, `DATABASE_URL`
-   - Optional but sensitive: `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`
-   - Recommended: disable LLM labeling by default in production until consent copy exists.
-
-## Recommended Next Security Sprint
-
-1. Add `Origin` / `Referer` validation middleware for all state-changing authenticated routes.
-2. Move auth rate limiting to a PostgreSQL-backed store.
-3. Add a small security settings/privacy panel that explains LLM labeling and lets admins keep it off.
-4. Add upload row-count limits and per-user import throttling.
-5. Create a deployment checklist specifically for Replit secrets, custom domains, and rotation procedures.
-6. Run the Replit security scan after the above and fix any platform-specific findings it surfaces.
-
-## Additional Product Follow-Up
-
-1. Update `Analysis` page cards so each summary/delta card is clickable.
-2. Route each click to the corresponding filtered ledger view for the active analysis range.
-3. Match the drilldown behavior already used on the main dashboard so users can verify how each analysis metric is calculated.
-
-## Validation Snapshot
+### Validation already completed
 
 - `npm run check`: passed
 - `npm run build`: passed
 - `npm audit --omit=dev`: passed with 0 vulnerabilities
 
-## Notes On Dev Tooling
+## Partially Completed
+
+### CSRF protection
+
+- Same-origin write protection is in place via `Origin` / `Referer` validation.
+- A full token-based CSRF layer is not implemented yet.
+
+### LLM privacy controls
+
+- LLM labeling remains opt-in by environment flag.
+- There is still no explicit user-facing consent/settings flow for enabling third-party labeling.
+
+### Upload abuse protections
+
+- File size and file type checks exist.
+- Row-count caps, duplicate-import protection, and per-user upload throttling are still missing.
+
+### Analysis drilldown parity
+
+- Clickable Analysis drilldowns exist.
+- Some non-metric Analysis drilldowns still do not show the same metric banner/summary treatment as dashboard drilldowns.
+
+## Still Open
+
+1. Replace in-memory auth throttling with a durable shared limiter.
+2. Add a user-facing privacy/settings flow for LLM labeling.
+3. Add upload row-count limits, duplicate-import protection, and per-user upload throttling.
+4. Review and clean up secret hygiene around deployment artifacts and local caches.
+5. Create a dedicated deployment/security checklist for production and Replit deployment.
+6. Run the Replit security scan and address any remaining platform-specific findings.
+
+## Notes
 
 - A full `npm audit` still reports dev-tooling issues in build-time packages.
 - Those do not affect the deployed runtime surface in the same way as production dependencies, but they should still be tracked and updated when safe, especially around `drizzle-kit`.
