@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { ArrowUpRight, ArrowDownRight, TrendingUp, AlertTriangle, RefreshCcw, Download } from "lucide-react";
+import { ArrowUpRight, ArrowDownRight, TrendingUp, RefreshCcw, Download, Upload, ListChecks } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Link } from "wouter";
 import { useMemo, useState } from "react";
@@ -18,12 +18,6 @@ interface CashflowSummary {
   utilitiesBaseline: number;
   subscriptionsBaseline: number;
   discretionarySpend: number;
-}
-
-interface LeakItem {
-  merchant: string;
-  monthlyAmount: number;
-  occurrences: number;
 }
 
 const fmt = (n: number) => n.toLocaleString("en-US", { style: "currency", currency: "USD" });
@@ -75,17 +69,10 @@ const METRIC_FILTERS: Record<string, Record<string, string>> = {
 export default function Dashboard() {
   const [days, setDays] = useState(90);
   const cashflowUrl = useMemo(() => `/api/cashflow?days=${days}`, [days]);
-  const leaksUrl = useMemo(() => `/api/leaks?days=${days}`, [days]);
 
   const { data: cashflow, isLoading: cfLoading } = useQuery<CashflowSummary>({
     queryKey: [cashflowUrl],
   });
-
-  const { data: leaks } = useQuery<LeakItem[]>({
-    queryKey: [leaksUrl],
-  });
-
-  const totalLeakMonthly = leaks?.reduce((s, l) => s + l.monthlyAmount, 0) ?? 0;
 
   const handleExport = () => {
     window.open(`/api/export/summary?days=${days}`, "_blank");
@@ -119,12 +106,19 @@ export default function Dashboard() {
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Dashboard</h1>
-          <p className="text-muted-foreground mt-1">Financial overview and cashflow estimates for the selected window.</p>
+          <p className="text-muted-foreground mt-1">A simple view of income, expenses, and monthly spending room for the selected window.</p>
         </div>
         <div className="flex items-center gap-2">
-          <Link href="/analysis">
+          <Link href="/upload">
             <Button variant="outline">
-              Advanced Analysis
+              <Upload className="mr-2 h-4 w-4" />
+              Upload Data
+            </Button>
+          </Link>
+          <Link href="/transactions">
+            <Button variant="outline">
+              <ListChecks className="mr-2 h-4 w-4" />
+              Review Transactions
             </Button>
           </Link>
           <div className="flex items-center gap-2 rounded-md border bg-background p-1">
@@ -147,7 +141,6 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* Primary KPI */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <Card
           className="md:col-span-2 border-primary/20 shadow-sm transition-colors hover:border-primary/40 cursor-pointer"
@@ -185,47 +178,57 @@ export default function Dashboard() {
           </CardContent>
         </Card>
 
-        <Card className="bg-gradient-to-br from-card to-card/50 shadow-sm border-warning/30">
+        <Card className="shadow-sm">
           <CardHeader className="pb-2">
-            <div className="flex items-center justify-between">
-              <CardDescription className="font-medium text-sm">Expense Leaks</CardDescription>
-              <div className="h-8 w-8 rounded-full bg-warning/10 flex items-center justify-center">
-                <AlertTriangle className="h-4 w-4 text-warning" />
-              </div>
-            </div>
-            <CardTitle className="text-3xl font-bold tracking-tight mt-1" data-testid="text-leak-count">
-              {leaks?.length ?? 0} items
+            <CardDescription className="font-medium text-sm">How This Dashboard Works</CardDescription>
+            <CardTitle className="text-2xl font-bold tracking-tight mt-1">
+              Three simple steps
             </CardTitle>
           </CardHeader>
-          <CardContent>
-            <p className="text-sm text-muted-foreground mb-4">~{fmt(totalLeakMonthly)}/mo in recurring charges.</p>
-            <Link href="/leaks">
-              <Button variant="outline" size="sm" className="w-full text-xs font-medium border-warning/50 hover:bg-warning/10" data-testid="button-review-leaks">
-                Review Leaks
-              </Button>
-            </Link>
+          <CardContent className="space-y-3 text-sm text-muted-foreground">
+            <p>1. Upload a CSV export from a bank or accounting tool.</p>
+            <p>2. The app stores each transaction and suggests categories automatically.</p>
+            <p>3. The dashboard summarizes income, expenses, and safe to spend.</p>
           </CardContent>
         </Card>
       </div>
 
-      {/* Breakdown cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <SummaryCard label="Total Inflows" value={cashflow?.totalInflows} href={metricHref("totalInflows")} icon={<ArrowUpRight className="h-4 w-4 text-emerald-500" />} loading={cfLoading} testId="text-total-inflows" />
-        <SummaryCard label="Total Outflows" value={cashflow?.totalOutflows} href={metricHref("totalOutflows")} icon={<ArrowDownRight className="h-4 w-4 text-destructive" />} loading={cfLoading} testId="text-total-outflows" />
-        <SummaryCard label="Recurring Income" value={cashflow?.recurringIncome} href={metricHref("recurringIncome")} icon={<RefreshCcw className="h-4 w-4 text-emerald-500 opacity-70" />} loading={cfLoading} sub="Baseline" testId="text-recurring-income" />
-        <SummaryCard label="Recurring Expenses" value={cashflow?.recurringExpenses} href={metricHref("recurringExpenses")} icon={<RefreshCcw className="h-4 w-4 text-destructive opacity-70" />} loading={cfLoading} sub="Baseline" testId="text-recurring-expenses" />
-      </div>
-
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        <SummaryCard label="One-time Income" value={cashflow?.oneTimeIncome} href={metricHref("oneTimeIncome")} icon={<ArrowUpRight className="h-4 w-4 text-emerald-500" />} loading={cfLoading} testId="text-onetime-income" />
-        <SummaryCard label="One-time Expenses" value={cashflow?.oneTimeExpenses} href={metricHref("oneTimeExpenses")} icon={<ArrowDownRight className="h-4 w-4 text-destructive" />} loading={cfLoading} testId="text-onetime-expenses" />
-        <SummaryCard label="Discretionary Spend" value={cashflow?.discretionarySpend} href={metricHref("discretionarySpend")} icon={<AlertTriangle className="h-4 w-4 text-warning" />} loading={cfLoading} sub={`${days}-day total`} testId="text-discretionary-spend" />
+        <SummaryCard label="Total Income" value={cashflow?.totalInflows} href={metricHref("totalInflows")} icon={<ArrowUpRight className="h-4 w-4 text-emerald-500" />} loading={cfLoading} testId="text-total-inflows" />
+        <SummaryCard label="Total Expenses" value={cashflow?.totalOutflows} href={metricHref("totalOutflows")} icon={<ArrowDownRight className="h-4 w-4 text-destructive" />} loading={cfLoading} testId="text-total-outflows" />
+        <SummaryCard label="Recurring Income" value={cashflow?.recurringIncome} href={metricHref("recurringIncome")} icon={<RefreshCcw className="h-4 w-4 text-emerald-500 opacity-70" />} loading={cfLoading} sub="Monthly baseline" testId="text-recurring-income" />
+        <SummaryCard label="Recurring Expenses" value={cashflow?.recurringExpenses} href={metricHref("recurringExpenses")} icon={<RefreshCcw className="h-4 w-4 text-destructive opacity-70" />} loading={cfLoading} sub="Monthly baseline" testId="text-recurring-expenses" />
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <SummaryCard label="Utilities" value={cashflow?.utilitiesBaseline} href={metricHref("utilitiesBaseline")} icon={<RefreshCcw className="h-4 w-4 text-muted-foreground" />} loading={cfLoading} sub="Monthly baseline" testId="text-utilities-baseline" />
-        <SummaryCard label="Subscriptions" value={cashflow?.subscriptionsBaseline} href={metricHref("subscriptionsBaseline")} icon={<RefreshCcw className="h-4 w-4 text-muted-foreground" />} loading={cfLoading} sub="Monthly baseline" testId="text-subscriptions-baseline" />
+        <SummaryCard label="One-time Income" value={cashflow?.oneTimeIncome} href={metricHref("oneTimeIncome")} icon={<ArrowUpRight className="h-4 w-4 text-emerald-500" />} loading={cfLoading} testId="text-onetime-income" />
+        <SummaryCard label="One-time Expenses" value={cashflow?.oneTimeExpenses} href={metricHref("oneTimeExpenses")} icon={<ArrowDownRight className="h-4 w-4 text-destructive" />} loading={cfLoading} testId="text-onetime-expenses" />
       </div>
+
+      <Card className="shadow-sm">
+        <CardHeader>
+          <CardTitle>Plain-English Explanations</CardTitle>
+          <CardDescription>Each core feature is meant to be easy to explain to a non-technical audience.</CardDescription>
+        </CardHeader>
+        <CardContent className="grid gap-3 md:grid-cols-2">
+          <div className="rounded-lg border p-4">
+            <p className="font-medium">Upload data</p>
+            <p className="mt-1 text-sm text-muted-foreground">The user imports a CSV file so the app has business transactions to work with.</p>
+          </div>
+          <div className="rounded-lg border p-4">
+            <p className="font-medium">Categorize transactions</p>
+            <p className="mt-1 text-sm text-muted-foreground">The app suggests labels like income, utilities, or subscriptions using simple matching rules.</p>
+          </div>
+          <div className="rounded-lg border p-4">
+            <p className="font-medium">Review transactions</p>
+            <p className="mt-1 text-sm text-muted-foreground">The user can inspect rows and correct any category or recurrence values that look wrong.</p>
+          </div>
+          <div className="rounded-lg border p-4">
+            <p className="font-medium">Safe to spend</p>
+            <p className="mt-1 text-sm text-muted-foreground">Recurring income minus recurring expenses, shown as a monthly spending cushion.</p>
+          </div>
+        </CardContent>
+      </Card>
 
       {!cfLoading && cashflow?.totalInflows === 0 && cashflow?.totalOutflows === 0 && (
         <Card className="shadow-sm border-dashed">

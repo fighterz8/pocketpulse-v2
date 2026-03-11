@@ -124,14 +124,14 @@ export default function UploadPage() {
     <div className="space-y-6 max-w-3xl mx-auto">
       <div>
         <h1 className="text-3xl font-bold tracking-tight">Upload Data</h1>
-        <p className="text-muted-foreground mt-1">Import transactions via CSV from your bank or accounting software.</p>
+        <p className="text-muted-foreground mt-1">Import a CSV file, save the transactions, and prepare them for dashboard summaries.</p>
       </div>
 
       <Card className="shadow-sm">
         <CardHeader>
           <CardTitle>File Import</CardTitle>
           <CardDescription>
-            We support standard CSV exports. The system will automatically detect date, amount, and description fields.
+            Upload a standard CSV export from your bank or accounting software. The app looks for the date, amount, and description columns automatically.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
@@ -212,7 +212,7 @@ export default function UploadPage() {
                 <div>
                   <h3 className="font-semibold text-lg">Drag & drop your CSV</h3>
                   <p className="text-sm text-muted-foreground mt-1 max-w-xs mx-auto">
-                    or click to browse files from your computer. Max file size 10MB.
+                    Or click to browse files from your computer. Max file size 10MB.
                   </p>
                 </div>
                 <div className="mt-4">
@@ -232,7 +232,7 @@ export default function UploadPage() {
         <CardFooter className="bg-muted/30 border-t justify-between items-center py-4">
           <p className="text-xs text-muted-foreground flex items-center">
             <AlertCircle className="h-3 w-3 mr-1" />
-            Classification runs automatically on import.
+            Transactions are categorized automatically after import and can be reviewed later.
           </p>
           {uploadResult ? (
             <Button data-testid="button-view-ledger" onClick={() => window.location.href = "/transactions"}>

@@ -91,20 +91,20 @@ const ESSENTIAL_LEAK_EXCLUSIONS = new Set<TransactionCategory>([
 
 const DASHBOARD_METRIC_DEFINITIONS: Record<DashboardMetric, DashboardMetricDefinition> = {
   totalInflows: {
-    label: "Total inflows",
-    description: "All non-transfer, non-refund inflows in the selected range.",
+    label: "Total income",
+    description: "All income transactions in the selected range, excluding transfers and refunds.",
   },
   totalOutflows: {
-    label: "Total outflows",
-    description: "All non-transfer, non-refund outflows in the selected range.",
+    label: "Total expenses",
+    description: "All expense transactions in the selected range, excluding transfers and refunds.",
   },
   recurringIncome: {
-    label: "Recurring income baseline",
-    description: "Recurring inflows in the selected range, normalized into a monthly baseline.",
+    label: "Recurring income",
+    description: "Income marked as recurring, converted into a monthly baseline.",
   },
   recurringExpenses: {
-    label: "Recurring expense baseline",
-    description: "Recurring outflows in the selected range, normalized into a monthly baseline.",
+    label: "Recurring expenses",
+    description: "Expenses marked as recurring, converted into a monthly baseline.",
   },
   oneTimeIncome: {
     label: "One-time income",
@@ -116,11 +116,11 @@ const DASHBOARD_METRIC_DEFINITIONS: Record<DashboardMetric, DashboardMetricDefin
   },
   safeToSpend: {
     label: "Safe to spend",
-    description: "Recurring income baseline minus recurring expense baseline for the selected range.",
+    description: "Recurring income minus recurring expenses, shown as a monthly spending cushion.",
   },
   netCashflow: {
     label: "Net cashflow",
-    description: "Total inflows minus total outflows in the selected range.",
+    description: "Total income minus total expenses in the selected range.",
   },
   utilitiesBaseline: {
     label: "Utilities baseline",

@@ -1,4 +1,3 @@
-import { lazy, Suspense } from "react";
 import { Switch, Route, Redirect } from "wouter";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
@@ -10,11 +9,8 @@ import { Layout } from "@/components/layout/AppLayout";
 import Dashboard from "@/pages/Dashboard";
 import UploadPage from "@/pages/Upload";
 import Ledger from "@/pages/Ledger";
-import Leaks from "@/pages/Leaks";
 import AuthPage from "@/pages/Auth";
 import { useAuth } from "@/hooks/use-auth";
-
-const Analysis = lazy(() => import("@/pages/Analysis"));
 
 function ProtectedApp() {
   const { user, isLoading, isAuthenticated } = useAuth();
@@ -33,16 +29,18 @@ function ProtectedApp() {
 
   return (
     <Layout>
-      <Suspense fallback={<div className="animate-pulse text-muted-foreground">Loading view...</div>}>
-        <Switch>
-          <Route path="/" component={Dashboard} />
-          <Route path="/analysis" component={Analysis} />
-          <Route path="/upload" component={UploadPage} />
-          <Route path="/transactions" component={Ledger} />
-          <Route path="/leaks" component={Leaks} />
-          <Route component={NotFound} />
-        </Switch>
-      </Suspense>
+      <Switch>
+        <Route path="/" component={Dashboard} />
+        <Route path="/upload" component={UploadPage} />
+        <Route path="/transactions" component={Ledger} />
+        <Route path="/analysis">
+          <Redirect to="/" />
+        </Route>
+        <Route path="/leaks">
+          <Redirect to="/" />
+        </Route>
+        <Route component={NotFound} />
+      </Switch>
     </Layout>
   );
 }

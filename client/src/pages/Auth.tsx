@@ -50,7 +50,7 @@ export default function AuthPage() {
           </div>
           <h1 className="text-2xl font-bold tracking-tight">Welcome to PocketPulse</h1>
           <p className="text-sm text-muted-foreground">
-            Small-business cashflow analysis and unified ledger.
+            Upload transactions, organize them, and review simple cashflow summaries.
           </p>
         </div>
 

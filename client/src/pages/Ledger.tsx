@@ -18,7 +18,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { Search, Sparkles, ArrowDownRight, ArrowUpRight, Clock, CalendarDays, Download, Layers, Trash2 } from "lucide-react";
+import { Search, ArrowDownRight, ArrowUpRight, Clock, CalendarDays, Download, Layers, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -78,8 +78,6 @@ const CATEGORY_OPTIONS = [
   "other",
 ];
 const LEDGER_DRILLDOWN_KEY = "ledger-drilldown";
-const RECURRING_PATTERN_REASON_PREFIX = "Detected monthly duplicate pattern";
-
 function normalizeLedgerSearch(search: string): string {
   const params = new URLSearchParams(search);
   const hasQueryFilters = [
@@ -181,19 +179,11 @@ function TransactionTable({ transactions, updateMutation }: { transactions: Tran
               <TableCell>
                 <div className="font-medium text-sm flex items-center">
                   {tx.merchant}
-                  {tx.labelSource === "llm" && (
-                    <span title="LLM assisted label"><Sparkles className="w-3 h-3 ml-1.5 text-primary opacity-70" /></span>
-                  )}
                 </div>
                 <div className="mt-1 flex flex-wrap items-center gap-1">
-                  {(tx.labelSource === "llm" || tx.labelSource === "manual") && (
+                  {tx.labelSource === "manual" && (
                     <Badge variant="outline" className="text-[10px] px-1 py-0 h-4 capitalize">
-                      {tx.labelSource === "manual" ? "Manual review" : "LLM label"}
-                    </Badge>
-                  )}
-                  {tx.labelSource === "llm" && tx.labelConfidence && (
-                    <Badge variant="secondary" className="text-[10px] px-1 py-0 h-4">
-                      {Math.round(parseFloat(tx.labelConfidence) * 100)}% confidence
+                      Manual review
                     </Badge>
                   )}
                   {tx.userCorrected && (
@@ -203,7 +193,7 @@ function TransactionTable({ transactions, updateMutation }: { transactions: Tran
                 <div className="text-xs text-muted-foreground truncate max-w-[200px] mt-0.5" title={tx.rawDescription}>
                   {tx.rawDescription}
                 </div>
-                {tx.labelReason && (tx.labelSource !== "rule" || tx.labelReason.startsWith(RECURRING_PATTERN_REASON_PREFIX)) && (
+                {tx.labelReason && tx.labelSource === "manual" && (
                   <div className="text-[11px] text-muted-foreground mt-1 truncate max-w-[220px]" title={tx.labelReason}>
                     {tx.labelReason}
                   </div>
@@ -504,13 +494,12 @@ export default function Ledger() {
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Unified Ledger</h1>
-          <p className="text-muted-foreground mt-1">Review and correct transaction classifications. Changes auto-save and mark the row as manually reviewed.</p>
+          <h1 className="text-3xl font-bold tracking-tight">Transactions</h1>
+          <p className="text-muted-foreground mt-1">Review imported transactions, search the ledger, and correct categories or recurrence values.</p>
         </div>
         <div className="flex items-center gap-2">
           <Badge variant="outline" className="bg-primary/5 text-primary border-primary/20 px-3 py-1 text-xs">
-            <Sparkles className="w-3 h-3 mr-1" />
-            Auto-classified
+            Editable after import
           </Badge>
           <AlertDialog>
             <AlertDialogTrigger asChild>

@@ -1,10 +1,8 @@
 import { Link, useLocation } from "wouter";
 import {
   LayoutDashboard,
-  LineChart,
   Upload,
   ListChecks,
-  TrendingDown,
   LogOut,
   Menu,
   Activity
@@ -28,10 +26,8 @@ export function Sidebar({ className = "" }: { className?: string }) {
 
   const navItems = [
     { href: "/", label: "Dashboard", icon: LayoutDashboard },
-    { href: "/analysis", label: "Analysis", icon: LineChart },
-    { href: "/upload", label: "Upload CSV", icon: Upload },
-    { href: "/transactions", label: "Ledger", icon: ListChecks },
-    { href: "/leaks", label: "Leak Detection", icon: TrendingDown },
+    { href: "/upload", label: "Upload Data", icon: Upload },
+    { href: "/transactions", label: "Transactions", icon: ListChecks },
   ];
 
   return (
@@ -41,7 +37,7 @@ export function Sidebar({ className = "" }: { className?: string }) {
           <Activity className="h-6 w-6" />
           <span>PocketPulse</span>
         </div>
-        <p className="text-xs text-muted-foreground mt-1 font-medium tracking-wide uppercase">Small Business</p>
+        <p className="text-xs text-muted-foreground mt-1 font-medium tracking-wide uppercase">Small Business Cashflow Helper</p>
       </div>
 
       <nav className="flex-1 space-y-1 px-4 py-2">
@@ -68,6 +64,7 @@ export function Sidebar({ className = "" }: { className?: string }) {
           <p className="text-2xl font-bold text-primary" data-testid="text-sidebar-safe-to-spend">
             {cashflow ? `$${cashflow.safeToSpend.toLocaleString()}` : "$0.00"}
           </p>
+          <p className="mt-1 text-xs text-muted-foreground">Recurring income minus recurring expenses.</p>
         </div>
         <Button
           variant="ghost"

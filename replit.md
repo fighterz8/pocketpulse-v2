@@ -1,7 +1,7 @@
-# PocketPulse - Small Business Cashflow Analysis
+# PocketPulse - Small Business Cashflow Helper
 
 ## Overview
-Full-stack web application for small-business cashflow analysis with CSV transaction imports, automatic classification, and expense leak detection.
+Full-stack web application for small-business cashflow tracking with CSV transaction imports, automatic categorization, and simple dashboard summaries.
 
 ## Architecture
 - **Frontend**: React + TypeScript with Tailwind CSS, shadcn/ui components, wouter routing
@@ -18,11 +18,11 @@ Full-stack web application for small-business cashflow analysis with CSV transac
 - `server/index.ts` - Express app entry point
 - `server/db.ts` - PostgreSQL connection pool + Drizzle instance
 - `server/auth.ts` - Passport.js local strategy, session management, register/login/logout routes
-- `server/routes.ts` - API routes (accounts, upload, transactions, cashflow, leaks, export)
+- `server/routes.ts` - API routes (accounts, upload, transactions, cashflow, export)
 - `server/storage.ts` - Database CRUD operations via Drizzle
 - `server/csvParser.ts` - CSV parsing with auto-detection of columns
 - `server/classifier.ts` - Rule-based transaction classification (merchant, class, recurrence)
-- `server/cashflow.ts` - Cashflow summary calculation + leak detection algorithm
+- `server/cashflow.ts` - Cashflow summary calculation
 
 ### Client
 - `client/src/App.tsx` - Root component with auth-gated routing
@@ -31,7 +31,6 @@ Full-stack web application for small-business cashflow analysis with CSV transac
 - `client/src/pages/Dashboard.tsx` - KPI cards, safe-to-spend, cashflow summary
 - `client/src/pages/Upload.tsx` - CSV drag-and-drop upload with account selection
 - `client/src/pages/Ledger.tsx` - Transaction table with inline classification editing
-- `client/src/pages/Leaks.tsx` - Recurring expense leak detection results
 - `client/src/pages/Auth.tsx` - Login/Register forms
 
 ## API Routes
@@ -47,11 +46,9 @@ All prefixed with `/api`:
 - `GET /api/transactions` - List transactions (with optional filters)
 - `PATCH /api/transactions/:id` - Update classification (never overwrites user corrections)
 - `GET /api/cashflow` - Cashflow summary
-- `GET /api/leaks` - Leak detection results
 - `GET /api/export/summary` - CSV export of cashflow summary
 - `GET /api/export/transactions` - CSV export of all transactions
 
 ## Classification System
 1. **Rule-based**: Known merchant keywords, transfer/refund detection, recurring patterns
-2. **AI-assisted flag**: Set for ambiguous transactions that weren't matched by rules
-3. **User corrections**: Marked with `userCorrected=true`, never overwritten by re-classification
+2. **User corrections**: Marked with `userCorrected=true`, never overwritten by re-classification
