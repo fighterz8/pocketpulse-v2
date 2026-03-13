@@ -7,18 +7,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from "@/components/ui/alert-dialog";
-import { Search, ArrowDownRight, ArrowUpRight, Clock, CalendarDays, Download, Layers, Trash2 } from "lucide-react";
+import { Search, ArrowDownRight, ArrowUpRight, Clock, CalendarDays, Download, Layers } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -405,77 +394,6 @@ export default function Ledger() {
     },
   });
 
-  const wipeDataMutation = useMutation({
-    mutationFn: async () => {
-      const res = await apiRequest("DELETE", "/api/transactions");
-      return res.json() as Promise<{ deletedTransactions: number; deletedUploads: number }>;
-    },
-    onSuccess: (data) => {
-      setPage(1);
-      setSearchTerm("");
-      setDebouncedSearch("");
-      setActiveTab("all");
-      setCategoryFilter("all");
-      queryClient.invalidateQueries({
-        predicate: (query) => typeof query.queryKey[0] === "string" && query.queryKey[0].startsWith("/api/transactions"),
-      });
-      queryClient.invalidateQueries({
-        predicate: (query) => typeof query.queryKey[0] === "string" && query.queryKey[0].startsWith("/api/cashflow"),
-      });
-      queryClient.invalidateQueries({
-        predicate: (query) => typeof query.queryKey[0] === "string" && query.queryKey[0].startsWith("/api/leaks"),
-      });
-      queryClient.invalidateQueries({
-        predicate: (query) => typeof query.queryKey[0] === "string" && query.queryKey[0].startsWith("/api/analysis"),
-      });
-      queryClient.invalidateQueries({ queryKey: ["/api/uploads"] });
-      toast({
-        title: "Imported data wiped",
-        description: `Deleted ${data.deletedTransactions} transactions and ${data.deletedUploads} uploads.`,
-      });
-    },
-    onError: (err: Error) => {
-      toast({ title: "Wipe failed", description: err.message, variant: "destructive" });
-    },
-  });
-
-  const wipeWorkspaceMutation = useMutation({
-    mutationFn: async () => {
-      const res = await apiRequest("DELETE", "/api/workspace-data");
-      return res.json() as Promise<{ deletedTransactions: number; deletedUploads: number; deletedAccounts: number }>;
-    },
-    onSuccess: (data) => {
-      setPage(1);
-      setSearchTerm("");
-      setDebouncedSearch("");
-      setActiveTab("all");
-      setCategoryFilter("all");
-      setStartDateFilter("");
-      setEndDateFilter("");
-      queryClient.invalidateQueries({
-        predicate: (query) => typeof query.queryKey[0] === "string" && query.queryKey[0].startsWith("/api/transactions"),
-      });
-      queryClient.invalidateQueries({
-        predicate: (query) => typeof query.queryKey[0] === "string" && query.queryKey[0].startsWith("/api/cashflow"),
-      });
-      queryClient.invalidateQueries({
-        predicate: (query) => typeof query.queryKey[0] === "string" && query.queryKey[0].startsWith("/api/leaks"),
-      });
-      queryClient.invalidateQueries({
-        predicate: (query) => typeof query.queryKey[0] === "string" && query.queryKey[0].startsWith("/api/analysis"),
-      });
-      queryClient.invalidateQueries({ queryKey: ["/api/uploads"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/accounts"] });
-      toast({
-        title: "Workspace reset",
-        description: `Deleted ${data.deletedTransactions} transactions, ${data.deletedUploads} uploads, and ${data.deletedAccounts} accounts.`,
-      });
-    },
-    onError: (err: Error) => {
-      toast({ title: "Reset failed", description: err.message, variant: "destructive" });
-    },
-  });
-
   const transactions = transactionPage?.rows ?? [];
   const totalCount = transactionPage?.totalCount ?? 0;
   const totalPages = transactionPage?.totalPages ?? 1;
@@ -494,65 +412,13 @@ export default function Ledger() {
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Transactions</h1>
+          <h1 className="text-3xl font-bold tracking-tight">Ledger</h1>
           <p className="text-muted-foreground mt-1">Review imported transactions, search the ledger, and correct categories or recurrence values.</p>
         </div>
         <div className="flex items-center gap-2">
           <Badge variant="outline" className="bg-primary/5 text-primary border-primary/20 px-3 py-1 text-xs">
             Editable after import
           </Badge>
-          <AlertDialog>
-            <AlertDialogTrigger asChild>
-              <Button variant="outline" size="sm" data-testid="button-wipe-imported-data">
-                <Trash2 className="mr-2 h-4 w-4" />
-                Wipe Data
-              </Button>
-            </AlertDialogTrigger>
-            <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle>Wipe imported data?</AlertDialogTitle>
-                <AlertDialogDescription>
-                  This will permanently delete all imported transactions and upload records for your account.
-                  Your login and saved accounts will stay in place so you can immediately re-test imports.
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel>Cancel</AlertDialogCancel>
-                <AlertDialogAction
-                  onClick={() => wipeDataMutation.mutate()}
-                  data-testid="button-confirm-wipe-imported-data"
-                >
-                  {wipeDataMutation.isPending ? "Wiping..." : "Wipe imported data"}
-                </AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
-          <AlertDialog>
-            <AlertDialogTrigger asChild>
-              <Button variant="outline" size="sm" data-testid="button-reset-workspace">
-                <Trash2 className="mr-2 h-4 w-4" />
-                Reset Workspace
-              </Button>
-            </AlertDialogTrigger>
-            <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle>Reset the entire workspace?</AlertDialogTitle>
-                <AlertDialogDescription>
-                  This will permanently delete all imported transactions, upload history, and saved accounts for your account.
-                  Your login will remain so you can start fresh and test the new importer end to end.
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel>Cancel</AlertDialogCancel>
-                <AlertDialogAction
-                  onClick={() => wipeWorkspaceMutation.mutate()}
-                  data-testid="button-confirm-reset-workspace"
-                >
-                  {wipeWorkspaceMutation.isPending ? "Resetting..." : "Reset workspace"}
-                </AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
           <Button variant="outline" size="sm" onClick={handleExportTransactions} data-testid="button-export-transactions">
             <Download className="mr-2 h-4 w-4" />
             Export

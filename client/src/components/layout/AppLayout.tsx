@@ -3,6 +3,7 @@ import {
   LayoutDashboard,
   Upload,
   ListChecks,
+  Trash2,
   LogOut,
   Menu,
   Activity
@@ -27,7 +28,8 @@ export function Sidebar({ className = "" }: { className?: string }) {
   const navItems = [
     { href: "/", label: "Dashboard", icon: LayoutDashboard },
     { href: "/upload", label: "Upload Data", icon: Upload },
-    { href: "/transactions", label: "Transactions", icon: ListChecks },
+    { href: "/transactions", label: "Ledger", icon: ListChecks },
+    { href: "/wipe-data", label: "Wipe Data", icon: Trash2 },
   ];
 
   return (
