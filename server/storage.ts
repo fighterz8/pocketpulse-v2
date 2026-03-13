@@ -34,6 +34,7 @@ export interface IStorage {
   createAccount(userId: number, account: InsertAccount): Promise<Account>;
 
   createUpload(userId: number, accountId: number, filename: string, rowCount: number): Promise<Upload>;
+  updateUploadRowCount(uploadId: number, userId: number, rowCount: number): Promise<Upload | undefined>;
   getUploads(userId: number): Promise<Upload[]>;
 
   createTransactions(txns: InsertTransaction[]): Promise<Transaction[]>;
@@ -160,6 +161,14 @@ export class DatabaseStorage implements IStorage {
   async createUpload(userId: number, accountId: number, filename: string, rowCount: number): Promise<Upload> {
     const [created] = await db.insert(uploads).values({ userId, accountId, filename, rowCount }).returning();
     return created;
+  }
+
+  async updateUploadRowCount(uploadId: number, userId: number, rowCount: number): Promise<Upload | undefined> {
+    const [updated] = await db.update(uploads)
+      .set({ rowCount })
+      .where(and(eq(uploads.id, uploadId), eq(uploads.userId, userId)))
+      .returning();
+    return updated;
   }
 
   async getUploads(userId: number): Promise<Upload[]> {

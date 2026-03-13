@@ -60,6 +60,15 @@ export const accounts = pgTable("accounts", {
 export const insertAccountSchema = createInsertSchema(accounts).pick({
   name: true,
   lastFour: true,
+}).extend({
+  name: z.string().trim().min(1, "Account name is required"),
+  lastFour: z
+    .string()
+    .trim()
+    .regex(/^\d{4}$/, "Last four must be exactly 4 digits")
+    .optional()
+    .or(z.literal(""))
+    .transform((value) => value || undefined),
 });
 export type InsertAccount = z.infer<typeof insertAccountSchema>;
 export type Account = typeof accounts.$inferSelect;

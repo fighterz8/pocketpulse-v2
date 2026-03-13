@@ -1,6 +1,7 @@
 import type { Express, Request, Response } from "express";
 import { type Server } from "http";
 import multer from "multer";
+import { z } from "zod";
 import { storage } from "./storage";
 import { setupAuth, requireAuth, requireTrustedOrigin } from "./auth";
 import { parseCSV } from "./csvParser";
@@ -17,8 +18,138 @@ import { updateTransactionSchema, insertAccountSchema } from "@shared/schema";
 import { resolveDateRange } from "./dateRanges";
 import { maybeApplyLlmLabels } from "./llmLabeler";
 
-const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024, files: 25 } });
 const CSV_MIME_TYPES = new Set(["text/csv", "application/vnd.ms-excel", "application/csv", "text/plain"]);
+const CSV_PROCESSING_ERROR_MESSAGE = "The CSV could not be processed. Please verify the format and try again.";
+
+const batchUploadMetadataSchema = z.array(z.object({
+  clientId: z.string().trim().min(1),
+  filename: z.string().trim().min(1),
+  proposedAccountName: z.string().trim().min(1),
+  proposedLastFour: z.string().trim().regex(/^\d{4}$/).optional(),
+  selectedExistingAccountId: z.number().int().positive().nullable().optional(),
+}));
+
+type BatchUploadMetadataItem = z.infer<typeof batchUploadMetadataSchema>[number];
+
+function normalizeAccountName(value: string): string {
+  return value.trim().replace(/\s+/g, " ").toLowerCase();
+}
+
+function normalizeLastFour(value?: string | null): string | undefined {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : undefined;
+}
+
+function buildAccountKey(name: string, lastFour?: string | null): string {
+  return `${normalizeAccountName(name)}::${normalizeLastFour(lastFour) ?? ""}`;
+}
+
+function validateCsvFile(file: Express.Multer.File): string {
+  const originalName = String(file.originalname || "").trim();
+  const lowerName = originalName.toLowerCase();
+  if (!lowerName.endsWith(".csv")) {
+    throw new Error("Upload a CSV file.");
+  }
+
+  if (file.mimetype && !CSV_MIME_TYPES.has(file.mimetype)) {
+    throw new Error("Unsupported file type. Upload a CSV export.");
+  }
+
+  return originalName;
+}
+
+function parseBatchUploadMetadata(metadata: unknown): BatchUploadMetadataItem[] {
+  if (typeof metadata !== "string") {
+    throw new Error("Upload metadata is required.");
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(metadata);
+  } catch {
+    throw new Error("Upload metadata must be valid JSON.");
+  }
+
+  const result = batchUploadMetadataSchema.safeParse(parsed);
+  if (!result.success) {
+    throw new Error("Upload metadata is invalid.");
+  }
+
+  const clientIds = new Set<string>();
+  for (const item of result.data) {
+    if (clientIds.has(item.clientId)) {
+      throw new Error("Upload metadata contains duplicate file identifiers.");
+    }
+    clientIds.add(item.clientId);
+  }
+
+  return result.data;
+}
+
+async function importCsvForAccount(params: {
+  userId: number;
+  accountId: number;
+  file: Express.Multer.File;
+}) {
+  const originalName = validateCsvFile(params.file);
+
+  try {
+    const csvContent = params.file.buffer.toString("utf-8");
+    const uploadRecord = await storage.createUpload(params.userId, params.accountId, originalName, 0);
+    const parsedTransactions = parseCSV(csvContent, params.userId, params.accountId, uploadRecord.id);
+    const enrichedLabels = await maybeApplyLlmLabels(parsedTransactions.map((transaction) => ({
+      rawDescription: transaction.rawDescription,
+      amount: parseFloat(String(transaction.amount)),
+      transactionClass: transaction.transactionClass as "income" | "expense" | "transfer" | "refund",
+      recurrenceType: transaction.recurrenceType as "recurring" | "one-time",
+      category: (transaction.category ?? "other") as
+        | "income"
+        | "transfers"
+        | "utilities"
+        | "subscriptions"
+        | "insurance"
+        | "housing"
+        | "groceries"
+        | "transportation"
+        | "dining"
+        | "shopping"
+        | "health"
+        | "debt"
+        | "business_software"
+        | "entertainment"
+        | "fees"
+        | "other",
+      aiAssisted: Boolean(transaction.aiAssisted),
+      labelSource: (transaction.labelSource ?? "rule") as "rule" | "llm" | "manual",
+      labelConfidence: transaction.labelConfidence ?? null,
+      labelReason: transaction.labelReason ?? null,
+    })));
+    const txns = parsedTransactions.map((transaction, index) => {
+      const decision = enrichedLabels[index];
+      return {
+        ...transaction,
+        transactionClass: decision.transactionClass,
+        recurrenceType: decision.recurrenceType,
+        category: decision.category,
+        labelSource: decision.labelSource,
+        labelConfidence: decision.labelConfidence,
+        labelReason: decision.labelReason,
+        aiAssisted: decision.aiAssisted,
+      };
+    });
+    const created = await storage.createTransactions(txns);
+    await storage.updateUploadRowCount(uploadRecord.id, params.userId, created.length);
+
+    return {
+      uploadId: uploadRecord.id,
+      filename: originalName,
+      transactionCount: created.length,
+    };
+  } catch {
+    throw new Error(CSV_PROCESSING_ERROR_MESSAGE);
+  }
+}
 
 function toCsvCell(value: unknown): string {
   const raw = String(value ?? "").replace(/\r?\n/g, " ").trim();
@@ -132,59 +263,138 @@ export async function registerRoutes(
     if (!account) return res.status(404).json({ message: "Account not found" });
 
     try {
-      const csvContent = req.file.buffer.toString("utf-8");
-      const uploadRecord = await storage.createUpload(req.user!.id, accountId, originalName, 0);
-      const parsedTransactions = parseCSV(csvContent, req.user!.id, accountId, uploadRecord.id);
-      const enrichedLabels = await maybeApplyLlmLabels(parsedTransactions.map((transaction) => ({
-        rawDescription: transaction.rawDescription,
-        amount: parseFloat(String(transaction.amount)),
-        transactionClass: transaction.transactionClass as "income" | "expense" | "transfer" | "refund",
-        recurrenceType: transaction.recurrenceType as "recurring" | "one-time",
-        category: (transaction.category ?? "other") as
-          | "income"
-          | "transfers"
-          | "utilities"
-          | "subscriptions"
-          | "insurance"
-          | "housing"
-          | "groceries"
-          | "transportation"
-          | "dining"
-          | "shopping"
-          | "health"
-          | "debt"
-          | "business_software"
-          | "entertainment"
-          | "fees"
-          | "other",
-        aiAssisted: Boolean(transaction.aiAssisted),
-        labelSource: (transaction.labelSource ?? "rule") as "rule" | "llm" | "manual",
-        labelConfidence: transaction.labelConfidence ?? null,
-        labelReason: transaction.labelReason ?? null,
-      })));
-      const txns = parsedTransactions.map((transaction, index) => {
-        const decision = enrichedLabels[index];
-        return {
-          ...transaction,
-          transactionClass: decision.transactionClass,
-          recurrenceType: decision.recurrenceType,
-          category: decision.category,
-          labelSource: decision.labelSource,
-          labelConfidence: decision.labelConfidence,
-          labelReason: decision.labelReason,
-          aiAssisted: decision.aiAssisted,
-        };
+      const created = await importCsvForAccount({
+        userId: req.user!.id,
+        accountId,
+        file: req.file,
       });
-      const created = await storage.createTransactions(txns);
-
       res.status(201).json({
-        uploadId: uploadRecord.id,
-        filename: originalName,
-        transactionCount: created.length,
+        uploadId: created.uploadId,
+        filename: created.filename,
+        transactionCount: created.transactionCount,
       });
     } catch {
-      res.status(422).json({ message: "The CSV could not be processed. Please verify the format and try again." });
+      res.status(422).json({ message: CSV_PROCESSING_ERROR_MESSAGE });
     }
+  });
+
+  app.post("/api/uploads/batch", requireAuth, requireTrustedOrigin, upload.array("files"), async (req: Request, res: Response) => {
+    const files = ((req.files as Express.Multer.File[] | undefined) ?? []).filter(Boolean);
+    if (files.length === 0) {
+      return res.status(400).json({ message: "No files uploaded" });
+    }
+
+    let metadata: BatchUploadMetadataItem[];
+    try {
+      metadata = parseBatchUploadMetadata(req.body.metadata);
+    } catch (error) {
+      return res.status(400).json({ message: error instanceof Error ? error.message : "Upload metadata is invalid." });
+    }
+
+    if (metadata.length !== files.length) {
+      return res.status(400).json({ message: "Upload metadata must include one row per file." });
+    }
+
+    for (let index = 0; index < metadata.length; index += 1) {
+      const item = metadata[index];
+      if (item.filename !== String(files[index]?.originalname ?? "").trim()) {
+        return res.status(400).json({ message: "Upload metadata does not match the uploaded files." });
+      }
+    }
+
+    const availableAccounts = await storage.getAccounts(req.user!.id);
+    const createdAccountCache = new Map<string, (typeof availableAccounts)[number]>();
+    const results: Array<{
+      clientId: string;
+      filename: string;
+      status: "success" | "error";
+      resolvedAccount?: { id: number; name: string; lastFour: string | null };
+      uploadId?: number;
+      transactionCount?: number;
+      error?: string;
+    }> = [];
+
+    for (let index = 0; index < metadata.length; index += 1) {
+      const item = metadata[index];
+      const file = files[index];
+
+      try {
+        let resolvedAccount = item.selectedExistingAccountId
+          ? availableAccounts.find((account) => account.id === item.selectedExistingAccountId)
+          : undefined;
+
+        if (item.selectedExistingAccountId && !resolvedAccount) {
+          throw new Error("Selected account not found.");
+        }
+
+        if (!resolvedAccount) {
+          const exactMatch = availableAccounts.find((account) =>
+            buildAccountKey(account.name, account.lastFour) === buildAccountKey(item.proposedAccountName, item.proposedLastFour)
+          );
+
+          if (exactMatch) {
+            resolvedAccount = exactMatch;
+          } else {
+            const cacheKey = buildAccountKey(item.proposedAccountName, item.proposedLastFour);
+            const cachedAccount = createdAccountCache.get(cacheKey);
+            if (cachedAccount) {
+              resolvedAccount = cachedAccount;
+            } else {
+              resolvedAccount = await storage.createAccount(req.user!.id, {
+                name: item.proposedAccountName.trim(),
+                lastFour: normalizeLastFour(item.proposedLastFour),
+              });
+              availableAccounts.push(resolvedAccount);
+              createdAccountCache.set(cacheKey, resolvedAccount);
+            }
+          }
+        }
+
+        const created = await importCsvForAccount({
+          userId: req.user!.id,
+          accountId: resolvedAccount.id,
+          file,
+        });
+
+        results.push({
+          clientId: item.clientId,
+          filename: created.filename,
+          status: "success",
+          resolvedAccount: {
+            id: resolvedAccount.id,
+            name: resolvedAccount.name,
+            lastFour: resolvedAccount.lastFour,
+          },
+          uploadId: created.uploadId,
+          transactionCount: created.transactionCount,
+        });
+      } catch (error) {
+        results.push({
+          clientId: item.clientId,
+          filename: item.filename,
+          status: "error",
+          error: error instanceof Error ? error.message : CSV_PROCESSING_ERROR_MESSAGE,
+        });
+      }
+    }
+
+    const summary = results.reduce((acc, result) => {
+      acc.totalFiles += 1;
+      if (result.status === "success") {
+        acc.succeeded += 1;
+        acc.totalTransactions += result.transactionCount ?? 0;
+      } else {
+        acc.failed += 1;
+      }
+      return acc;
+    }, {
+      totalFiles: 0,
+      succeeded: 0,
+      failed: 0,
+      totalTransactions: 0,
+    });
+
+    res.status(201).json({ summary, results });
   });
 
   app.get("/api/uploads", requireAuth, async (req: Request, res: Response) => {
