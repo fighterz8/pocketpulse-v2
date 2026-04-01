@@ -23,21 +23,28 @@
 - **Accounts cache:** Query cache for accounts is **user-scoped** (invalidated / keyed per authenticated user) so switching users or sessions does not show another user’s account list.
 - **Protected layout & post-setup routes (Task 8):** Authenticated shell after setup includes a protected layout (nav/shell) and placeholder routes for the main app areas so navigation structure is in place before real feature pages land.
 
-**Logout:** Still a **placeholder** in the UI — full wiring to the session API / cache invalidation is **Task 9**.
+## Checkpoint (Task 9) — stable
 
-**Suitable for a GitHub checkpoint push** — through Task 8; protected shell and placeholder routes align with the plan; push before deeper Task 9 work if you want a remote milestone.
+**Task 9 is complete** on this branch.
+
+- **Logout wiring:** UI calls the logout API; session ends server-side; client auth and account queries are cleared or invalidated so signed-out state and redirects behave consistently.
+- **Protected-route / session verification:** Unauthenticated users are kept off post-setup routes; session is re-checked via `/api/auth/me` (and related flows) so protected navigation and post-setup entry match the plan.
+
+**Route integration tests** (storage-backed / DB paths): set **`DATABASE_URL`** and **`POCKETPULSE_STORAGE_TESTS=1`** or those tests are skipped or cannot run as intended.
+
+**Suitable for a GitHub checkpoint push** — verification and logout are in place; a good point to push a remote milestone before documentation and evidence work.
 
 ## Development ports
 
-- **Vite (client dev server):** port **5000** (`vite.config.ts`, `strictPort: true`).
-- **Express API:** port **5001** in development via `API_PORT` default in `server/index.ts`; Vite proxies `/api` to that target.
+- **Default (`npm run dev`):** Express + Vite middleware on **PORT** (default **5000**); Replit preview runs this single process.
+- **Optional `npm run dev:vite`:** standalone Vite on **5000** (`vite.config.ts`); proxy `/api` to a server on **5001** (or `API_PORT`) via `PORT=5001 tsx server/index.ts`.
 
 ## Git
 
 A **local checkpoint commit** exists on this branch (e.g. foundation/auth work captured in history). **Push to GitHub at stable checkpoints** rather than every micro-edit; align pushes with plan task boundaries when practical.
 
-## Next steps (Task 9)
+## Next steps (Task 10)
 
-Per Phase 1 plan (see repo `docs/superpowers/plans/2026-04-01-phase-1-auth-account-setup.md` where present):
+Per Phase 1 plan (`docs/superpowers/plans/2026-04-01-phase-1-auth-account-setup.md`):
 
-- **Task 9 — verification:** Exercise protected-route behavior end-to-end, confirm redirects and post-setup entry, and **wire logout** (API + client state / query cache) replacing the placeholder.
+- **Task 10 — final documentation and Phase 1 evidence** (requirements traceability, verification notes, and any plan-specified deliverables to close Phase 1).

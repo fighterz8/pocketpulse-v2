@@ -97,6 +97,9 @@ describe.skipIf(!runRouteIntegrationTests)("API routes", () => {
       displayName: "Two",
     });
     expect(res.status).toBe(409);
+    expect(res.body).toEqual({
+      error: "An account with this email already exists",
+    });
   });
 
   it("POST /api/auth/login uses auth lookup and returns user without password hash", async () => {
@@ -138,7 +141,31 @@ describe.skipIf(!runRouteIntegrationTests)("API routes", () => {
       password: "wrong-password",
     });
     expect(res.status).toBe(401);
-    expect(res.body).toHaveProperty("error");
+    expect(res.body).toEqual({ error: "Invalid email or password" });
+  });
+
+  it("POST /api/auth/login returns the same safe error for unknown email as for wrong password", async () => {
+    const app = testApp();
+    const email = `route-no-user-${crypto.randomUUID()}@example.com`;
+    const unknown = await request(app).post("/api/auth/login").send({
+      email,
+      password: "any-password",
+    });
+    expect(unknown.status).toBe(401);
+    expect(unknown.body).toEqual({ error: "Invalid email or password" });
+
+    const registered = `route-known-${crypto.randomUUID()}@example.com`;
+    await request(app).post("/api/auth/register").send({
+      email: registered,
+      password: "secret",
+      displayName: "Y",
+    });
+    const wrongPw = await request(app).post("/api/auth/login").send({
+      email: registered,
+      password: "wrong",
+    });
+    expect(wrongPw.status).toBe(401);
+    expect(wrongPw.body).toEqual(unknown.body);
   });
 
   it("POST /api/auth/logout destroys the session fully", async () => {
@@ -150,16 +177,22 @@ describe.skipIf(!runRouteIntegrationTests)("API routes", () => {
       password: "pw",
       displayName: "L",
     });
-    await agent.post("/api/auth/logout").expect(204);
+    const logoutRes = await agent.post("/api/auth/logout").expect(204);
+    expect(logoutRes.headers["set-cookie"]).toBeDefined();
 
     const me = await agent.get("/api/auth/me");
     expect(me.body).toEqual({ authenticated: false });
+
+    const accounts = await agent.get("/api/accounts");
+    expect(accounts.status).toBe(401);
+    expect(accounts.body).toEqual({ error: "Unauthorized" });
   });
 
   it("GET /api/accounts returns 401 when unauthenticated", async () => {
     const app = testApp();
     const res = await request(app).get("/api/accounts");
     expect(res.status).toBe(401);
+    expect(res.body).toEqual({ error: "Unauthorized" });
   });
 
   it("GET /api/accounts returns an empty list for a new user (onboarding detection)", async () => {
@@ -209,5 +242,6 @@ describe.skipIf(!runRouteIntegrationTests)("API routes", () => {
     const app = testApp();
     const res = await request(app).post("/api/accounts").send({ label: "X" });
     expect(res.status).toBe(401);
+    expect(res.body).toEqual({ error: "Unauthorized" });
   });
 });

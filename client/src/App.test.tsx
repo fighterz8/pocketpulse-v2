@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { Router } from "wouter";
 import { memoryLocation } from "wouter/memory-location";
@@ -28,6 +28,12 @@ const { mockAuthState } = vi.hoisted(() => ({
       reset: vi.fn(),
     },
     createAccount: {
+      mutateAsync: vi.fn(),
+      isPending: false,
+      error: null as Error | null,
+      reset: vi.fn(),
+    },
+    logout: {
       mutateAsync: vi.fn(),
       isPending: false,
       error: null as Error | null,
@@ -63,6 +69,10 @@ describe("app shell", () => {
     mockAuthState.createAccount.isPending = false;
     mockAuthState.createAccount.error = null;
     mockAuthState.createAccount.reset.mockReset();
+    mockAuthState.logout.mutateAsync.mockReset();
+    mockAuthState.logout.isPending = false;
+    mockAuthState.logout.error = null;
+    mockAuthState.logout.reset.mockReset();
   });
 
   it("renders the app root", () => {
@@ -140,6 +150,23 @@ describe("app shell", () => {
     expect(
       screen.queryByRole("heading", { name: /set up your first account/i }),
     ).not.toBeInTheDocument();
+  });
+
+  it("invokes logout when the sidebar Logout control is used", () => {
+    mockAuthState.logout.mutateAsync.mockResolvedValue(undefined);
+    mockAuthState.isLoading = false;
+    mockAuthState.isAuthenticated = true;
+    mockAuthState.user = {
+      id: 1,
+      email: "user@example.com",
+      displayName: "Test User",
+    };
+    mockAuthState.accountsLoading = false;
+    mockAuthState.accounts = [{ id: 10, label: "Cash" }];
+    mockAuthState.accountsError = null;
+    render(<App />);
+    fireEvent.click(screen.getByRole("button", { name: /^logout$/i }));
+    expect(mockAuthState.logout.mutateAsync).toHaveBeenCalledTimes(1);
   });
 
   it("renders not-found inside the protected shell for unknown routes", () => {

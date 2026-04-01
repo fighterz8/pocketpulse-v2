@@ -16,7 +16,8 @@ TypeScript, Node.js, Express, React, Vite, Wouter, TanStack Query, PostgreSQL, D
 
 | Script    | Description                                      |
 | --------- | ------------------------------------------------ |
-| `npm run dev` | Vite dev server on `http://localhost:5000`; `/api` requests proxy to `http://localhost:5001` by default |
+| `npm run dev` | Development: Express on `PORT` (default `5000`) with Vite dev middleware — API and SPA on one server (Replit/Cursor preview) |
+| `npm run dev:vite` | Optional split setup: standalone Vite on port 5000; `/api` proxies to `http://localhost:5001` by default (override with `API_PORT`) — run `PORT=5001 tsx server/index.ts` in another terminal |
 | `npm run build` | Production client bundle → `dist/public`; compiled server → `dist/server` |
 | `npm run start` | Production: compiled Express from `dist/server/index.js` serves `/api` + static SPA (`dist/public`) |
 | `npm run check` | Typecheck with `tsc --noEmit`                    |
@@ -29,15 +30,12 @@ After `npm run build`, `npm start` runs Express with the API and the Vite produc
 
 ## Ports
 
-- Vite dev server (`npm run dev`): `5000` (`vite.config.ts`); override Vite’s proxy target with `API_PORT` if the API is not on `5001`.
-- Express API (development): `5001` by default (`API_PORT`); this process also attaches Vite middleware so you can open the app on `5001` without running Vite separately.
-- Express (production): `5000` by default (`PORT`).
+- **Default development** (`npm run dev`): one process on `PORT` (default `5000`); same-origin `/api` and Vite HMR.
+- **Optional split** (`dev:vite` + `tsx server/index.ts`): Vite on `5000` (`vite.config.ts`); run the server with `PORT=5001` (or set `API_PORT` in the Vite proxy target to match).
+- **Production**: `PORT` (default `5000`).
 
 ## Local development
 
-Typical split (browser always hits Vite first):
+**Default (one terminal):** `npm run dev` — open `http://localhost:5000`. No separate API process.
 
-1. Start the API + Vite-middleware server: `API_PORT=5001 tsx server/index.ts` (listens on `5001`).
-2. Start the Vite dev server: `npm run dev` (listens on `5000`, proxies `/api` to `http://localhost:5001`).
-
-Open `http://localhost:5000` for HMR; session cookies are set for `localhost` across the proxy. You can also open `http://localhost:5001` to use the same Express+Vite stack without the proxy.
+**Optional split** (e.g. debugging Vite in isolation): in one terminal, `PORT=5001 tsx server/index.ts`; in another, `npm run dev:vite`. Open `http://localhost:5000` for HMR; `/api` is proxied to the server on `5001`.
