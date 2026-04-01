@@ -2,6 +2,7 @@ import { useState } from "react";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Route, Switch } from "wouter";
 import { useAuth } from "./hooks/use-auth";
+import { AccountSetup } from "./pages/AccountSetup";
 import { Auth } from "./pages/Auth";
 import { createQueryClient } from "./lib/queryClient";
 import { cn } from "./lib/utils";
@@ -54,6 +55,35 @@ function AppGate() {
 
   if (!auth.isAuthenticated) {
     return <Auth />;
+  }
+
+  if (auth.accountsLoading) {
+    return (
+      <main className="app-main">
+        <p className="app-placeholder">Loading…</p>
+      </main>
+    );
+  }
+
+  if (auth.accountsError) {
+    return (
+      <main className="app-main">
+        <p className="auth-error" role="alert">
+          {auth.accountsError.message}
+        </p>
+        <button
+          type="button"
+          className="auth-submit"
+          onClick={() => void auth.refetchAccounts()}
+        >
+          Retry
+        </button>
+      </main>
+    );
+  }
+
+  if (auth.accounts !== null && auth.accounts.length === 0) {
+    return <AccountSetup />;
   }
 
   return <AppAuthenticated />;

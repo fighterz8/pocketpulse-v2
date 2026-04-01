@@ -7,6 +7,30 @@ import {
 
 export const authMeQueryKey = ["auth", "me"] as const;
 
+/** Prefix for `invalidateQueries` — matches every `accountsListQueryKey(userId)`. */
+export const accountsListQueryRoot = ["accounts", "list"] as const;
+
+export function accountsListQueryKey(userId: number) {
+  return [...accountsListQueryRoot, userId] as const;
+}
+
+/** Row shape from `GET /api/accounts` / `POST /api/accounts` JSON. */
+export type AuthAccount = {
+  id: number;
+  userId: number;
+  label: string;
+  lastFour: string | null;
+  accountType: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type CreateAccountInput = {
+  label: string;
+  lastFour?: string;
+  accountType?: string;
+};
+
 /** API shape for `GET /api/auth/me` — never includes password fields. */
 export type AuthUser = {
   id: number;
@@ -47,8 +71,19 @@ export type UseAuthReturn = {
   user: AuthUser | null;
   meError: Error | null;
   refetch: ReturnType<typeof useQuery<AuthMeResponse>>["refetch"];
+  accounts: AuthAccount[] | null;
+  accountsLoading: boolean;
+  accountsError: Error | null;
+  refetchAccounts: ReturnType<
+    typeof useQuery<{ accounts: AuthAccount[] }>
+  >["refetch"];
   login: UseMutationResult<unknown, Error, LoginInput>;
   register: UseMutationResult<unknown, Error, RegisterInput>;
+  createAccount: UseMutationResult<
+    { account: AuthAccount },
+    Error,
+    CreateAccountInput
+  >;
 };
 
 export function useAuth(): UseAuthReturn {
@@ -62,6 +97,26 @@ export function useAuth(): UseAuthReturn {
         throw new Error(await readJsonError(res));
       }
       return res.json() as Promise<AuthMeResponse>;
+    },
+  });
+
+  const meData = meQuery.data;
+  const isAuthenticated = meData?.authenticated === true;
+  const accountOwnerId =
+    meData?.authenticated === true ? meData.user.id : null;
+
+  const accountsQuery = useQuery({
+    queryKey:
+      accountOwnerId != null
+        ? accountsListQueryKey(accountOwnerId)
+        : [...accountsListQueryRoot, null],
+    enabled: accountOwnerId != null,
+    queryFn: async (): Promise<{ accounts: AuthAccount[] }> => {
+      const res = await fetch("/api/accounts");
+      if (!res.ok) {
+        throw new Error(await readJsonError(res));
+      }
+      return res.json() as Promise<{ accounts: AuthAccount[] }>;
     },
   });
 
@@ -106,10 +161,46 @@ export function useAuth(): UseAuthReturn {
     },
   });
 
-  const data = meQuery.data;
-  const isAuthenticated = data?.authenticated === true;
+  const createAccount = useMutation({
+    mutationFn: async (input: CreateAccountInput) => {
+      const lastFourDigits =
+        input.lastFour !== undefined && input.lastFour !== ""
+          ? input.lastFour.replace(/\D/g, "").slice(0, 4)
+          : "";
+      const res = await fetch("/api/accounts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          label: input.label,
+          ...(lastFourDigits !== ""
+            ? { lastFour: lastFourDigits }
+            : {}),
+          ...(input.accountType !== undefined && input.accountType !== ""
+            ? { accountType: input.accountType }
+            : {}),
+        }),
+      });
+      if (!res.ok) {
+        throw new Error(await readJsonError(res));
+      }
+      return res.json() as Promise<{ account: AuthAccount }>;
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: accountsListQueryRoot });
+    },
+  });
+
   const user =
-    data && data.authenticated === true ? data.user : null;
+    meData && meData.authenticated === true ? meData.user : null;
+
+  const accounts =
+    isAuthenticated && accountsQuery.data
+      ? accountsQuery.data.accounts
+      : null;
+  const accountsLoading = isAuthenticated && accountsQuery.isPending;
+  const accountsError = isAuthenticated
+    ? (accountsQuery.error as Error | null)
+    : null;
 
   return {
     isLoading: meQuery.isPending,
@@ -117,7 +208,12 @@ export function useAuth(): UseAuthReturn {
     user,
     meError: meQuery.error as Error | null,
     refetch: meQuery.refetch,
+    accounts,
+    accountsLoading,
+    accountsError,
+    refetchAccounts: accountsQuery.refetch,
     login,
     register,
+    createAccount,
   };
 }
