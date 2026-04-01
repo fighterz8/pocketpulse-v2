@@ -35,8 +35,10 @@ author = "agent"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "npm run dev"
-waitForPort = 5000
+args = "echo 'Workspace is clean and ready for reimplementation. Add your app code then update this workflow.'"
+
+[workflows.workflow.metadata]
+outputType = "console"
 
 [agent]
 stack = "MOCKUP_JS"
