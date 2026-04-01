@@ -10,6 +10,10 @@ localPort = 5000
 externalPort = 80
 
 [[ports]]
+localPort = 5001
+externalPort = 3001
+
+[[ports]]
 localPort = 5173
 externalPort = 5173
 
@@ -46,24 +50,24 @@ name = "Start application"
 author = "agent"
 
 [workflows.workflow.metadata]
-outputType = "webview"
+outputType = "console"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
 args = "cd /home/runner/workspace/.worktrees/phase-1-auth-account-setup && npx tsx server/index.ts"
-waitForPort = 5000
+waitForPort = 5001
 
 [[workflows.workflow]]
 name = "Frontend (Vite)"
 author = "agent"
 
 [workflows.workflow.metadata]
-outputType = "console"
+outputType = "webview"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "cd /home/runner/workspace/.worktrees/phase-1-auth-account-setup && npx vite --host 0.0.0.0"
-waitForPort = 5173
+args = "cd /home/runner/workspace/.worktrees/phase-1-auth-account-setup && npx vite"
+waitForPort = 5000
 
 [agent]
 stack = "MOCKUP_JS"
