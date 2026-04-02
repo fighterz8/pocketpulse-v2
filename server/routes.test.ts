@@ -203,6 +203,23 @@ describe.skipIf(!runRouteIntegrationTests)("API routes", () => {
     expect(res.body).toEqual({ error: "Invalid email or password" });
   });
 
+  it("login endpoint returns 429 after too many failed attempts", async () => {
+    const app = testApp();
+    const email = `rate-${crypto.randomUUID()}@example.com`;
+
+    let got429 = false;
+    for (let i = 0; i < 12; i++) {
+      const res = await request(app)
+        .post("/api/auth/login")
+        .send({ email, password: "wrong-password-here" });
+      if (res.status === 429) {
+        got429 = true;
+        break;
+      }
+    }
+    expect(got429).toBe(true);
+  });
+
   it("POST /api/auth/login returns the same safe error for unknown email as for wrong password", async () => {
     const app = testApp();
     const email = `route-no-user-${crypto.randomUUID()}@example.com`;

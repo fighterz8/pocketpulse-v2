@@ -1,5 +1,6 @@
 import connectPgSimple from "connect-pg-simple";
 import express, { type RequestHandler } from "express";
+import rateLimit from "express-rate-limit";
 import session from "express-session";
 import multer from "multer";
 import helmet from "helmet";
@@ -123,6 +124,22 @@ export function createApp(options?: CreateAppOptions) {
   const store = options?.sessionStore ?? defaultSessionStore();
   const app = express();
   app.use(helmet());
+  const globalLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 200,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: "Too many requests, please try again later" },
+  });
+
+  const authLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 10,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: "Too many authentication attempts, please try again later" },
+  });
+  app.use(globalLimiter);
   app.use(express.json());
   app.use(sessionMiddleware(store));
 
@@ -152,7 +169,7 @@ export function createApp(options?: CreateAppOptions) {
     }
   });
 
-  app.post("/api/auth/register", async (req, res, next) => {
+  app.post("/api/auth/register", authLimiter, async (req, res, next) => {
     try {
       const { email, password, displayName, companyName } = req.body ?? {};
       if (
@@ -202,7 +219,7 @@ export function createApp(options?: CreateAppOptions) {
     }
   });
 
-  app.post("/api/auth/login", async (req, res, next) => {
+  app.post("/api/auth/login", authLimiter, async (req, res, next) => {
     try {
       const { email, password } = req.body ?? {};
       if (typeof email !== "string" || typeof password !== "string") {
