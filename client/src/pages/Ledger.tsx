@@ -7,12 +7,7 @@ import {
   type TransactionFilters,
   type UpdateTransactionInput,
 } from "../hooks/use-transactions";
-
-const V1_CATEGORIES = [
-  "income", "transfers", "utilities", "subscriptions", "insurance",
-  "housing", "groceries", "transportation", "dining", "shopping",
-  "health", "debt", "business_software", "entertainment", "fees", "other",
-] as const;
+import { V1_CATEGORIES } from "../../../shared/schema";
 
 const CLASS_OPTIONS = ["income", "expense", "transfer", "refund"] as const;
 const RECURRENCE_OPTIONS = ["recurring", "one-time"] as const;

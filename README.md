@@ -8,6 +8,16 @@ Small-business cashflow analysis web application.
 **Phase 2** (upload + import) on branch `feature/phase-2-upload-import`.
 **Phase 3** (ledger review) on branch `feature/phase-3-ledger-review`.
 **Phase 4** (recurring leak review + CSV bug fix) on branch `feature/phase-4-recurring-leak-review`.
+**Phase 5** (dashboard + auto re-classify) on branch `feature/phase-5-dashboard`.
+
+### Phase 5 -- what's implemented
+
+- **Auto re-classification** (`server/reclassify.ts`): On each `GET /api/dashboard-summary`, the server re-runs the keyword-first classifier on all transactions for the user that are not `userCorrected`, aligning `amount`, `flowType`, `transactionClass`, and `category` with the current upload pipeline. Idempotent for rows that already match. No UI control — fully silent.
+- **Bulk updates** (`server/storage.ts`): `bulkUpdateTransactions(userId, updates)` applies batched corrections inside one SQL transaction with a `userId` guard on every row.
+- **Dashboard aggregations** (`server/dashboardQueries.ts`): Parallel queries for total inflow/outflow and transaction count, spending by category (outflows), monthly trend, the 10 most recent transactions, and linked account count. Respects `excludedFromAnalysis === false`.
+- **API** (`server/routes.ts`): `GET /api/dashboard-summary` (authenticated) runs re-classify then returns `buildDashboardSummary`.
+- **Dashboard UI** (`client/src/pages/Dashboard.tsx`, `client/src/hooks/use-dashboard.ts`, `client/src/index.css`): KPI cards (frosted glass, colored borders: green income, red spending, blue net/count), category bar chart with sky-to-blue gradient fills, monthly table, recent transactions, empty state with upload link. Amount colors use the same classes as the ledger (`.ledger-amount--inflow` / `--outflow`).
+- **Ledger** (`client/src/pages/Ledger.tsx`): Category list imported from `shared/schema` (`V1_CATEGORIES`).
 
 ### Phase 4 -- what's implemented
 
@@ -42,8 +52,6 @@ Small-business cashflow analysis web application.
 
 - **Backend:** Express app with auth routes (`register`, `login`, `logout`, `me`), account CRUD, health check. Sessions in PostgreSQL via `connect-pg-simple`.
 - **Frontend:** React + Wouter + TanStack Query; auth gating, first-account onboarding, protected app shell with sidebar navigation.
-
-**Still deferred:** dashboard/reporting (Phase 5).
 
 ## Setup
 
@@ -94,6 +102,13 @@ With PostgreSQL available and `npm run dev` running (default [http://localhost:5
 8. **CSV export** -- Click "Export CSV"; browser downloads `pocketpulse-transactions.csv` with current filters applied.
 9. **Wipe data** -- In the danger zone, click "Wipe Imported Data", then "Confirm Wipe". Transactions and uploads are deleted; accounts remain.
 10. **Reset workspace** -- Click "Reset Workspace", then "Confirm Reset". All data is deleted; redirected to home page.
+
+### Phase 5 checks (dashboard + auto re-classify)
+1. **Open Dashboard** -- After signing in with at least one account, the home route shows the dashboard (not a placeholder). With no transactions, you should see the empty state and a link to Upload.
+2. **Import or use existing data** -- Upload a CSV or use existing transactions; reload the dashboard. KPI cards should show income, spending, net cashflow, and count; category bars and monthly table should reflect non-excluded rows only.
+3. **Silent re-classify** -- If you have legacy rows that were misclassified as income with positive amounts, opening the dashboard (or calling `GET /api/dashboard-summary`) should correct them automatically; the ledger should then show red outflows/green inflows consistently. User-edited rows (`userCorrected`) are left alone.
+4. **Recent activity** -- The "Recent Transactions" section lists up to 10 rows; "View all" goes to the Ledger (`/transactions`).
+5. **Exclusions** -- Transactions marked excluded from analysis should not appear in dashboard totals or breakdowns.
 
 Automated checks: `npm test` and `npm run check`. Optional: `npm run build` for a production bundle sanity check.
 
