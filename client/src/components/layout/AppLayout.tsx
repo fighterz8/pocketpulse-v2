@@ -28,11 +28,6 @@ export function AppLayout({
               </Link>
             </li>
             <li>
-              <Link href="/upload" className={linkClass("/upload")}>
-                Upload
-              </Link>
-            </li>
-            <li>
               <Link
                 href="/transactions"
                 className={linkClass("/transactions")}
@@ -43,6 +38,11 @@ export function AppLayout({
             <li>
               <Link href="/leaks" className={linkClass("/leaks")}>
                 Recurring Leak Review
+              </Link>
+            </li>
+            <li style={{ marginTop: "1rem" }}>
+              <Link href="/upload" className={linkClass("/upload")}>
+                Upload
               </Link>
             </li>
           </ul>
