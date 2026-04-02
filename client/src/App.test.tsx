@@ -73,6 +73,7 @@ describe("app shell", () => {
     mockAuthState.logout.isPending = false;
     mockAuthState.logout.error = null;
     mockAuthState.logout.reset.mockReset();
+    vi.unstubAllGlobals();
   });
 
   it("renders the app root", () => {
@@ -120,7 +121,31 @@ describe("app shell", () => {
     expect(screen.getByText(/^pocketpulse$/i)).toHaveClass("auth-brand");
   });
 
-  it("renders protected app shell with sidebar navigation when the user has accounts", () => {
+  it("renders protected app shell with sidebar navigation when the user has accounts", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: string) => {
+        if (url === "/api/dashboard-summary") {
+          return Promise.resolve({
+            ok: true,
+            json: () =>
+              Promise.resolve({
+                totals: {
+                  totalInflow: 0,
+                  totalOutflow: 0,
+                  netCashflow: 0,
+                  transactionCount: 0,
+                },
+                categoryBreakdown: [],
+                monthlyTrend: [],
+                recentTransactions: [],
+                accountCount: 1,
+              }),
+          });
+        }
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({}) });
+      }),
+    );
     mockAuthState.isLoading = false;
     mockAuthState.isAuthenticated = true;
     mockAuthState.user = {
@@ -156,7 +181,9 @@ describe("app shell", () => {
     expect(
       screen.getByRole("heading", { name: /^dashboard$/i }),
     ).toBeInTheDocument();
-    expect(screen.getByText(/dashboard overview will live here/i)).toBeInTheDocument();
+    expect(
+      await screen.findByText(/no transaction data yet/i),
+    ).toBeInTheDocument();
     expect(
       screen.queryByRole("heading", { name: /set up your first account/i }),
     ).not.toBeInTheDocument();

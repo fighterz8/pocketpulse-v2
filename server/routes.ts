@@ -29,7 +29,9 @@ import {
   upsertRecurringReview,
   type UpdateTransactionInput,
 } from "./storage.js";
+import { buildDashboardSummary } from "./dashboardQueries.js";
 import { detectRecurringCandidates } from "./recurrenceDetector.js";
+import { reclassifyTransactions } from "./reclassify.js";
 import {
   inferFlowType,
   normalizeMerchant,
@@ -466,6 +468,19 @@ export function createApp(options?: CreateAppOptions) {
       });
 
       res.json(result);
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  app.get("/api/dashboard-summary", requireAuth, async (req, res, next) => {
+    try {
+      const userId = req.session.userId!;
+
+      await reclassifyTransactions(userId);
+
+      const summary = await buildDashboardSummary(userId);
+      res.json(summary);
     } catch (e) {
       next(e);
     }

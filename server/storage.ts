@@ -421,6 +421,43 @@ export async function updateTransaction(
   return row ?? null;
 }
 
+export type BulkTransactionUpdate = {
+  id: number;
+  amount: string;
+  flowType: string;
+  transactionClass: string;
+  category: string;
+  recurrenceType: string;
+  labelSource: string;
+  labelConfidence: string;
+  labelReason: string;
+};
+
+export async function bulkUpdateTransactions(
+  userId: number,
+  updates: BulkTransactionUpdate[],
+) {
+  if (updates.length === 0) return;
+
+  await db.transaction(async (tx) => {
+    for (const u of updates) {
+      await tx
+        .update(transactions)
+        .set({
+          amount: u.amount,
+          flowType: u.flowType,
+          transactionClass: u.transactionClass,
+          category: u.category,
+          recurrenceType: u.recurrenceType,
+          labelSource: u.labelSource,
+          labelConfidence: u.labelConfidence,
+          labelReason: u.labelReason,
+        })
+        .where(and(eq(transactions.id, u.id), eq(transactions.userId, userId)));
+    }
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Destructive actions
 // ---------------------------------------------------------------------------
