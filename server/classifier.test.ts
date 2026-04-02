@@ -109,4 +109,60 @@ describe("classifyTransaction", () => {
     const result = classifyTransaction("STUDENT LOAN PAYMENT", -300.00, "outflow");
     expect(result.category).toBe("debt");
   });
+
+  describe("unsigned amount classification (inflow with expense keywords)", () => {
+    it("classifies Netflix as subscription even when flowType is inflow", () => {
+      const result = classifyTransaction("NETFLIX INC", 15.99, "inflow");
+      expect(result.category).toBe("subscriptions");
+      expect(result.transactionClass).toBe("expense");
+      expect(result.flowOverride).toBe("outflow");
+    });
+
+    it("classifies Whole Foods as groceries even when flowType is inflow", () => {
+      const result = classifyTransaction("WHOLE FOODS MARKET", 85.00, "inflow");
+      expect(result.category).toBe("groceries");
+      expect(result.transactionClass).toBe("expense");
+      expect(result.flowOverride).toBe("outflow");
+    });
+
+    it("classifies Starbucks as dining even when flowType is inflow", () => {
+      const result = classifyTransaction("STARBUCKS", 5.50, "inflow");
+      expect(result.category).toBe("dining");
+      expect(result.transactionClass).toBe("expense");
+      expect(result.flowOverride).toBe("outflow");
+    });
+
+    it("classifies Amazon as shopping even when flowType is inflow", () => {
+      const result = classifyTransaction("AMAZON.COM", 42.00, "inflow");
+      expect(result.category).toBe("shopping");
+      expect(result.transactionClass).toBe("expense");
+      expect(result.flowOverride).toBe("outflow");
+    });
+
+    it("still classifies unknown inflow merchants as income", () => {
+      const result = classifyTransaction("PAYROLL DEPOSIT", 3500.00, "inflow");
+      expect(result.category).toBe("income");
+      expect(result.transactionClass).toBe("income");
+      expect(result.flowOverride).toBeNull();
+    });
+
+    it("still classifies refunds correctly", () => {
+      const result = classifyTransaction("REFUND FROM AMAZON", 29.99, "inflow");
+      expect(result.transactionClass).toBe("refund");
+      expect(result.flowOverride).toBeNull();
+    });
+
+    it("still classifies transfers correctly", () => {
+      const result = classifyTransaction("TRANSFER TO SAVINGS", 500.00, "inflow");
+      expect(result.transactionClass).toBe("transfer");
+      expect(result.flowOverride).toBeNull();
+    });
+
+    it("does not override when flowType is already outflow", () => {
+      const result = classifyTransaction("NETFLIX INC", -15.99, "outflow");
+      expect(result.category).toBe("subscriptions");
+      expect(result.transactionClass).toBe("expense");
+      expect(result.flowOverride).toBeNull();
+    });
+  });
 });
