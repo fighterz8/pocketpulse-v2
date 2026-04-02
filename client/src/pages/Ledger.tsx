@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useAuth } from "../hooks/use-auth";
 import {
+  useExportUrl,
   useTransactions,
   type Transaction,
   type TransactionFilters,
+  type UpdateTransactionInput,
 } from "../hooks/use-transactions";
 
 const V1_CATEGORIES = [
@@ -71,10 +73,19 @@ export function Ledger() {
     updateTransaction,
   } = useTransactions(filters);
 
+  const exportUrl = useExportUrl(filters);
+
   const setPage = (p: number) => setFilters((f) => ({ ...f, page: p }));
 
   const handleRowClick = (id: number) => {
     setEditingId((prev) => (prev === id ? null : id));
+  };
+
+  const handleToggleExclude = (txn: Transaction) => {
+    updateTransaction.mutate({
+      id: txn.id,
+      fields: { excludedFromAnalysis: !txn.excludedFromAnalysis },
+    });
   };
 
   const hasAnyFilter = !!(
@@ -105,6 +116,11 @@ export function Ledger() {
             <button className="ledger-clear-btn" onClick={clearFilters}>
               Clear filters
             </button>
+          )}
+          {transactions.length > 0 && (
+            <a href={exportUrl} className="ledger-export-btn" download>
+              Export CSV
+            </a>
           )}
         </div>
 
@@ -208,6 +224,7 @@ export function Ledger() {
             <table className="ledger-table">
               <thead>
                 <tr>
+                  <th className="ledger-th-toggle"></th>
                   <th>Date</th>
                   <th>Merchant</th>
                   <th className="ledger-th-right">Amount</th>
@@ -224,6 +241,7 @@ export function Ledger() {
                     txn={txn}
                     isEditing={editingId === txn.id}
                     onRowClick={() => handleRowClick(txn.id)}
+                    onToggleExclude={() => handleToggleExclude(txn)}
                     onSave={(fields) => {
                       updateTransaction.mutate(
                         { id: txn.id, fields },
@@ -272,24 +290,32 @@ export function Ledger() {
   );
 }
 
-import type { UpdateTransactionInput } from "../hooks/use-transactions";
-
 type TransactionRowProps = {
   txn: Transaction;
   isEditing: boolean;
   onRowClick: () => void;
+  onToggleExclude: () => void;
   onSave: (fields: UpdateTransactionInput) => void;
   onCancel: () => void;
   isSaving: boolean;
 };
 
-function TransactionRow({ txn, isEditing, onRowClick, onSave, onCancel, isSaving }: TransactionRowProps) {
+function TransactionRow({ txn, isEditing, onRowClick, onToggleExclude, onSave, onCancel, isSaving }: TransactionRowProps) {
   return (
     <>
       <tr
         className={`ledger-row--clickable ${txn.excludedFromAnalysis ? "ledger-row--excluded" : ""} ${isEditing ? "ledger-row--selected" : ""}`}
         onClick={onRowClick}
       >
+        <td className="ledger-td-toggle">
+          <button
+            className={`ledger-exclude-toggle ${txn.excludedFromAnalysis ? "ledger-exclude-toggle--active" : ""}`}
+            title={txn.excludedFromAnalysis ? "Include in analysis" : "Exclude from analysis"}
+            onClick={(e) => { e.stopPropagation(); onToggleExclude(); }}
+          >
+            {txn.excludedFromAnalysis ? "X" : ""}
+          </button>
+        </td>
         <td className="ledger-td-date">{txn.date}</td>
         <td className="ledger-td-merchant" title={txn.rawDescription}>
           {txn.merchant}
@@ -309,7 +335,7 @@ function TransactionRow({ txn, isEditing, onRowClick, onSave, onCancel, isSaving
       </tr>
       {isEditing && (
         <tr className="ledger-edit-row">
-          <td colSpan={7}>
+          <td colSpan={8}>
             <EditPanel txn={txn} onSave={onSave} onCancel={onCancel} isSaving={isSaving} />
           </td>
         </tr>
