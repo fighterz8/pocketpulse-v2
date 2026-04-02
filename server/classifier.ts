@@ -394,21 +394,11 @@ const RECURRING_KEYWORDS = [
   "monthly",
 ];
 
-const EXPENSE_CATEGORIES: ReadonlySet<string> = new Set([
-  "subscriptions",
-  "business_software",
-  "insurance",
-  "housing",
-  "utilities",
-  "groceries",
-  "dining",
-  "transportation",
-  "health",
-  "debt",
-  "fees",
-  "entertainment",
-  "shopping",
-]);
+const NON_EXPENSE_CATEGORIES: ReadonlySet<string> = new Set(["transfers", "income", "other"]);
+
+const EXPENSE_CATEGORIES: ReadonlySet<string> = new Set(
+  CATEGORY_RULES.map((r) => r.category).filter((c) => !NON_EXPENSE_CATEGORIES.has(c)),
+);
 
 const REFUND_KEYWORDS = ["refund", "return", "credit adj", "reversal", "chargeback"];
 
