@@ -164,6 +164,18 @@ export function createApp(options?: CreateAppOptions) {
         return;
       }
 
+      if (!email.includes("@") || email.indexOf("@") === 0 || email.indexOf("@") === email.length - 1) {
+        res.status(400).json({ error: "A valid email address is required" });
+        return;
+      }
+
+      if (password.length < 8) {
+        res
+          .status(400)
+          .json({ error: "Password must be at least 8 characters" });
+        return;
+      }
+
       const passwordHash = await hashPassword(password);
       const user = await createUser({
         email,

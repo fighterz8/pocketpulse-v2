@@ -103,20 +103,55 @@ describe.skipIf(!runRouteIntegrationTests)("API routes", () => {
       .post("/api/auth/register")
       .send({
         email: `  ${base.toUpperCase()}  `,
-        password: "a",
+        password: "password-one",
         displayName: "One",
       })
       .expect(201);
 
     const res = await request(app).post("/api/auth/register").send({
       email: base,
-      password: "b",
+      password: "password-two",
       displayName: "Two",
     });
     expect(res.status).toBe(409);
     expect(res.body).toEqual({
       error: "An account with this email already exists",
     });
+  });
+
+  it("POST /api/auth/register rejects passwords shorter than 8 characters", async () => {
+    const app = testApp();
+    const email = `val-pw-${crypto.randomUUID()}@example.com`;
+    const res = await request(app).post("/api/auth/register").send({
+      email,
+      password: "short",
+      displayName: "Test",
+    });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/password/i);
+    expect(res.body.error).toMatch(/8/);
+  });
+
+  it("POST /api/auth/register rejects invalid email format", async () => {
+    const app = testApp();
+    const res = await request(app).post("/api/auth/register").send({
+      email: "not-an-email",
+      password: "long-enough-pw",
+      displayName: "Test",
+    });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/email/i);
+  });
+
+  it("POST /api/auth/register accepts valid 8+ char password", async () => {
+    const app = testApp();
+    const email = `val-ok-${crypto.randomUUID()}@example.com`;
+    const res = await request(app).post("/api/auth/register").send({
+      email,
+      password: "exactly8",
+      displayName: "Test",
+    });
+    expect(res.status).toBe(201);
   });
 
   it("POST /api/auth/login uses auth lookup and returns user without password hash", async () => {
@@ -174,7 +209,7 @@ describe.skipIf(!runRouteIntegrationTests)("API routes", () => {
     const registered = `route-known-${crypto.randomUUID()}@example.com`;
     await request(app).post("/api/auth/register").send({
       email: registered,
-      password: "secret",
+      password: "secret-pw",
       displayName: "Y",
     });
     const wrongPw = await request(app).post("/api/auth/login").send({
@@ -191,7 +226,7 @@ describe.skipIf(!runRouteIntegrationTests)("API routes", () => {
     const email = `route-logout-${crypto.randomUUID()}@example.com`;
     await agent.post("/api/auth/register").send({
       email,
-      password: "pw",
+      password: "test-pw-99",
       displayName: "L",
     });
     const logoutRes = await agent.post("/api/auth/logout").expect(204);
@@ -218,7 +253,7 @@ describe.skipIf(!runRouteIntegrationTests)("API routes", () => {
     const email = `route-acct-${crypto.randomUUID()}@example.com`;
     await agent.post("/api/auth/register").send({
       email,
-      password: "pw",
+      password: "test-pw-99",
       displayName: "Acct",
     });
 
@@ -233,7 +268,7 @@ describe.skipIf(!runRouteIntegrationTests)("API routes", () => {
     const email = `route-acct2-${crypto.randomUUID()}@example.com`;
     await agent.post("/api/auth/register").send({
       email,
-      password: "pw",
+      password: "test-pw-99",
       displayName: "Acct2",
     });
 
