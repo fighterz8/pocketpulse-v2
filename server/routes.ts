@@ -59,12 +59,21 @@ function defaultSessionStore() {
   });
 }
 
+function getSessionSecret(): string {
+  const secret = process.env.SESSION_SECRET;
+  if (!secret && process.env.NODE_ENV === "production") {
+    throw new Error(
+      "SESSION_SECRET is required in production. Set it to a long random string.",
+    );
+  }
+  return secret ?? "dev-session-secret-not-for-production";
+}
+
 function sessionMiddleware(store: session.Store) {
   return session({
     store,
     name: "pocketpulse.sid",
-    secret:
-      process.env.SESSION_SECRET ?? "dev-session-secret-not-for-production",
+    secret: getSessionSecret(),
     resave: false,
     saveUninitialized: false,
     cookie: {

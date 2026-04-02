@@ -28,6 +28,23 @@ describe.skipIf(!runRouteIntegrationTests)("API routes", () => {
     return createApp({ sessionStore: new session.MemoryStore() });
   }
 
+  it("throws if SESSION_SECRET is missing in production", () => {
+    const origNodeEnv = process.env.NODE_ENV;
+    const origSecret = process.env.SESSION_SECRET;
+    try {
+      process.env.NODE_ENV = "production";
+      delete process.env.SESSION_SECRET;
+      expect(() => createApp()).toThrow(/SESSION_SECRET/i);
+    } finally {
+      process.env.NODE_ENV = origNodeEnv;
+      if (origSecret !== undefined) {
+        process.env.SESSION_SECRET = origSecret;
+      } else {
+        delete process.env.SESSION_SECRET;
+      }
+    }
+  });
+
   it("GET /api/health responds ok", async () => {
     const app = testApp();
     const res = await request(app).get("/api/health");
