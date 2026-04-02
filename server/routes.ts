@@ -2,6 +2,7 @@ import connectPgSimple from "connect-pg-simple";
 import express, { type RequestHandler } from "express";
 import session from "express-session";
 import multer from "multer";
+import helmet from "helmet";
 
 import { hashPassword, verifyPassword } from "./auth.js";
 import { classifyTransaction } from "./classifier.js";
@@ -121,6 +122,7 @@ const sessionCookieOptions = {
 export function createApp(options?: CreateAppOptions) {
   const store = options?.sessionStore ?? defaultSessionStore();
   const app = express();
+  app.use(helmet());
   app.use(express.json());
   app.use(sessionMiddleware(store));
 

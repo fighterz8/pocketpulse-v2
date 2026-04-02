@@ -52,6 +52,13 @@ describe.skipIf(!runRouteIntegrationTests)("API routes", () => {
     expect(res.body).toEqual({ status: "ok" });
   });
 
+  it("responses include security headers from helmet", async () => {
+    const app = testApp();
+    const res = await request(app).get("/api/health");
+    expect(res.headers["x-content-type-options"]).toBe("nosniff");
+    expect(res.headers["x-frame-options"]).toBeDefined();
+  });
+
   it("unmatched /api/* returns JSON 404 (does not fall through to client)", async () => {
     const app = testApp();
     const getRes = await request(app).get("/api/no-such-endpoint");
