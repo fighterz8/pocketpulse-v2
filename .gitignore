@@ -7,6 +7,7 @@ dist
 *.env
 *.env.local
 .cache
+.worktrees
 coverage
 *.tsbuildinfo
 .vite
