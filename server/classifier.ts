@@ -11,6 +11,15 @@
  */
 import type { V1Category } from "../shared/schema.js";
 
+const TRANSFER_KEYWORDS = [
+  "transfer",
+  "xfer",
+  "zelle",
+  "venmo",
+  "cash app",
+  "wire",
+];
+
 export type ClassificationResult = {
   transactionClass: "income" | "expense" | "transfer" | "refund";
   category: V1Category;
@@ -18,6 +27,7 @@ export type ClassificationResult = {
   labelSource: "rule";
   labelConfidence: number;
   labelReason: string;
+  flowOverride: "outflow" | null;
 };
 
 type CategoryRule = {
@@ -34,14 +44,7 @@ const CATEGORY_RULES: CategoryRule[] = [
   // Transfers (check before income — "transfer" can appear in inflows too)
   {
     category: "transfers",
-    keywords: [
-      "transfer",
-      "xfer",
-      "zelle",
-      "venmo",
-      "cash app",
-      "wire",
-    ],
+    keywords: TRANSFER_KEYWORDS,
     confidence: 0.85,
   },
   // Subscriptions & streaming
@@ -391,6 +394,12 @@ const RECURRING_KEYWORDS = [
   "monthly",
 ];
 
+const NON_EXPENSE_CATEGORIES: ReadonlySet<string> = new Set(["transfers", "income", "other"]);
+
+const EXPENSE_CATEGORIES: ReadonlySet<string> = new Set(
+  CATEGORY_RULES.map((r) => r.category).filter((c) => !NON_EXPENSE_CATEGORIES.has(c)),
+);
+
 const REFUND_KEYWORDS = ["refund", "return", "credit adj", "reversal", "chargeback"];
 
 function matchesAny(merchant: string, keywords: string[]): boolean {
@@ -405,42 +414,53 @@ export function classifyTransaction(
 ): ClassificationResult {
   const lower = merchant.toLowerCase();
 
-  // Determine transaction class
-  let transactionClass: ClassificationResult["transactionClass"];
-  if (matchesAny(merchant, REFUND_KEYWORDS) && flowType === "inflow") {
-    transactionClass = "refund";
-  } else if (matchesAny(merchant, ["transfer", "xfer", "zelle", "venmo", "wire"])) {
-    transactionClass = "transfer";
-  } else if (flowType === "inflow") {
-    transactionClass = "income";
-  } else {
-    transactionClass = "expense";
-  }
-
-  // Match category
+  // Step 1: Always run keyword matching first
   let category: V1Category = "other";
   let confidence = 0.3;
   let matchedKeyword = "";
 
-  if (transactionClass === "income" && !matchesAny(merchant, ["transfer", "xfer", "zelle", "venmo", "wire"])) {
-    category = "income";
-    confidence = 0.8;
-    matchedKeyword = "inflow";
-  } else {
-    for (const rule of CATEGORY_RULES) {
-      for (const kw of rule.keywords) {
-        if (lower.includes(kw)) {
-          category = rule.category;
-          confidence = rule.confidence;
-          matchedKeyword = kw;
-          break;
-        }
+  for (const rule of CATEGORY_RULES) {
+    for (const kw of rule.keywords) {
+      if (lower.includes(kw)) {
+        category = rule.category;
+        confidence = rule.confidence;
+        matchedKeyword = kw;
+        break;
       }
-      if (matchedKeyword) break;
     }
+    if (matchedKeyword) break;
   }
 
-  // Recurrence hint
+  // Step 2: Determine transaction class, respecting keyword results
+  let transactionClass: ClassificationResult["transactionClass"];
+  let flowOverride: "outflow" | null = null;
+
+  if (matchesAny(merchant, REFUND_KEYWORDS) && flowType === "inflow") {
+    transactionClass = "refund";
+  } else if (matchesAny(merchant, TRANSFER_KEYWORDS)) {
+    transactionClass = "transfer";
+    if (!matchedKeyword) {
+      category = "transfers";
+      confidence = 0.8;
+      matchedKeyword = "transfer";
+    }
+  } else if (matchedKeyword && EXPENSE_CATEGORIES.has(category)) {
+    transactionClass = "expense";
+    if (flowType === "inflow") {
+      flowOverride = "outflow";
+    }
+  } else if (flowType === "inflow") {
+    transactionClass = "income";
+    if (!matchedKeyword) {
+      category = "income";
+      confidence = 0.8;
+      matchedKeyword = "inflow";
+    }
+  } else {
+    transactionClass = "expense";
+  }
+
+  // Step 3: Recurrence hint
   const recurrenceType = matchesAny(merchant, RECURRING_KEYWORDS)
     ? "recurring" as const
     : "one-time" as const;
@@ -456,5 +476,6 @@ export function classifyTransaction(
     labelSource: "rule",
     labelConfidence: confidence,
     labelReason,
+    flowOverride,
   };
 }
