@@ -70,6 +70,21 @@ Phase 4 fixes the CSV parser sign bug and delivers recurring transaction detecti
 
 ---
 
+## Hotfix: Unsigned CSV classification
+
+**Problem:** Bank CSVs with only a single Amount column (all positive, no sign) caused every transaction to be classified as income. The classifier's inflow-to-income shortcut (line 425) skipped keyword matching entirely — Netflix with +15.99 got `category: "income"` instead of `"subscriptions"`.
+
+**Fix (3 parts):**
+1. **Classifier restructure:** keyword rules now run FIRST, before any transactionClass decision. When keywords match an expense-type category (subscriptions, groceries, dining, etc.) but flowType is "inflow", the classifier returns `flowOverride: "outflow"` and sets `transactionClass: "expense"`.
+2. **Route handler:** respects `flowOverride` to correct the stored flowType and negate the amount (positive → negative for outflows).
+3. **CSV parser:** detects Type/Transaction Type/DR-CR columns as an additional sign source. Banking convention: Debit = money out (negative), Credit = money in (positive).
+
+**Impact:** Netflix with unsigned +15.99 now correctly classifies as subscriptions/expense instead of income/income. 11 new tests (8 classifier, 1 integration, 2 CSV parser).
+
+**Test suite:** 158 tests passing (up from 147).
+
+---
+
 ## Known tuning opportunities
 
 - Confidence thresholds could be adjusted after real user data analysis
@@ -82,14 +97,17 @@ Phase 4 fixes the CSV parser sign bug and delivers recurring transaction detecti
 
 | File | Change |
 |------|--------|
-| `server/csvParser.ts` | Fix: prefer debit/credit over unsigned Amount |
-| `server/csvParser.test.ts` | 2 new tests for sign detection |
+| `server/csvParser.ts` | Fix: prefer debit/credit over unsigned Amount; detect Type/DR-CR columns |
+| `server/csvParser.test.ts` | 4 tests: sign detection + Type column detection |
+| `server/classifier.ts` | Keyword-first restructure, flowOverride, TRANSFER_KEYWORDS extraction |
+| `server/classifier.test.ts` | 8 new unsigned-amount classification tests |
+| `server/upload-classification.test.ts` | New: integration test for unsigned CSV pipeline |
 | `shared/schema.ts` | Add recurringReviews table + REVIEW_STATUSES |
 | `server/schema.test.ts` | 2 new tests for schema validation |
 | `server/recurrenceDetector.ts` | New: detection engine |
 | `server/recurrenceDetector.test.ts` | New: 16 tests |
 | `server/storage.ts` | Add upsertRecurringReview, listRecurringReviewsForUser |
-| `server/routes.ts` | 3 new routes: candidates, review upsert, review list |
+| `server/routes.ts` | 3 new routes + flowOverride amount correction in upload path |
 | `server/recurring-routes.test.ts` | New: 3 route tests |
 | `client/src/hooks/use-recurring.ts` | New: TanStack Query hooks |
 | `client/src/pages/Leaks.tsx` | Replace placeholder with full review UI |
