@@ -595,8 +595,6 @@ export function createApp(options?: CreateAppOptions) {
     try {
       const userId = req.session.userId!;
 
-      await reclassifyTransactions(userId);
-
       const q = req.query;
       const dateFrom = typeof q.dateFrom === "string" && /^\d{4}-\d{2}-\d{2}$/.test(q.dateFrom) ? q.dateFrom : undefined;
       const dateTo = typeof q.dateTo === "string" && /^\d{4}-\d{2}-\d{2}$/.test(q.dateTo) ? q.dateTo : undefined;
