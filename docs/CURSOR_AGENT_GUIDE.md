@@ -300,6 +300,7 @@ The Replit environment has capabilities Cursor cannot access:
 | Pitfall | Fix |
 |---|---|
 | POST/PATCH/DELETE returns 403 | You used raw `fetch()` — switch to `apiFetch` from `client/src/lib/api.ts` |
+| `TypeError: Cannot read properties of undefined (reading 'pocketpulse.csrf')` | `cookie-parser` middleware must be registered BEFORE `doubleCsrfProtection` in `createApp()`. Never remove `app.use(cookieParser())` from `server/routes.ts` |
 | Text invisible on light background | You added a `@media (prefers-color-scheme: dark)` block inside `.app-protected` — remove it |
 | DB push fails with ALTER TABLE error | You changed an ID column type — revert to the original (`serial` stays `serial`) |
 | Upload page crashes after adding an account field | Ensure `metadata` JSON field is passed alongside `files[]` in the FormData |
