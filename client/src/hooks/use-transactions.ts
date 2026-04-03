@@ -3,6 +3,7 @@ import {
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
+import { apiFetch } from "../lib/api";
 
 export const transactionsQueryKey = ["transactions"] as const;
 
@@ -107,7 +108,7 @@ export function useTransactions(filters: TransactionFilters) {
 
   const updateMutation = useMutation({
     mutationFn: async ({ id, fields }: { id: number; fields: UpdateTransactionInput }) => {
-      const res = await fetch(`/api/transactions/${id}`, {
+      const res = await apiFetch(`/api/transactions/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(fields),
@@ -122,7 +123,7 @@ export function useTransactions(filters: TransactionFilters) {
 
   const wipeDataMutation = useMutation({
     mutationFn: async () => {
-      const res = await fetch("/api/transactions", {
+      const res = await apiFetch("/api/transactions", {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ confirm: true }),
@@ -137,7 +138,7 @@ export function useTransactions(filters: TransactionFilters) {
 
   const resetWorkspaceMutation = useMutation({
     mutationFn: async () => {
-      const res = await fetch("/api/workspace-data", {
+      const res = await apiFetch("/api/workspace-data", {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ confirm: true }),

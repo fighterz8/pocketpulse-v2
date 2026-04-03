@@ -4,6 +4,7 @@ import {
   useQueryClient,
   type UseMutationResult,
 } from "@tanstack/react-query";
+import { apiFetch } from "../lib/api";
 
 export const authMeQueryKey = ["auth", "me"] as const;
 
@@ -123,7 +124,7 @@ export function useAuth(): UseAuthReturn {
 
   const login = useMutation({
     mutationFn: async (input: LoginInput) => {
-      const res = await fetch("/api/auth/login", {
+      const res = await apiFetch("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(input),
@@ -140,7 +141,7 @@ export function useAuth(): UseAuthReturn {
 
   const register = useMutation({
     mutationFn: async (input: RegisterInput) => {
-      const res = await fetch("/api/auth/register", {
+      const res = await apiFetch("/api/auth/register", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -164,7 +165,7 @@ export function useAuth(): UseAuthReturn {
 
   const logout = useMutation({
     mutationFn: async () => {
-      const res = await fetch("/api/auth/logout", { method: "POST" });
+      const res = await apiFetch("/api/auth/logout", { method: "POST" });
       if (!res.ok) {
         throw new Error(await readJsonError(res));
       }
@@ -181,7 +182,7 @@ export function useAuth(): UseAuthReturn {
         input.lastFour !== undefined && input.lastFour !== ""
           ? input.lastFour.replace(/\D/g, "").slice(0, 4)
           : "";
-      const res = await fetch("/api/accounts", {
+      const res = await apiFetch("/api/accounts", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

@@ -3,6 +3,7 @@ import {
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
+import { apiFetch } from "../lib/api";
 
 export const uploadsQueryKey = ["uploads"] as const;
 
@@ -65,7 +66,7 @@ export function useUploads() {
       }
       formData.append("metadata", JSON.stringify(input.metadata));
 
-      const res = await fetch("/api/upload", {
+      const res = await apiFetch("/api/upload", {
         method: "POST",
         body: formData,
       });
