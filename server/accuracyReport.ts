@@ -248,6 +248,7 @@ export async function computeAccuracyReport(userId: number): Promise<AccuracyRep
     labelSourceBreakdown: sourceCounts,
     correctionRate,
     manualCorrectionCount: manualCorrections,
+    correctionsExist: manualCorrections > 0,
     correctionImpact,
     confidenceDistribution: conf,
     merchantConsistencyRate,

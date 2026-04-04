@@ -13,9 +13,11 @@ import { NotFoundPage } from "./pages/not-found";
 import { Upload } from "./pages/Upload";
 import { createQueryClient } from "./lib/queryClient";
 import { cn } from "./lib/utils";
+import { DEV_MODE_ENABLED } from "@shared/devConfig";
 
 function AppAuthenticated() {
-  const { logout } = useAuth();
+  const { logout, user } = useAuth();
+  const canAccessAccuracy = DEV_MODE_ENABLED && user?.isDev === true;
 
   return (
     <AppLayout
@@ -36,7 +38,7 @@ function AppAuthenticated() {
           <Leaks />
         </Route>
         <Route path="/accuracy">
-          <AccuracyReport />
+          {canAccessAccuracy ? <AccuracyReport /> : <NotFoundPage />}
         </Route>
         <Route>
           <NotFoundPage />

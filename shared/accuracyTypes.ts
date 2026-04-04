@@ -39,6 +39,7 @@ export type AccuracyReport = {
   labelSourceBreakdown: LabelSourceBreakdown;
   correctionRate: number;           // 0–1  (AI-labeled rows manually overridden)
   manualCorrectionCount: number;    // raw total of userCorrected=true rows
+  correctionsExist: boolean;        // true when manualCorrectionCount > 0
   correctionImpact: CorrectionImpact;
   confidenceDistribution: ConfidenceDistribution;
   merchantConsistencyRate: number;  // 0–1
