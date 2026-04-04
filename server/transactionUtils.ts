@@ -63,6 +63,38 @@ const INFLOW_HINT_PATTERNS: RegExp[] = [
 ];
 
 /**
+ * Patterns that specifically indicate a debit/credit-card swipe at a POS
+ * terminal — as opposed to ACH debits, wires, or other outflow types.
+ *
+ * Used to distinguish "card payment via CashApp" (expense) from "ACH transfer
+ * via CashApp" (genuine transfer) without conflating all outflow signals.
+ */
+const DEBIT_CARD_PATTERNS: RegExp[] = [
+  // Navy Federal "-dc NNNN" debit card format
+  /-dc\s+\d+/i,
+  // "DEBIT-DC NNNN" and "POS DEBIT-DC NNNN" variants
+  /debit-?dc\b/i,
+  // "checkcard" / "check card" (common across many credit unions)
+  /\bcheckcard\b/i,
+  /\bcheck card\b/i,
+  // Explicit "debit card" in the description
+  /\bdebit card\b/i,
+  // Point-of-sale markers (card swipe — NOT present on ACH transactions)
+  /\bpos\b/i,
+  /\bpurchase\b/i,
+  /\bpoint of sale\b/i,
+];
+
+/**
+ * Returns true when the raw bank description contains a debit/credit-card
+ * swipe indicator. This is intentionally narrower than getDirectionHint():
+ * "ACH DEBIT CASHAPP" returns false here, while "-dc 4305 CASHAPP" returns true.
+ */
+export function isDebitCardDescription(description: string): boolean {
+  return DEBIT_CARD_PATTERNS.some((p) => p.test(description));
+}
+
+/**
  * Inspects the raw transaction description for directional language.
  * Returns "inflow" or "outflow" when a strong hint is found, null otherwise.
  *
