@@ -10,6 +10,7 @@ https://github.com/fighterz8/pocketpulse-v1
 - **Backend**: Express + tsx on port 5001 (`PORT=5001 SKIP_VITE=1 npx tsx server/index.ts`)
 - **Database**: PostgreSQL via `DATABASE_URL`; Drizzle ORM; schema in `shared/schema.ts`
 - **Auth**: express-session + bcrypt; single-owner workspace
+- **Styling**: Tailwind CSS v3 + existing plain CSS (coexist via `preflight: false`); config at `tailwind.config.cjs` + `postcss.config.cjs`
 
 ## Port Layout
 - Vite dev server: 5000 (proxies `/api` to 5001)
@@ -27,7 +28,9 @@ income, transfers, housing, utilities, groceries, dining, coffee, delivery, conv
 - `server/storage.ts` — Drizzle DB queries
 - `server/transactionUtils.ts` — getDirectionHint() direction detection
 - `client/src/pages/Ledger.tsx` — Ledger with inline editing, AI progress bar, Export CSV
-- `client/src/pages/Dashboard.tsx` — Safe-to-spend, category totals, charts
+- `client/src/pages/Dashboard.tsx` — Tailwind-redesigned: safe-to-spend hero, 30D/60D/90D period selector, recurring/one-time/discretionary KPIs, expense leaks card, category breakdown, trend, recent transactions
+- `client/src/hooks/use-dashboard.ts` — PeriodPreset type, presetToRange helper, enhanced DashboardSummary type
+- `server/dashboardQueries.ts` — Enhanced: recurringIncome, recurringExpenses, oneTimeIncome, oneTimeExpenses, discretionarySpend, safeToSpend, utilitiesMonthly, softwareMonthly, expenseLeaks
 - `client/src/pages/RecurringLeaks.tsx` — Leak review page
 
 ## Features Implemented
