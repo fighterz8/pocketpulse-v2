@@ -28,6 +28,7 @@ import {
   listRecurringReviewsForUser,
   listTransactionsForUser,
   listUploadsForUser,
+  propagateUserCorrection,
   updateTransaction,
   updateUploadStatus,
   upsertRecurringReview,
@@ -801,7 +802,20 @@ export function createApp(options?: CreateAppOptions) {
       }
 
       const updated = await updateTransaction(id, userId, fields);
-      res.json({ transaction: updated });
+
+      // Propagate category/class corrections to same-merchant uncorrected rows.
+      // Only fires when category or transactionClass was explicitly changed.
+      let propagated = 0;
+      if (fields.category !== undefined || fields.transactionClass !== undefined) {
+        propagated = await propagateUserCorrection(
+          userId,
+          id,
+          fields.category,
+          fields.transactionClass,
+        );
+      }
+
+      res.json({ transaction: updated, propagated });
     } catch (e) {
       next(e);
     }

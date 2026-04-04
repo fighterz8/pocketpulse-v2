@@ -1,4 +1,4 @@
-import { and, asc, count, desc, eq, gte, ilike, lte, or, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, gte, ilike, inArray, lte, ne, or, sql } from "drizzle-orm";
 import { DatabaseError } from "pg";
 
 import {
@@ -423,6 +423,103 @@ export async function updateTransaction(
     .returning();
 
   return row ?? null;
+}
+
+/**
+ * Propagates a manual category/class correction to all non-user-corrected
+ * transactions from the same merchant (case-insensitive name match).
+ *
+ * Skips the source transaction itself (already updated by updateTransaction).
+ * Sets labelSource to "propagated" so that reclassify still skips these rows
+ * (they have userCorrected=false but their label reflects the user's intent).
+ *
+ * Returns the number of rows updated.
+ */
+export async function propagateUserCorrection(
+  userId: number,
+  sourceTxnId: number,
+  category?: string,
+  transactionClass?: string,
+): Promise<number> {
+  if (!category && !transactionClass) return 0;
+
+  const [source] = await db
+    .select({ merchant: transactions.merchant })
+    .from(transactions)
+    .where(and(eq(transactions.id, sourceTxnId), eq(transactions.userId, userId)))
+    .limit(1);
+
+  if (!source?.merchant?.trim()) return 0;
+
+  const merchantLower = source.merchant.trim().toLowerCase();
+
+  const setValues: Record<string, unknown> = { labelSource: "propagated" };
+  if (category !== undefined) setValues.category = category;
+  if (transactionClass !== undefined) setValues.transactionClass = transactionClass;
+
+  const updated = await db
+    .update(transactions)
+    .set(setValues)
+    .where(
+      and(
+        eq(transactions.userId, userId),
+        sql`lower(${transactions.merchant}) = ${merchantLower}`,
+        eq(transactions.userCorrected, false),
+        ne(transactions.id, sourceTxnId),
+      ),
+    )
+    .returning({ id: transactions.id });
+
+  return updated.length;
+}
+
+export type UserCorrectionExample = {
+  merchant: string;
+  category: string;
+  transactionClass: string;
+};
+
+/**
+ * Returns up to 100 distinct recent user corrections for use as AI few-shot
+ * examples. Deduplicates by lowercase merchant name (most-recent correction
+ * wins). Includes both manually-corrected and auto-propagated rows.
+ */
+export async function getUserCorrectionExamples(
+  userId: number,
+): Promise<UserCorrectionExample[]> {
+  const rows = await db
+    .select({
+      merchant: transactions.merchant,
+      category: transactions.category,
+      transactionClass: transactions.transactionClass,
+    })
+    .from(transactions)
+    .where(
+      and(
+        eq(transactions.userId, userId),
+        inArray(transactions.labelSource, ["manual", "propagated"]),
+      ),
+    )
+    .orderBy(desc(transactions.id))
+    .limit(400);
+
+  // Deduplicate by lowercase merchant name in application memory — most recent
+  // correction per merchant wins because we ordered by id desc.
+  const seen = new Set<string>();
+  const examples: UserCorrectionExample[] = [];
+  for (const row of rows) {
+    const key = row.merchant.toLowerCase().trim();
+    if (!seen.has(key) && key) {
+      seen.add(key);
+      examples.push({
+        merchant: row.merchant,
+        category: row.category,
+        transactionClass: row.transactionClass,
+      });
+      if (examples.length >= 100) break;
+    }
+  }
+  return examples;
 }
 
 export type BulkTransactionUpdate = {

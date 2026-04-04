@@ -124,14 +124,36 @@ function isValidRecurrenceType(
 }
 
 /**
+ * Build the system prompt, optionally appending a few-shot block of user
+ * corrections so the model mirrors the user's explicit preferences.
+ */
+function buildSystemPrompt(
+  userExamples: Array<{ merchant: string; category: string; transactionClass: string }>,
+): string {
+  if (userExamples.length === 0) return SYSTEM_PROMPT;
+
+  const examplesBlock = userExamples
+    .map((e) => `- "${e.merchant}" → category: ${e.category}, class: ${e.transactionClass}`)
+    .join("\n");
+
+  return (
+    SYSTEM_PROMPT +
+    `\n\nUser corrections — treat these as ground truth when classifying similar merchants:\n${examplesBlock}`
+  );
+}
+
+/**
  * Call GPT-4o-mini with a batch of up to 25 transactions and return typed
  * results. Returns null if the API is unavailable or the response is malformed.
  */
 async function callAiBatch(
   items: AiClassificationInput[],
+  userExamples: Array<{ merchant: string; category: string; transactionClass: string }>,
 ): Promise<AiClassificationResult[] | null> {
   const client = getClient();
   if (!client) return null;
+
+  const systemPrompt = buildSystemPrompt(userExamples);
 
   const userContent = JSON.stringify(
     items.map((item) => ({
@@ -149,7 +171,7 @@ async function callAiBatch(
     temperature: 0,
     max_tokens: 1500,
     messages: [
-      { role: "system", content: SYSTEM_PROMPT },
+      { role: "system", content: systemPrompt },
       {
         role: "user",
         content: `Classify these transactions and respond with JSON matching this schema: { "results": [ { "index": number, "category": string, "transactionClass": string, "recurrenceType": string, "labelConfidence": number, "labelReason": string } ] }\n\n${userContent}`,
@@ -206,6 +228,7 @@ async function callAiBatch(
  */
 export async function aiClassifyBatch(
   items: AiClassificationInput[],
+  userExamples: Array<{ merchant: string; category: string; transactionClass: string }> = [],
 ): Promise<Map<number, AiClassificationResult>> {
   const resultMap = new Map<number, AiClassificationResult>();
   if (items.length === 0) return resultMap;
@@ -239,7 +262,7 @@ export async function aiClassifyBatch(
   for (let i = 0; i < canonical.length; i += CHUNK_SIZE) {
     const chunk = canonical.slice(i, i + CHUNK_SIZE);
     try {
-      const results = await callAiBatch(chunk);
+      const results = await callAiBatch(chunk, userExamples);
       if (results) {
         for (const r of results) {
           canonicalResults.set(r.index, r);

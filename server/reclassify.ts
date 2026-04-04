@@ -1,8 +1,9 @@
 import { classifyTransaction } from "./classifier.js";
 import { aiClassifyBatch, type AiClassificationInput, type AiClassificationResult } from "./ai-classifier.js";
 import {
-  listAllTransactionsForExport,
   bulkUpdateTransactions,
+  getUserCorrectionExamples,
+  listAllTransactionsForExport,
   type BulkTransactionUpdate,
 } from "./storage.js";
 
@@ -48,7 +49,11 @@ export async function reclassifyTransactions(
 
   for (let i = 0; i < allTxns.length; i++) {
     const txn = allTxns[i]!;
-    if (txn.userCorrected) {
+    // Skip transactions that already reflect explicit user intent:
+    //   userCorrected=true  → manually edited by the user
+    //   labelSource="propagated" → auto-applied from a manual correction
+    // Both should be preserved across re-classification runs.
+    if (txn.userCorrected || txn.labelSource === "propagated") {
       result.skippedUserCorrected++;
       continue;
     }
@@ -105,13 +110,22 @@ export async function reclassifyTransactions(
     }
   }
 
+  // Fetch user corrections to inject as few-shot examples into the AI prompt.
+  // Errors here are non-fatal — fall through with an empty list.
+  let userExamples: Awaited<ReturnType<typeof getUserCorrectionExamples>> = [];
+  try {
+    userExamples = await getUserCorrectionExamples(userId);
+  } catch {
+    // Non-fatal; AI will classify without correction context.
+  }
+
   let aiResults: Map<number, AiClassificationResult> = new Map();
   try {
     const AI_TIMEOUT_MS = 90_000;
     const timeout = new Promise<Map<number, AiClassificationResult>>(
       (resolve) => setTimeout(() => resolve(new Map()), AI_TIMEOUT_MS),
     );
-    aiResults = await Promise.race([aiClassifyBatch(aiCandidates), timeout]);
+    aiResults = await Promise.race([aiClassifyBatch(aiCandidates, userExamples), timeout]);
   } catch {
     // AI unavailable — fall through with rules results
   }

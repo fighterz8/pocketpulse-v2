@@ -90,6 +90,18 @@ export function Ledger() {
   const [aiProgress, setAiProgress] = useState(0);
   const aiProgressRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  // Propagation notice: shown briefly after a correction is auto-applied to
+  // same-merchant transactions.
+  const [propagationNotice, setPropagationNotice] = useState<{ merchant: string; count: number } | null>(null);
+  const propagationTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const showPropagationNotice = (merchant: string, count: number) => {
+    if (count <= 0) return;
+    if (propagationTimerRef.current) clearTimeout(propagationTimerRef.current);
+    setPropagationNotice({ merchant, count });
+    propagationTimerRef.current = setTimeout(() => setPropagationNotice(null), 5000);
+  };
+
   const {
     transactions,
     pagination,
@@ -150,6 +162,13 @@ export function Ledger() {
       if (aiProgressRef.current) clearInterval(aiProgressRef.current);
     };
   }, [reclassify.isPending]);
+
+  // Clean up propagation notice timer on unmount.
+  useEffect(() => {
+    return () => {
+      if (propagationTimerRef.current) clearTimeout(propagationTimerRef.current);
+    };
+  }, []);
 
   const handleExport = () => {
     const params = new URLSearchParams();
@@ -345,6 +364,19 @@ export function Ledger() {
         )}
       </motion.div>
 
+      {propagationNotice && (
+        <motion.div
+          className="mb-3 px-4 py-2.5 rounded-xl bg-blue-50 border border-blue-200 text-sm text-blue-700"
+          initial={{ opacity: 0, y: -8 }}
+          animate={{ opacity: 1, y: 0 }}
+          data-testid="propagation-notice"
+        >
+          Also applied to {propagationNotice.count} other{" "}
+          <span className="font-medium">{propagationNotice.merchant}</span>{" "}
+          transaction{propagationNotice.count !== 1 ? "s" : ""}.
+        </motion.div>
+      )}
+
       {error && <p className="ledger-error">{error.message}</p>}
 
       {isLoading && transactions.length === 0 && (
@@ -392,12 +424,28 @@ export function Ledger() {
                     onRowClick={() => handleRowClick(txn.id)}
                     onToggleExclude={() => handleToggleExclude(txn)}
                     onQuickUpdate={(fields) => {
-                      updateTransaction.mutate({ id: txn.id, fields });
+                      updateTransaction.mutate(
+                        { id: txn.id, fields },
+                        {
+                          onSuccess: (data) => {
+                            if (data.propagated > 0) {
+                              showPropagationNotice(txn.merchant, data.propagated);
+                            }
+                          },
+                        },
+                      );
                     }}
                     onSave={(fields) => {
                       updateTransaction.mutate(
                         { id: txn.id, fields },
-                        { onSuccess: () => setEditingId(null) },
+                        {
+                          onSuccess: (data) => {
+                            setEditingId(null);
+                            if (data.propagated > 0) {
+                              showPropagationNotice(txn.merchant, data.propagated);
+                            }
+                          },
+                        },
                       );
                     }}
                     onCancel={() => setEditingId(null)}

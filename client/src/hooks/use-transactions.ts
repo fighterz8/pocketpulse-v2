@@ -114,7 +114,7 @@ export function useTransactions(filters: TransactionFilters) {
         body: JSON.stringify(fields),
       });
       if (!res.ok) throw new Error(await readJsonError(res));
-      return res.json() as Promise<{ transaction: Transaction }>;
+      return res.json() as Promise<{ transaction: Transaction; propagated: number }>;
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: transactionsQueryKey });
