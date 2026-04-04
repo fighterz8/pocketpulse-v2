@@ -338,7 +338,9 @@ export function createApp(options?: CreateAppOptions) {
       await regenerateSession(req);
       req.session.userId = user.id;
       await saveSession(req);
-      res.status(201).json({ user });
+      // Return accounts (empty for new users) so the client can pre-populate
+      // its cache and skip a sequential fetch after the session is established.
+      res.status(201).json({ user, accounts: [] });
     } catch (e) {
       if (e instanceof DuplicateEmailError) {
         res.status(409).json({ error: e.message });
@@ -375,7 +377,10 @@ export function createApp(options?: CreateAppOptions) {
       await regenerateSession(req);
       req.session.userId = record.id;
       await saveSession(req);
-      res.json({ user });
+      // Return accounts alongside user so the client can pre-populate its cache
+      // and skip a sequential fetch after the session is established.
+      const userAccounts = await listAccountsForUser(record.id);
+      res.json({ user, accounts: userAccounts });
     } catch (e) {
       next(e);
     }

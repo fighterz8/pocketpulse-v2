@@ -54,6 +54,9 @@ export type RegisterInput = {
   companyName?: string;
 };
 
+/** Shape returned by POST /api/auth/login and POST /api/auth/register */
+type AuthSuccessResponse = { user: AuthUser; accounts: AuthAccount[] };
+
 async function readJsonError(res: Response): Promise<string> {
   try {
     const body = (await res.json()) as { error?: string };
@@ -78,8 +81,8 @@ export type UseAuthReturn = {
   refetchAccounts: ReturnType<
     typeof useQuery<{ accounts: AuthAccount[] }>
   >["refetch"];
-  login: UseMutationResult<unknown, Error, LoginInput>;
-  register: UseMutationResult<unknown, Error, RegisterInput>;
+  login: UseMutationResult<AuthSuccessResponse, Error, LoginInput>;
+  register: UseMutationResult<AuthSuccessResponse, Error, RegisterInput>;
   createAccount: UseMutationResult<
     { account: AuthAccount },
     Error,
@@ -122,26 +125,37 @@ export function useAuth(): UseAuthReturn {
     },
   });
 
-  const login = useMutation({
-    mutationFn: async (input: LoginInput) => {
+  const login = useMutation<AuthSuccessResponse, Error, LoginInput>({
+    mutationFn: async (input) => {
       const res = await apiFetch("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(input),
       });
-      if (!res.ok) {
-        throw new Error(await readJsonError(res));
-      }
-      return res.json();
+      if (!res.ok) throw new Error(await readJsonError(res));
+      return res.json() as Promise<AuthSuccessResponse>;
     },
-    onSuccess: () => {
-      // Clear the entire cache so no previous user's data survives into this session.
-      queryClient.clear();
+    onSuccess: (data) => {
+      // Immediately populate auth + accounts caches from the response so
+      // AppGate transitions instantly with zero sequential fetches.
+      queryClient.setQueryData<AuthMeResponse>(authMeQueryKey, {
+        authenticated: true,
+        user: data.user,
+      });
+      queryClient.setQueryData(
+        accountsListQueryKey(data.user.id),
+        { accounts: data.accounts },
+      );
+      // Remove any stale data from a previous session (dashboard, ledger, etc.)
+      queryClient.removeQueries({
+        predicate: (q) =>
+          q.queryKey[0] !== "auth" && q.queryKey[0] !== "accounts",
+      });
     },
   });
 
-  const register = useMutation({
-    mutationFn: async (input: RegisterInput) => {
+  const register = useMutation<AuthSuccessResponse, Error, RegisterInput>({
+    mutationFn: async (input) => {
       const res = await apiFetch("/api/auth/register", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -154,14 +168,23 @@ export function useAuth(): UseAuthReturn {
             : {}),
         }),
       });
-      if (!res.ok) {
-        throw new Error(await readJsonError(res));
-      }
-      return res.json();
+      if (!res.ok) throw new Error(await readJsonError(res));
+      return res.json() as Promise<AuthSuccessResponse>;
     },
-    onSuccess: () => {
-      // Clear the entire cache so no previous user's data survives into this session.
-      queryClient.clear();
+    onSuccess: (data) => {
+      // Same instant-transition pattern as login.
+      queryClient.setQueryData<AuthMeResponse>(authMeQueryKey, {
+        authenticated: true,
+        user: data.user,
+      });
+      queryClient.setQueryData(
+        accountsListQueryKey(data.user.id),
+        { accounts: data.accounts },
+      );
+      queryClient.removeQueries({
+        predicate: (q) =>
+          q.queryKey[0] !== "auth" && q.queryKey[0] !== "accounts",
+      });
     },
   });
 
@@ -208,7 +231,18 @@ export function useAuth(): UseAuthReturn {
       }
       return res.json() as Promise<{ account: AuthAccount }>;
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
+      // Immediately push the new account into the cache so AppGate transitions
+      // to AppAuthenticated before the next re-fetch, eliminating a loading flash.
+      if (accountOwnerId != null) {
+        queryClient.setQueryData<{ accounts: AuthAccount[] }>(
+          accountsListQueryKey(accountOwnerId),
+          (prev) => ({
+            accounts: [...(prev?.accounts ?? []), data.account],
+          }),
+        );
+      }
+      // Invalidate in the background to keep the canonical server list in sync.
       void queryClient.invalidateQueries({ queryKey: accountsListQueryRoot });
     },
   });
