@@ -8,6 +8,19 @@ export type DashboardSummary = {
     totalOutflow: number;
     netCashflow: number;
     transactionCount: number;
+    recurringIncome: number;
+    recurringExpenses: number;
+    oneTimeIncome: number;
+    oneTimeExpenses: number;
+    discretionarySpend: number;
+    safeToSpend: number;
+    utilitiesMonthly: number;
+    softwareMonthly: number;
+    periodDays: number;
+  };
+  expenseLeaks: {
+    count: number;
+    monthlyAmount: number;
   };
   categoryBreakdown: Array<{
     category: string;
@@ -31,19 +44,40 @@ export type DashboardSummary = {
   accountCount: number;
 };
 
+export type PeriodPreset = "30D" | "60D" | "90D";
+
+export const PERIOD_DAYS: Record<PeriodPreset, number> = {
+  "30D": 30,
+  "60D": 60,
+  "90D": 90,
+};
+
 export type DashboardFilters = {
+  period?: PeriodPreset;
   dateFrom?: string;
   dateTo?: string;
 };
 
+function presetToRange(preset: PeriodPreset): { dateFrom: string; dateTo: string } {
+  const to = new Date();
+  const from = new Date();
+  from.setDate(to.getDate() - PERIOD_DAYS[preset]);
+  const fmt = (d: Date) => d.toISOString().slice(0, 10);
+  return { dateFrom: fmt(from), dateTo: fmt(to) };
+}
+
 export function useDashboardSummary(filters?: DashboardFilters) {
+  const range = filters?.period
+    ? presetToRange(filters.period)
+    : { dateFrom: filters?.dateFrom, dateTo: filters?.dateTo };
+
   return useQuery<DashboardSummary>({
     queryKey: [...dashboardSummaryQueryKey, filters],
     staleTime: 60_000,
     queryFn: async () => {
       const params = new URLSearchParams();
-      if (filters?.dateFrom) params.set("dateFrom", filters.dateFrom);
-      if (filters?.dateTo) params.set("dateTo", filters.dateTo);
+      if (range.dateFrom) params.set("dateFrom", range.dateFrom);
+      if (range.dateTo) params.set("dateTo", range.dateTo);
       const qs = params.toString();
       const url = `/api/dashboard-summary${qs ? `?${qs}` : ""}`;
       const res = await fetch(url);
