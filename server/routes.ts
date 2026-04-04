@@ -593,6 +593,28 @@ export function createApp(options?: CreateAppOptions) {
     }
   });
 
+  app.get("/api/dashboard/months", requireAuth, async (req, res, next) => {
+    try {
+      const userId = req.session.userId!;
+      const rows = await pool.query<{ month: string; txn_count: string }>(
+        `SELECT SUBSTRING(date, 1, 7) AS month,
+                COUNT(*)              AS txn_count
+         FROM   transactions
+         WHERE  user_id = $1
+           AND  excluded_from_analysis = false
+         GROUP  BY 1
+         ORDER  BY 1 DESC`,
+        [userId],
+      );
+      res.json(rows.rows.map((r) => ({
+        month: r.month,
+        transactionCount: parseInt(r.txn_count, 10),
+      })));
+    } catch (e) {
+      next(e);
+    }
+  });
+
   app.get("/api/dashboard-summary", requireAuth, async (req, res, next) => {
     try {
       const userId = req.session.userId!;

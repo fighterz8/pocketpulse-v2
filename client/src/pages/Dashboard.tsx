@@ -1,8 +1,12 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "wouter";
 import { motion } from "framer-motion";
 
-import { PeriodPreset, useDashboardSummary } from "../hooks/use-dashboard";
+import {
+  formatMonthLabel,
+  useAvailableMonths,
+  useDashboardSummary,
+} from "../hooks/use-dashboard";
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -110,13 +114,99 @@ function safeToSpendStatus(safeToSpend: number, income: number): {
   return { label: "Over budget", badge: "badge-red" };
 }
 
+// ─── Month Pill Selector ─────────────────────────────────────────────────────
+
+function MonthSelector({
+  months,
+  selected,
+  onSelect,
+}: {
+  months: Array<{ month: string; transactionCount: number }>;
+  selected: string | null;
+  onSelect: (month: string | null) => void;
+}) {
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  // Scroll the active pill into view whenever selected changes
+  useEffect(() => {
+    const el = scrollRef.current?.querySelector<HTMLElement>("[data-active='true']");
+    el?.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" });
+  }, [selected]);
+
+  return (
+    <div
+      ref={scrollRef}
+      className="period-selector"
+      data-testid="month-selector"
+      style={{ overflowX: "auto", scrollbarWidth: "none", msOverflowStyle: "none" }}
+    >
+      {/* All Time pill */}
+      <button
+        data-testid="month-btn-all"
+        data-active={selected === null ? "true" : "false"}
+        onClick={() => onSelect(null)}
+        className={`period-btn ${selected === null ? "period-btn--active" : ""}`}
+      >
+        All Time
+      </button>
+
+      {months.map(({ month, transactionCount }) => (
+        <button
+          key={month}
+          data-testid={`month-btn-${month}`}
+          data-active={selected === month ? "true" : "false"}
+          onClick={() => onSelect(month)}
+          className={`period-btn ${selected === month ? "period-btn--active" : ""}`}
+        >
+          {formatMonthLabel(month)}
+          <span
+            className="ml-1.5 text-[10px] opacity-50 font-normal"
+          >
+            {transactionCount}
+          </span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
 // ─── Main component ──────────────────────────────────────────────────────────
 
 export function Dashboard() {
-  const [period, setPeriod] = useState<PeriodPreset>("90D");
-  const { data, isLoading, error } = useDashboardSummary({ period });
+  const [selectedMonth, setSelectedMonth] = useState<string | null>(null);
+  const { data: availableMonths, isLoading: monthsLoading } = useAvailableMonths();
 
-  const periods: PeriodPreset[] = ["30D", "60D", "90D"];
+  // Default to the most recent month with enough data (≥ 20 txns), falling
+  // back to the latest month if none qualifies.
+  useEffect(() => {
+    if (!availableMonths || availableMonths.length === 0) return;
+    const best =
+      availableMonths.find((m) => m.transactionCount >= 20) ??
+      availableMonths[0];
+    setSelectedMonth(best.month);
+  }, [availableMonths]);
+
+  const { data, isLoading, error } = useDashboardSummary({ month: selectedMonth });
+
+  const periodLabel = selectedMonth
+    ? formatMonthLabel(selectedMonth).replace("'", " 20").replace("'", " 20") // e.g. "Feb 2026"
+    : "All Time";
+
+  // Build a proper period label like "February 2026"
+  const periodLabelFull = selectedMonth
+    ? (() => {
+        const [year, mo] = selectedMonth.split("-").map(Number);
+        return new Date(year, mo - 1, 1).toLocaleString("en-US", { month: "long", year: "numeric" });
+      })()
+    : "All Time";
+
+  const monthSelector = monthsLoading ? null : (
+    <MonthSelector
+      months={availableMonths ?? []}
+      selected={selectedMonth}
+      onSelect={setSelectedMonth}
+    />
+  );
 
   const headerRow = (
     <motion.div
@@ -124,31 +214,21 @@ export function Dashboard() {
       initial="hidden"
       animate="visible"
       custom={0}
-      className="flex items-center justify-between mb-6"
+      className="mb-6"
     >
-      <div>
-        <h1 className="dash-title">Dashboard</h1>
-        <p className="dash-subtitle">Cashflow overview for your business</p>
+      <div className="flex items-start justify-between gap-4 mb-3 flex-wrap">
+        <div>
+          <h1 className="dash-title">Dashboard</h1>
+          <p className="dash-subtitle">
+            Cashflow overview · <span className="font-medium text-slate-600">{periodLabelFull}</span>
+          </p>
+        </div>
       </div>
-      <div
-        className="period-selector"
-        data-testid="period-selector"
-      >
-        {periods.map((p) => (
-          <button
-            key={p}
-            data-testid={`period-btn-${p}`}
-            onClick={() => setPeriod(p)}
-            className={`period-btn ${period === p ? "period-btn--active" : ""}`}
-          >
-            {p}
-          </button>
-        ))}
-      </div>
+      {monthSelector}
     </motion.div>
   );
 
-  if (isLoading) {
+  if (isLoading && !data) {
     return (
       <div>
         {headerRow}
@@ -171,10 +251,19 @@ export function Dashboard() {
       <div>
         {headerRow}
         <GlassCard index={1} className="dash-empty-card">
-          <p className="dash-empty-msg">No transaction data yet.</p>
-          <Link href="/upload" className="dash-empty-link" data-testid="link-upload-first">
-            Upload your first CSV →
-          </Link>
+          <p className="dash-empty-msg">No transactions in {periodLabelFull}.</p>
+          {selectedMonth ? (
+            <button
+              className="dash-leaks-link mt-2"
+              onClick={() => setSelectedMonth(null)}
+            >
+              View All Time →
+            </button>
+          ) : (
+            <Link href="/upload" className="dash-empty-link" data-testid="link-upload-first">
+              Upload your first CSV →
+            </Link>
+          )}
         </GlassCard>
       </div>
     );
@@ -215,7 +304,7 @@ export function Dashboard() {
               {spendStatus.label}
             </span>
             <span className="text-xs text-slate-400">
-              Recurring income minus recurring expenses · last {period}
+              Recurring income minus recurring expenses · {periodLabelFull}
             </span>
           </div>
 
@@ -269,8 +358,8 @@ export function Dashboard() {
 
       {/* ── Row 2: 4 KPI cards ─────────────────────────────────────────── */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
-        <KpiCard label="Total Income" value={currencyShort(totals.totalInflow)} sub={`${period} total`} accent="green" data-testid="kpi-total-income" index={3} />
-        <KpiCard label="Total Spending" value={currencyShort(totals.totalOutflow)} sub={`${period} total`} accent="red" data-testid="kpi-total-spending" index={4} />
+        <KpiCard label="Total Income" value={currencyShort(totals.totalInflow)} sub={periodLabel} accent="green" data-testid="kpi-total-income" index={3} />
+        <KpiCard label="Total Spending" value={currencyShort(totals.totalOutflow)} sub={periodLabel} accent="red" data-testid="kpi-total-spending" index={4} />
         <KpiCard label="Recurring Income" value={currencyShort(totals.recurringIncome)} sub="Baseline revenue" accent="green" data-testid="kpi-recurring-income" index={5} />
         <KpiCard label="Recurring Expenses" value={currencyShort(totals.recurringExpenses)} sub="Baseline costs" accent="red" data-testid="kpi-recurring-expenses" index={6} />
       </div>
@@ -279,13 +368,13 @@ export function Dashboard() {
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
         <KpiCard label="One-Time Income" value={currencyShort(totals.oneTimeIncome)} sub="Non-recurring revenue" accent="blue" data-testid="kpi-one-time-income" index={7} />
         <KpiCard label="One-Time Expenses" value={currencyShort(totals.oneTimeExpenses)} sub="Non-recurring costs" accent="neutral" data-testid="kpi-one-time-expenses" index={8} />
-        <KpiCard label="Discretionary Spend" value={currencyShort(totals.discretionarySpend)} sub={`${period} — dining, coffee, delivery…`} accent="neutral" data-testid="kpi-discretionary-spend" index={9} />
+        <KpiCard label="Discretionary Spend" value={currencyShort(totals.discretionarySpend)} sub={`${periodLabel} · dining, coffee, delivery…`} accent="neutral" data-testid="kpi-discretionary-spend" index={9} />
       </div>
 
       {/* ── Row 4: Monthly baselines ───────────────────────────────────── */}
       <div className="grid grid-cols-2 gap-4 mb-4">
-        <KpiCard label="Utilities / Month" value={currency(totals.utilitiesMonthly)} sub={`${period} avg`} accent="neutral" data-testid="kpi-utilities-monthly" index={10} />
-        <KpiCard label="Software & Subscriptions / Month" value={currency(totals.softwareMonthly)} sub={`${period} avg`} accent="neutral" data-testid="kpi-software-monthly" index={11} />
+        <KpiCard label="Utilities / Month" value={currency(totals.utilitiesMonthly)} sub={`${periodLabel} avg`} accent="neutral" data-testid="kpi-utilities-monthly" index={10} />
+        <KpiCard label="Software & Subscriptions / Month" value={currency(totals.softwareMonthly)} sub={`${periodLabel} avg`} accent="neutral" data-testid="kpi-software-monthly" index={11} />
       </div>
 
       {/* ── Row 5: Spending by category + Monthly trend ────────────────── */}
@@ -336,8 +425,15 @@ export function Dashboard() {
                 </thead>
                 <tbody>
                   {monthlyTrend.map((m) => (
-                    <tr key={m.month} className="border-b border-slate-50 last:border-0">
-                      <td className="py-2 text-slate-600 text-xs">{m.month}</td>
+                    <tr
+                      key={m.month}
+                      className={`border-b border-slate-50 last:border-0 cursor-pointer hover:bg-blue-50/30 transition-colors ${selectedMonth === m.month ? "bg-blue-50/40" : ""}`}
+                      onClick={() => setSelectedMonth(m.month)}
+                      title={`View ${m.month}`}
+                    >
+                      <td className="py-2 text-slate-600 text-xs font-medium">
+                        {formatMonthLabel(m.month)}
+                      </td>
                       <td className="py-2 text-right text-xs font-medium text-emerald-600">{currency(m.inflow)}</td>
                       <td className="py-2 text-right text-xs font-medium text-red-500">{currency(m.outflow)}</td>
                       <td className={`py-2 text-right text-xs font-bold ${m.net >= 0 ? "text-emerald-600" : "text-red-500"}`}>
@@ -356,9 +452,7 @@ export function Dashboard() {
       <GlassCard index={14} className="mb-4">
         <div className="flex items-center justify-between mb-4">
           <h2 className="glass-section-title">Recent Transactions</h2>
-          <Link href="/transactions" data-testid="link-view-all-transactions" className="text-xs text-blue-600 font-medium hover:underline">
-            View all →
-          </Link>
+          <span className="text-xs text-slate-400">{periodLabelFull}</span>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
@@ -375,8 +469,8 @@ export function Dashboard() {
                 const n = parseFloat(txn.amount);
                 return (
                   <tr key={txn.id} className="border-b border-slate-50 last:border-0">
-                    <td className="py-2 text-xs text-slate-400">{txn.date}</td>
-                    <td className="py-2 text-xs text-slate-700 max-w-[160px] truncate">{txn.merchant}</td>
+                    <td className="py-2 text-slate-500 text-xs">{txn.date}</td>
+                    <td className="py-2 text-slate-700 text-xs font-medium truncate max-w-[140px]">{txn.merchant}</td>
                     <td className="py-2">
                       <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-50 text-blue-700 capitalize">
                         {txn.category}
