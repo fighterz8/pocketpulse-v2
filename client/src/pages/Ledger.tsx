@@ -12,11 +12,6 @@ import { V1_CATEGORIES } from "../../../shared/schema";
 
 const CLASS_OPTIONS = ["income", "expense", "transfer", "refund"] as const;
 const RECURRENCE_OPTIONS = ["recurring", "one-time"] as const;
-const EXCLUDED_OPTIONS = [
-  { value: "", label: "All" },
-  { value: "false", label: "Active" },
-  { value: "true", label: "Excluded" },
-] as const;
 
 function formatAmount(amount: string, txnClass: string): string {
   const n = parseFloat(amount);
@@ -119,17 +114,10 @@ export function Ledger() {
     setEditingId((prev) => (prev === id ? null : id));
   };
 
-  const handleToggleExclude = (txn: Transaction) => {
-    updateTransaction.mutate({
-      id: txn.id,
-      fields: { excludedFromAnalysis: !txn.excludedFromAnalysis },
-    });
-  };
-
   const hasAnyFilter = !!(
     filters.search || filters.category || filters.transactionClass ||
     filters.recurrenceType || filters.dateFrom || filters.dateTo ||
-    filters.excluded || filters.accountId
+    filters.accountId
   );
 
   const clearFilters = () => {
@@ -178,7 +166,6 @@ export function Ledger() {
     if (filters.recurrenceType)  params.set("recurrenceType", filters.recurrenceType);
     if (filters.dateFrom)        params.set("dateFrom", filters.dateFrom);
     if (filters.dateTo)          params.set("dateTo", filters.dateTo);
-    if (filters.excluded)        params.set("excluded", filters.excluded);
     if (filters.accountId)       params.set("accountId", String(filters.accountId));
     const url = `/api/transactions/export?${params.toString()}`;
     const a = document.createElement("a");
@@ -274,16 +261,6 @@ export function Ledger() {
             <option value="">All recurrence</option>
             {RECURRENCE_OPTIONS.map((r) => (
               <option key={r} value={r}>{r}</option>
-            ))}
-          </select>
-
-          <select
-            className="ledger-filter-select"
-            value={filters.excluded ?? ""}
-            onChange={(e) => setFilter("excluded", e.target.value as TransactionFilters["excluded"])}
-          >
-            {EXCLUDED_OPTIONS.map((o) => (
-              <option key={o.value} value={o.value}>{o.label}</option>
             ))}
           </select>
 
@@ -405,7 +382,6 @@ export function Ledger() {
             <table className="ledger-table">
               <thead>
                 <tr>
-                  <th className="ledger-th-toggle"></th>
                   <th>Date</th>
                   <th>Merchant</th>
                   <th className="ledger-th-right">Amount</th>
@@ -422,7 +398,6 @@ export function Ledger() {
                     txn={txn}
                     isEditing={editingId === txn.id}
                     onRowClick={() => handleRowClick(txn.id)}
-                    onToggleExclude={() => handleToggleExclude(txn)}
                     onQuickUpdate={(fields) => {
                       updateTransaction.mutate(
                         { id: txn.id, fields },
@@ -575,30 +550,19 @@ type TransactionRowProps = {
   txn: Transaction;
   isEditing: boolean;
   onRowClick: () => void;
-  onToggleExclude: () => void;
   onQuickUpdate: (fields: UpdateTransactionInput) => void;
   onSave: (fields: UpdateTransactionInput) => void;
   onCancel: () => void;
   isSaving: boolean;
 };
 
-function TransactionRow({ txn, isEditing, onRowClick, onToggleExclude, onQuickUpdate, onSave, onCancel, isSaving }: TransactionRowProps) {
+function TransactionRow({ txn, isEditing, onRowClick, onQuickUpdate, onSave, onCancel, isSaving }: TransactionRowProps) {
   return (
     <>
       <tr
-        className={`ledger-row--clickable ${txn.excludedFromAnalysis ? "ledger-row--excluded" : ""} ${isEditing ? "ledger-row--selected" : ""}`}
+        className={`ledger-row--clickable ${isEditing ? "ledger-row--selected" : ""}`}
         onClick={onRowClick}
       >
-        <td className="ledger-td-toggle">
-          <button
-            className={`ledger-exclude-toggle ${txn.excludedFromAnalysis ? "ledger-exclude-toggle--active" : ""}`}
-            title={txn.excludedFromAnalysis ? "Include in analysis" : "Exclude from analysis"}
-            onClick={(e) => { e.stopPropagation(); onToggleExclude(); }}
-            data-testid={`btn-exclude-${txn.id}`}
-          >
-            {txn.excludedFromAnalysis ? "X" : ""}
-          </button>
-        </td>
         <td className="ledger-td-date">{txn.date}</td>
         <td className="ledger-td-merchant" title={txn.rawDescription}>
           {txn.merchant}
@@ -649,13 +613,12 @@ function TransactionRow({ txn, isEditing, onRowClick, onToggleExclude, onQuickUp
           </select>
         </td>
         <td className="ledger-td-status">
-          {txn.excludedFromAnalysis && <span className="ledger-badge ledger-badge--excluded">excluded</span>}
           {txn.userCorrected && <span className="ledger-badge ledger-badge--edited">edited</span>}
         </td>
       </tr>
       {isEditing && (
         <tr className="ledger-edit-row">
-          <td colSpan={8}>
+          <td colSpan={7}>
             <EditPanel txn={txn} onSave={onSave} onCancel={onCancel} isSaving={isSaving} />
           </td>
         </tr>
@@ -675,8 +638,6 @@ function EditPanel({ txn, onSave, onCancel, isSaving }: EditPanelProps) {
   const [date, setDate] = useState(txn.date);
   const [merchant, setMerchant] = useState(txn.merchant);
   const [amount, setAmount] = useState(txn.amount);
-  const [excluded, setExcluded] = useState(txn.excludedFromAnalysis);
-  const [excludedReason, setExcludedReason] = useState(txn.excludedReason ?? "");
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -684,10 +645,6 @@ function EditPanel({ txn, onSave, onCancel, isSaving }: EditPanelProps) {
     if (date !== txn.date) fields.date = date;
     if (merchant !== txn.merchant) fields.merchant = merchant;
     if (amount !== txn.amount) fields.amount = amount;
-    if (excluded !== txn.excludedFromAnalysis) fields.excludedFromAnalysis = excluded;
-    if (excludedReason !== (txn.excludedReason ?? "")) {
-      fields.excludedReason = excludedReason || null;
-    }
     if (Object.keys(fields).length === 0) {
       onCancel();
       return;
@@ -710,27 +667,6 @@ function EditPanel({ txn, onSave, onCancel, isSaving }: EditPanelProps) {
           <span className="ledger-edit-label">Amount</span>
           <input type="text" className="ledger-edit-input" value={amount} onChange={(e) => setAmount(e.target.value)} disabled={isSaving} />
         </label>
-      </div>
-      <div className="ledger-edit-exclude-row">
-        <label className="ledger-edit-checkbox">
-          <input
-            type="checkbox"
-            checked={excluded}
-            onChange={(e) => setExcluded(e.target.checked)}
-            disabled={isSaving}
-          />
-          <span>Exclude from analysis</span>
-        </label>
-        {excluded && (
-          <input
-            type="text"
-            className="ledger-edit-input ledger-edit-reason"
-            placeholder="Reason (optional)"
-            value={excludedReason}
-            onChange={(e) => setExcludedReason(e.target.value)}
-            disabled={isSaving}
-          />
-        )}
       </div>
       <div className="ledger-edit-actions">
         <button type="submit" className="ledger-edit-save" disabled={isSaving}>
