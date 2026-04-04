@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { motion } from "framer-motion";
 
 import {
   useRecurringCandidates,
@@ -6,6 +7,15 @@ import {
   type RecurringCandidate,
   type ReviewStatus,
 } from "../hooks/use-recurring";
+
+const fadeUp = {
+  hidden: { opacity: 0, y: 14 },
+  visible: (i: number = 0) => ({
+    opacity: 1,
+    y: 0,
+    transition: { duration: 0.35, delay: i * 0.06, ease: [0.25, 0, 0, 1] as [number, number, number, number] },
+  }),
+};
 
 type FilterTab = "all" | ReviewStatus;
 
@@ -37,10 +47,12 @@ function CandidateCard({
   candidate,
   onReview,
   isPending,
+  index = 0,
 }: {
   candidate: RecurringCandidate;
   onReview: (key: string, status: ReviewStatus) => void;
   isPending: boolean;
+  index?: number;
 }) {
   const statusClass =
     candidate.reviewStatus !== "unreviewed"
@@ -48,7 +60,13 @@ function CandidateCard({
       : "";
 
   return (
-    <div className={`leaks-card ${statusClass}`}>
+    <motion.div
+      custom={index}
+      variants={fadeUp}
+      initial="hidden"
+      animate="visible"
+      className={`leaks-card glass-card ${statusClass}`}
+    >
       <div className="leaks-card-header">
         <div className="leaks-card-merchant">{candidate.merchantDisplay}</div>
         <div className="leaks-card-amount">
@@ -95,7 +113,7 @@ function CandidateCard({
           Dismiss
         </button>
       </div>
-    </div>
+    </motion.div>
   );
 }
 
@@ -135,9 +153,23 @@ export function Leaks() {
 
   return (
     <>
-      <h1 className="app-page-title">Recurring Leak Review</h1>
+      <motion.h1
+        className="app-page-title"
+        variants={fadeUp}
+        initial="hidden"
+        animate="visible"
+        custom={0}
+      >
+        Recurring Leak Review
+      </motion.h1>
 
-      <div className="leaks-summary">
+      <motion.div
+        className="leaks-summary glass-card"
+        variants={fadeUp}
+        initial="hidden"
+        animate="visible"
+        custom={1}
+      >
         <div className="leaks-summary-item">
           <span className="leaks-summary-count">{summary.total}</span>
           <span className="leaks-summary-label">Total</span>
@@ -158,9 +190,15 @@ export function Leaks() {
           <span className="leaks-summary-count">{summary.dismissed}</span>
           <span className="leaks-summary-label">Dismissed</span>
         </div>
-      </div>
+      </motion.div>
 
-      <div className="leaks-tabs">
+      <motion.div
+        className="leaks-tabs"
+        variants={fadeUp}
+        initial="hidden"
+        animate="visible"
+        custom={2}
+      >
         {TABS.map((tab) => (
           <button
             key={tab.key}
@@ -170,22 +208,29 @@ export function Leaks() {
             {tab.label}
           </button>
         ))}
-      </div>
+      </motion.div>
 
       {filtered.length === 0 ? (
-        <p className="leaks-empty">
+        <motion.p
+          className="leaks-empty"
+          variants={fadeUp}
+          initial="hidden"
+          animate="visible"
+          custom={3}
+        >
           {activeTab === "all"
             ? "No recurring patterns detected. Upload more transactions for better detection."
             : `No ${activeTab} candidates.`}
-        </p>
+        </motion.p>
       ) : (
         <div className="leaks-grid">
-          {filtered.map((c) => (
+          {filtered.map((c, i) => (
             <CandidateCard
               key={c.candidateKey}
               candidate={c}
               onReview={handleReview}
               isPending={reviewMutation.isPending}
+              index={i + 3}
             />
           ))}
         </div>

@@ -2,6 +2,13 @@ import { type ReactNode } from "react";
 import { Link, useLocation } from "wouter";
 import { cn } from "../../lib/utils";
 
+const NAV_ITEMS = [
+  { href: "/", label: "Dashboard" },
+  { href: "/transactions", label: "Ledger" },
+  { href: "/leaks", label: "Recurring Leak Review" },
+  { href: "/upload", label: "Upload" },
+] as const;
+
 export function AppLayout({
   children,
   onLogout,
@@ -13,51 +20,46 @@ export function AppLayout({
 }) {
   const [location] = useLocation();
 
-  const linkClass = (path: string) =>
-    cn("app-nav-link", location === path && "app-nav-link--active");
-
   return (
     <div className="app-protected">
       <aside className="app-sidebar">
-        <p className="app-nav-brand">PocketPulse</p>
+        <div className="app-sidebar-brand">
+          <span className="app-sidebar-brand-dot" />
+          <p className="app-nav-brand">PocketPulse</p>
+        </div>
+
         <nav className="app-nav" aria-label="Main navigation">
           <ul className="app-nav-list">
-            <li>
-              <Link href="/" className={linkClass("/")}>
-                Dashboard
-              </Link>
-            </li>
-            <li>
-              <Link
-                href="/transactions"
-                className={linkClass("/transactions")}
-              >
-                Ledger
-              </Link>
-            </li>
-            <li>
-              <Link href="/leaks" className={linkClass("/leaks")}>
-                Recurring Leak Review
-              </Link>
-            </li>
-            <li style={{ marginTop: "1rem" }}>
-              <Link href="/upload" className={linkClass("/upload")}>
-                Upload
-              </Link>
-            </li>
+            {NAV_ITEMS.map(({ href, label }) => {
+              const isActive = location === href;
+              return (
+                <li key={href}>
+                  <Link
+                    href={href}
+                    data-testid={`nav-link-${label.toLowerCase().replace(/\s+/g, "-")}`}
+                    className={cn("app-nav-link", isActive && "app-nav-link--active")}
+                  >
+                    {label}
+                  </Link>
+                </li>
+              );
+            })}
           </ul>
         </nav>
+
         <div className="app-sidebar-footer">
           <button
             type="button"
             className="app-nav-logout"
             disabled={logoutPending}
             onClick={() => onLogout()}
+            data-testid="btn-logout"
           >
             {logoutPending ? "Signing out…" : "Logout"}
           </button>
         </div>
       </aside>
+
       <main className="app-layout-main">{children}</main>
     </div>
   );

@@ -1,4 +1,5 @@
 import { useCallback, useRef, useState } from "react";
+import { motion } from "framer-motion";
 import { useAuth, type AuthAccount } from "../hooks/use-auth";
 import { useUploads, type UploadFileResult } from "../hooks/use-uploads";
 
@@ -132,11 +133,24 @@ export function Upload() {
 
   return (
     <>
-      <h1 className="app-page-title">Upload Statements</h1>
+      <motion.h1
+        className="app-page-title"
+        initial={{ opacity: 0, y: 14 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.35 }}
+      >
+        Upload Statements
+      </motion.h1>
 
       {/* Results banner */}
       {hasResults && (
-        <div className="upload-results" data-testid="upload-results">
+        <motion.div
+          className="upload-results glass-card"
+          data-testid="upload-results"
+          initial={{ opacity: 0, y: 14 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.35, delay: 0.07 }}
+        >
           {allSuccess ? (
             <div className="upload-results-success">
               <p className="upload-results-headline">
@@ -190,12 +204,16 @@ export function Upload() {
           >
             Upload more files
           </button>
-        </div>
+        </motion.div>
       )}
 
       {/* Queue UI */}
       {!hasResults && (
-        <>
+        <motion.div
+          initial={{ opacity: 0, y: 14 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.35, delay: 0.07 }}
+        >
           {/* Drop zone */}
           <div
             className="upload-dropzone"
@@ -245,7 +263,7 @@ export function Upload() {
 
           {/* Queued file list */}
           {queue.length > 0 && (
-            <div className="upload-queue" data-testid="upload-queue">
+            <div className="upload-queue glass-card" data-testid="upload-queue">
               <h2 className="upload-queue-title">
                 {queue.length} file{queue.length !== 1 ? "s" : ""} ready
               </h2>
@@ -305,7 +323,7 @@ export function Upload() {
               </button>
             </div>
           )}
-        </>
+        </motion.div>
       )}
     </>
   );

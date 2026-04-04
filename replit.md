@@ -46,6 +46,15 @@ income, transfers, housing, utilities, groceries, dining, coffee, delivery, conv
 - Safe-to-spend dashboard with date range selection
 - Wipe/reset workspace actions
 
+## UI Design System (Glass Dashboard)
+- **Theme**: Light blue gradient background, glass-style white cards, fixed left sidebar
+- **Glass Card**: `.glass-card` utility class — white/semi-transparent bg, border, box-shadow, backdrop-filter
+- **Sidebar**: PocketPulse wordmark + dot, 4 nav links (Dashboard, Ledger, Recurring Leak Review, Upload), active item solid blue (#2563eb)
+- **Animations**: Framer Motion fade-in + slide-up (`motion.div` with fadeUp variants, staggered by index)
+- **Dashboard**: Safe-to-Spend hero card (2/3 wide), Expense Leaks card (1/3), 4 KPI row, 3 KPI row, category + trend cards, recent transactions, tech-stack footer
+- **KPI Cards**: `.kpi-label`, `.kpi-value`, `.kpi-sub` — uppercase label, bold value, sub text
+- **All pages** (Ledger, Leaks, Upload) use the same glass card system for consistency
+
 ## CSRF Rule
 All non-GET API calls MUST use `apiFetch` from `client/src/lib/api.ts`
 

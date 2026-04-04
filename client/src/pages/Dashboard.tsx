@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Link } from "wouter";
+import { motion } from "framer-motion";
 
 import { PeriodPreset, useDashboardSummary } from "../hooks/use-dashboard";
 
@@ -33,13 +34,38 @@ function capitalize(s: string): string {
   return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
-// ─── Sub-components ─────────────────────────────────────────────────────────
+// ─── Animation variants ──────────────────────────────────────────────────────
 
-function Card({ children, className = "" }: { children: React.ReactNode; className?: string }) {
+const fadeUp = {
+  hidden: { opacity: 0, y: 18 },
+  visible: (i: number = 0) => ({
+    opacity: 1,
+    y: 0,
+    transition: { duration: 0.4, delay: i * 0.07, ease: [0.25, 0, 0, 1] as [number, number, number, number] },
+  }),
+};
+
+// ─── Glass Card ──────────────────────────────────────────────────────────────
+
+function GlassCard({
+  children,
+  className = "",
+  index = 0,
+}: {
+  children: React.ReactNode;
+  className?: string;
+  index?: number;
+}) {
   return (
-    <div className={`bg-white border border-gray-200 rounded-xl shadow-sm p-5 ${className}`}>
+    <motion.div
+      custom={index}
+      variants={fadeUp}
+      initial="hidden"
+      animate="visible"
+      className={`glass-card ${className}`}
+    >
       {children}
-    </div>
+    </motion.div>
   );
 }
 
@@ -49,25 +75,27 @@ function KpiCard({
   sub,
   accent = "neutral",
   "data-testid": testId,
+  index = 0,
 }: {
   label: string;
   value: string;
   sub?: string;
   accent?: "green" | "red" | "blue" | "neutral";
   "data-testid"?: string;
+  index?: number;
 }) {
   const colorMap = {
     green: "text-emerald-600",
     red: "text-red-500",
     blue: "text-blue-600",
-    neutral: "text-gray-800",
+    neutral: "text-slate-800",
   };
   return (
-    <Card>
-      <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-1">{label}</p>
-      <p data-testid={testId} className={`text-2xl font-bold ${colorMap[accent]}`}>{value}</p>
-      {sub && <p className="text-xs text-gray-400 mt-1">{sub}</p>}
-    </Card>
+    <GlassCard index={index}>
+      <p className="kpi-label">{label}</p>
+      <p data-testid={testId} className={`kpi-value ${colorMap[accent]}`}>{value}</p>
+      {sub && <p className="kpi-sub">{sub}</p>}
+    </GlassCard>
   );
 }
 
@@ -75,11 +103,11 @@ function safeToSpendStatus(safeToSpend: number, income: number): {
   label: string;
   badge: string;
 } {
-  if (income === 0) return { label: "No income data", badge: "bg-gray-100 text-gray-500" };
-  if (safeToSpend > income * 0.2) return { label: "Healthy buffer", badge: "bg-emerald-100 text-emerald-700" };
-  if (safeToSpend > 0) return { label: "Tight but positive", badge: "bg-yellow-100 text-yellow-700" };
-  if (safeToSpend > -income * 0.2) return { label: "Slightly over", badge: "bg-orange-100 text-orange-700" };
-  return { label: "Over budget", badge: "bg-red-100 text-red-600" };
+  if (income === 0) return { label: "No income data", badge: "badge-neutral" };
+  if (safeToSpend > income * 0.2) return { label: "Healthy buffer", badge: "badge-green" };
+  if (safeToSpend > 0) return { label: "Tight but positive", badge: "badge-yellow" };
+  if (safeToSpend > -income * 0.2) return { label: "Slightly over", badge: "badge-orange" };
+  return { label: "Over budget", badge: "badge-red" };
 }
 
 // ─── Main component ──────────────────────────────────────────────────────────
@@ -91,33 +119,33 @@ export function Dashboard() {
   const periods: PeriodPreset[] = ["30D", "60D", "90D"];
 
   const headerRow = (
-    <div className="flex items-center justify-between mb-6">
+    <motion.div
+      variants={fadeUp}
+      initial="hidden"
+      animate="visible"
+      custom={0}
+      className="flex items-center justify-between mb-6"
+    >
       <div>
-        <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
-        <p className="text-sm text-gray-500 mt-0.5">Cashflow overview for your business</p>
+        <h1 className="dash-title">Dashboard</h1>
+        <p className="dash-subtitle">Cashflow overview for your business</p>
       </div>
-      <div className="flex items-center gap-2">
-        <div
-          className="flex rounded-lg border border-gray-200 overflow-hidden"
-          data-testid="period-selector"
-        >
-          {periods.map((p) => (
-            <button
-              key={p}
-              data-testid={`period-btn-${p}`}
-              onClick={() => setPeriod(p)}
-              className={`px-3 py-1.5 text-sm font-medium transition-colors ${
-                period === p
-                  ? "bg-blue-600 text-white"
-                  : "bg-white text-gray-600 hover:bg-gray-50"
-              }`}
-            >
-              {p}
-            </button>
-          ))}
-        </div>
+      <div
+        className="period-selector"
+        data-testid="period-selector"
+      >
+        {periods.map((p) => (
+          <button
+            key={p}
+            data-testid={`period-btn-${p}`}
+            onClick={() => setPeriod(p)}
+            className={`period-btn ${period === p ? "period-btn--active" : ""}`}
+          >
+            {p}
+          </button>
+        ))}
       </div>
-    </div>
+    </motion.div>
   );
 
   if (isLoading) {
@@ -142,12 +170,12 @@ export function Dashboard() {
     return (
       <div>
         {headerRow}
-        <div className="dash-empty">
-          <p>No transaction data yet.</p>
-          <Link href="/upload" className="dash-empty-link">
+        <GlassCard index={1} className="dash-empty-card">
+          <p className="dash-empty-msg">No transaction data yet.</p>
+          <Link href="/upload" className="dash-empty-link" data-testid="link-upload-first">
             Upload your first CSV →
           </Link>
-        </div>
+        </GlassCard>
       </div>
     );
   }
@@ -156,7 +184,15 @@ export function Dashboard() {
   const totalSpending = categoryBreakdown.reduce((s, c) => s + c.total, 0);
   const safeToSpend = totals.safeToSpend;
   const spendStatus = safeToSpendStatus(safeToSpend, totals.recurringIncome);
-  const safeColor = safeToSpend > 0 ? "text-emerald-600" : safeToSpend > -totals.recurringIncome * 0.2 ? "text-orange-500" : "text-red-500";
+  const safeColor = safeToSpend > 0
+    ? "text-emerald-600"
+    : safeToSpend > -totals.recurringIncome * 0.2
+    ? "text-orange-500"
+    : "text-red-500";
+
+  const recurringRatio = totals.recurringIncome > 0
+    ? Math.min(100, (totals.recurringExpenses / Math.max(totals.recurringIncome, totals.recurringExpenses)) * 100)
+    : 0;
 
   return (
     <div>
@@ -164,75 +200,53 @@ export function Dashboard() {
 
       {/* ── Row 1: Safe-to-Spend Hero + Expense Leaks ─────────────────── */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-4">
-        {/* Safe-to-Spend Card */}
-        <Card className="lg:col-span-2">
-          <div className="flex items-start justify-between">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-2">
-                Safe-to-Spend Estimate
-              </p>
-              <p
-                data-testid="safe-to-spend-value"
-                className={`text-5xl font-extrabold tracking-tight ${safeColor}`}
-              >
-                {currency(safeToSpend)}
-              </p>
-              <div className="flex items-center gap-2 mt-3">
-                <span
-                  className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold ${spendStatus.badge}`}
-                >
-                  {spendStatus.label}
-                </span>
-                <span className="text-xs text-gray-400">
-                  Recurring income minus recurring expenses · last {period}
-                </span>
-              </div>
-            </div>
-            <div className="text-right hidden sm:block">
-              <p className="text-xs text-gray-400 mb-1">Net cashflow</p>
-              <p
-                data-testid="net-cashflow-value"
-                className={`text-lg font-bold ${totals.netCashflow >= 0 ? "text-emerald-600" : "text-red-500"}`}
-              >
-                {currency(totals.netCashflow)}
-              </p>
-              <p className="text-xs text-gray-400 mt-1">{totals.transactionCount.toLocaleString()} transactions</p>
-            </div>
+        {/* Safe-to-Spend Hero */}
+        <GlassCard className="lg:col-span-2" index={1}>
+          <p className="kpi-label">Safe-to-Spend Estimate</p>
+          <p
+            data-testid="safe-to-spend-value"
+            className={`dash-hero-value ${safeColor}`}
+          >
+            {currency(safeToSpend)}
+          </p>
+
+          <div className="flex items-center gap-2 mt-3 flex-wrap">
+            <span className={`dash-badge ${spendStatus.badge}`}>
+              {spendStatus.label}
+            </span>
+            <span className="text-xs text-slate-400">
+              Recurring income minus recurring expenses · last {period}
+            </span>
           </div>
 
-          {/* Simple indicator bar */}
           <div className="mt-5">
-            <div className="flex justify-between text-xs text-gray-400 mb-1">
+            <div className="flex justify-between text-xs text-slate-400 mb-1.5">
               <span>Recurring expenses</span>
               <span>Recurring income</span>
             </div>
-            <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+            <div className="h-2 bg-blue-50 rounded-full overflow-hidden border border-blue-100">
               {totals.recurringIncome > 0 && (
                 <div
                   className={`h-full rounded-full transition-all ${safeToSpend >= 0 ? "bg-emerald-500" : "bg-red-400"}`}
-                  style={{
-                    width: `${Math.min(100, (totals.recurringExpenses / Math.max(totals.recurringIncome, totals.recurringExpenses)) * 100)}%`,
-                  }}
+                  style={{ width: `${recurringRatio}%` }}
                 />
               )}
             </div>
-            <div className="flex justify-between text-xs mt-1">
-              <span className="text-red-500 font-medium">{currency(totals.recurringExpenses)}</span>
-              <span className="text-emerald-600 font-medium">{currency(totals.recurringIncome)}</span>
+            <div className="flex justify-between text-xs mt-1.5">
+              <span className="text-red-500 font-semibold">{currency(totals.recurringExpenses)}</span>
+              <span className="text-emerald-600 font-semibold">{currency(totals.recurringIncome)}</span>
             </div>
           </div>
-        </Card>
+        </GlassCard>
 
-        {/* Expense Leaks Card */}
-        <Card className="flex flex-col justify-between">
+        {/* Expense Leaks */}
+        <GlassCard className="flex flex-col justify-between" index={2}>
           <div>
-            <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-2">
-              Expense Leaks
-            </p>
-            <p data-testid="leak-count" className="text-4xl font-extrabold text-gray-900">
+            <p className="kpi-label">Expense Leaks</p>
+            <p data-testid="leak-count" className="dash-hero-value text-slate-900">
               {expenseLeaks.count > 0 ? expenseLeaks.count : "—"}
             </p>
-            <p className="text-sm text-gray-500 mt-1">
+            <p className="text-sm text-slate-500 mt-1">
               {expenseLeaks.count > 0
                 ? `${expenseLeaks.count} recurring charge${expenseLeaks.count !== 1 ? "s" : ""} marked as leaks`
                 : "No leaks flagged yet"}
@@ -246,147 +260,87 @@ export function Dashboard() {
           <Link
             href="/leaks"
             data-testid="link-review-leaks"
-            className="mt-4 block text-center text-sm font-semibold text-blue-600 border border-blue-200 rounded-lg px-4 py-2 hover:bg-blue-50 transition-colors"
+            className="dash-leaks-link"
           >
             Review Recurring →
           </Link>
-        </Card>
+        </GlassCard>
       </div>
 
       {/* ── Row 2: 4 KPI cards ─────────────────────────────────────────── */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
-        <KpiCard
-          label="Total Income"
-          value={currencyShort(totals.totalInflow)}
-          sub={`${period} total`}
-          accent="green"
-          data-testid="kpi-total-income"
-        />
-        <KpiCard
-          label="Total Spending"
-          value={currencyShort(totals.totalOutflow)}
-          sub={`${period} total`}
-          accent="red"
-          data-testid="kpi-total-spending"
-        />
-        <KpiCard
-          label="Recurring Income"
-          value={currencyShort(totals.recurringIncome)}
-          sub="Baseline revenue"
-          accent="green"
-          data-testid="kpi-recurring-income"
-        />
-        <KpiCard
-          label="Recurring Expenses"
-          value={currencyShort(totals.recurringExpenses)}
-          sub="Baseline costs"
-          accent="red"
-          data-testid="kpi-recurring-expenses"
-        />
+        <KpiCard label="Total Income" value={currencyShort(totals.totalInflow)} sub={`${period} total`} accent="green" data-testid="kpi-total-income" index={3} />
+        <KpiCard label="Total Spending" value={currencyShort(totals.totalOutflow)} sub={`${period} total`} accent="red" data-testid="kpi-total-spending" index={4} />
+        <KpiCard label="Recurring Income" value={currencyShort(totals.recurringIncome)} sub="Baseline revenue" accent="green" data-testid="kpi-recurring-income" index={5} />
+        <KpiCard label="Recurring Expenses" value={currencyShort(totals.recurringExpenses)} sub="Baseline costs" accent="red" data-testid="kpi-recurring-expenses" index={6} />
       </div>
 
       {/* ── Row 3: 3 KPI cards ─────────────────────────────────────────── */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
-        <KpiCard
-          label="One-Time Income"
-          value={currencyShort(totals.oneTimeIncome)}
-          sub="Non-recurring revenue"
-          accent="blue"
-          data-testid="kpi-one-time-income"
-        />
-        <KpiCard
-          label="One-Time Expenses"
-          value={currencyShort(totals.oneTimeExpenses)}
-          sub="Non-recurring costs"
-          accent="neutral"
-          data-testid="kpi-one-time-expenses"
-        />
-        <KpiCard
-          label="Discretionary Spend"
-          value={currencyShort(totals.discretionarySpend)}
-          sub={`${period} — dining, coffee, delivery…`}
-          accent="neutral"
-          data-testid="kpi-discretionary-spend"
-        />
+        <KpiCard label="One-Time Income" value={currencyShort(totals.oneTimeIncome)} sub="Non-recurring revenue" accent="blue" data-testid="kpi-one-time-income" index={7} />
+        <KpiCard label="One-Time Expenses" value={currencyShort(totals.oneTimeExpenses)} sub="Non-recurring costs" accent="neutral" data-testid="kpi-one-time-expenses" index={8} />
+        <KpiCard label="Discretionary Spend" value={currencyShort(totals.discretionarySpend)} sub={`${period} — dining, coffee, delivery…`} accent="neutral" data-testid="kpi-discretionary-spend" index={9} />
       </div>
 
       {/* ── Row 4: Monthly baselines ───────────────────────────────────── */}
-      <div className="grid grid-cols-2 gap-4 mb-6">
-        <KpiCard
-          label="Utilities / Month"
-          value={currency(totals.utilitiesMonthly)}
-          sub={`${period} avg`}
-          accent="neutral"
-          data-testid="kpi-utilities-monthly"
-        />
-        <KpiCard
-          label="Software & Subscriptions / Month"
-          value={currency(totals.softwareMonthly)}
-          sub={`${period} avg`}
-          accent="neutral"
-          data-testid="kpi-software-monthly"
-        />
+      <div className="grid grid-cols-2 gap-4 mb-4">
+        <KpiCard label="Utilities / Month" value={currency(totals.utilitiesMonthly)} sub={`${period} avg`} accent="neutral" data-testid="kpi-utilities-monthly" index={10} />
+        <KpiCard label="Software & Subscriptions / Month" value={currency(totals.softwareMonthly)} sub={`${period} avg`} accent="neutral" data-testid="kpi-software-monthly" index={11} />
       </div>
 
       {/* ── Row 5: Spending by category + Monthly trend ────────────────── */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
-        <Card>
-          <h2 className="text-sm font-semibold text-gray-700 mb-4">Spending by Category</h2>
+        <GlassCard index={12}>
+          <h2 className="glass-section-title mb-4">Spending by Category</h2>
           {categoryBreakdown.length === 0 ? (
             <p className="app-placeholder">No outflow transactions.</p>
           ) : (
             <ul className="space-y-3">
               {categoryBreakdown.map((cat) => (
                 <li key={cat.category} className="flex items-center gap-3">
-                  <span className="w-24 shrink-0 text-xs text-gray-600 capitalize truncate">
+                  <span className="w-24 shrink-0 text-xs text-slate-600 capitalize truncate">
                     {capitalize(cat.category)}
                   </span>
-                  <div className="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                  <div className="flex-1 h-1.5 bg-blue-50 rounded-full overflow-hidden border border-blue-100">
                     <div
                       className="h-full bg-blue-400 rounded-full"
                       style={{ width: pct(cat.total, totalSpending) }}
                     />
                   </div>
-                  <span className="text-xs font-medium text-gray-700 w-20 text-right shrink-0">
+                  <span className="text-xs font-medium text-slate-700 w-20 text-right shrink-0">
                     {currency(cat.total)}
                   </span>
-                  <span className="text-xs text-gray-400 w-10 text-right shrink-0">
+                  <span className="text-xs text-slate-400 w-10 text-right shrink-0">
                     {pct(cat.total, totalSpending)}
                   </span>
                 </li>
               ))}
             </ul>
           )}
-        </Card>
+        </GlassCard>
 
-        <Card>
-          <h2 className="text-sm font-semibold text-gray-700 mb-4">Monthly Trend</h2>
+        <GlassCard index={13}>
+          <h2 className="glass-section-title mb-4">Monthly Trend</h2>
           {monthlyTrend.length === 0 ? (
             <p className="app-placeholder">No monthly data.</p>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b border-gray-100">
-                    <th className="text-left text-xs font-semibold text-gray-500 pb-2">Month</th>
-                    <th className="text-right text-xs font-semibold text-gray-500 pb-2">Income</th>
-                    <th className="text-right text-xs font-semibold text-gray-500 pb-2">Spending</th>
-                    <th className="text-right text-xs font-semibold text-gray-500 pb-2">Net</th>
+                  <tr className="border-b border-slate-100">
+                    <th className="text-left text-xs font-semibold text-slate-400 pb-2">Month</th>
+                    <th className="text-right text-xs font-semibold text-slate-400 pb-2">Income</th>
+                    <th className="text-right text-xs font-semibold text-slate-400 pb-2">Spending</th>
+                    <th className="text-right text-xs font-semibold text-slate-400 pb-2">Net</th>
                   </tr>
                 </thead>
                 <tbody>
                   {monthlyTrend.map((m) => (
-                    <tr key={m.month} className="border-b border-gray-50 last:border-0">
-                      <td className="py-2 text-gray-700 text-xs">{m.month}</td>
-                      <td className="py-2 text-right text-xs font-medium text-emerald-600">
-                        {currency(m.inflow)}
-                      </td>
-                      <td className="py-2 text-right text-xs font-medium text-red-500">
-                        {currency(m.outflow)}
-                      </td>
-                      <td
-                        className={`py-2 text-right text-xs font-bold ${m.net >= 0 ? "text-emerald-600" : "text-red-500"}`}
-                      >
+                    <tr key={m.month} className="border-b border-slate-50 last:border-0">
+                      <td className="py-2 text-slate-600 text-xs">{m.month}</td>
+                      <td className="py-2 text-right text-xs font-medium text-emerald-600">{currency(m.inflow)}</td>
+                      <td className="py-2 text-right text-xs font-medium text-red-500">{currency(m.outflow)}</td>
+                      <td className={`py-2 text-right text-xs font-bold ${m.net >= 0 ? "text-emerald-600" : "text-red-500"}`}>
                         {currency(m.net)}
                       </td>
                     </tr>
@@ -395,46 +349,40 @@ export function Dashboard() {
               </table>
             </div>
           )}
-        </Card>
+        </GlassCard>
       </div>
 
       {/* ── Row 6: Recent Transactions ────────────────────────────────── */}
-      <Card>
+      <GlassCard index={14} className="mb-4">
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-sm font-semibold text-gray-700">Recent Transactions</h2>
-          <Link
-            href="/transactions"
-            data-testid="link-view-all-transactions"
-            className="text-xs text-blue-600 font-medium hover:underline"
-          >
+          <h2 className="glass-section-title">Recent Transactions</h2>
+          <Link href="/transactions" data-testid="link-view-all-transactions" className="text-xs text-blue-600 font-medium hover:underline">
             View all →
           </Link>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-gray-100">
-                <th className="text-left text-xs font-semibold text-gray-500 pb-2">Date</th>
-                <th className="text-left text-xs font-semibold text-gray-500 pb-2">Merchant</th>
-                <th className="text-left text-xs font-semibold text-gray-500 pb-2">Category</th>
-                <th className="text-right text-xs font-semibold text-gray-500 pb-2">Amount</th>
+              <tr className="border-b border-slate-100">
+                <th className="text-left text-xs font-semibold text-slate-400 pb-2">Date</th>
+                <th className="text-left text-xs font-semibold text-slate-400 pb-2">Merchant</th>
+                <th className="text-left text-xs font-semibold text-slate-400 pb-2">Category</th>
+                <th className="text-right text-xs font-semibold text-slate-400 pb-2">Amount</th>
               </tr>
             </thead>
             <tbody>
               {recentTransactions.map((txn) => {
                 const n = parseFloat(txn.amount);
                 return (
-                  <tr key={txn.id} className="border-b border-gray-50 last:border-0">
-                    <td className="py-2 text-xs text-gray-500">{txn.date}</td>
-                    <td className="py-2 text-xs text-gray-800 max-w-[160px] truncate">{txn.merchant}</td>
+                  <tr key={txn.id} className="border-b border-slate-50 last:border-0">
+                    <td className="py-2 text-xs text-slate-400">{txn.date}</td>
+                    <td className="py-2 text-xs text-slate-700 max-w-[160px] truncate">{txn.merchant}</td>
                     <td className="py-2">
-                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600 capitalize">
+                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-50 text-blue-700 capitalize">
                         {txn.category}
                       </span>
                     </td>
-                    <td
-                      className={`py-2 text-right text-xs font-semibold ${n >= 0 ? "text-emerald-600" : "text-red-500"}`}
-                    >
+                    <td className={`py-2 text-right text-xs font-semibold ${n >= 0 ? "text-emerald-600" : "text-red-500"}`}>
                       {currency(n)}
                     </td>
                   </tr>
@@ -443,7 +391,18 @@ export function Dashboard() {
             </tbody>
           </table>
         </div>
-      </Card>
+      </GlassCard>
+
+      {/* ── Tech-stack footer ──────────────────────────────────────────── */}
+      <motion.p
+        variants={fadeUp}
+        initial="hidden"
+        animate="visible"
+        custom={15}
+        className="dash-tech-footer"
+      >
+        React · TailwindCSS · Framer Motion · Chart.js · Glass UI
+      </motion.p>
     </div>
   );
 }

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { motion } from "framer-motion";
 import { useAuth } from "../hooks/use-auth";
 import {
   useTransactions,
@@ -148,8 +149,21 @@ export function Ledger() {
 
   return (
     <>
-      <h1 className="app-page-title">Ledger</h1>
+      <motion.h1
+        className="app-page-title"
+        initial={{ opacity: 0, y: 14 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.35 }}
+      >
+        Ledger
+      </motion.h1>
 
+      <motion.div
+        initial={{ opacity: 0, y: 14 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.35, delay: 0.07 }}
+        className="glass-card mb-4"
+      >
       <div className="ledger-filters">
         <div className="ledger-search-row">
           <input
@@ -250,9 +264,15 @@ export function Ledger() {
           </div>
         </div>
       </div>
+      </motion.div>
 
       {/* AI Re-categorization */}
-      <div className="ledger-ai-section">
+      <motion.div
+        className="ledger-ai-section glass-card mb-4"
+        initial={{ opacity: 0, y: 14 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.35, delay: 0.14 }}
+      >
         <div className="ledger-ai-header">
           <div>
             <h3 className="ledger-ai-title">AI Categorization</h3>
@@ -300,7 +320,7 @@ export function Ledger() {
             {(reclassify.error as Error)?.message ?? "An error occurred. Please try again."}
           </p>
         )}
-      </div>
+      </motion.div>
 
       {error && <p className="ledger-error">{error.message}</p>}
 
@@ -309,7 +329,7 @@ export function Ledger() {
       )}
 
       {!isLoading && transactions.length === 0 && !error && (
-        <div className="ledger-empty">
+        <div className="ledger-empty glass-card">
           <p className="ledger-empty-text">
             {hasAnyFilter ? "No transactions match your filters." : "No transactions yet."}
           </p>
@@ -321,7 +341,12 @@ export function Ledger() {
 
       {transactions.length > 0 && (
         <>
-          <div className="ledger-table-wrap">
+          <motion.div
+            className="ledger-table-wrap glass-card"
+            initial={{ opacity: 0, y: 14 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.35, delay: 0.21 }}
+          >
             <table className="ledger-table">
               <thead>
                 <tr>
@@ -358,7 +383,7 @@ export function Ledger() {
                 ))}
               </tbody>
             </table>
-          </div>
+          </motion.div>
 
           {pagination && pagination.totalPages > 1 && (
             <div className="ledger-pagination">
@@ -392,7 +417,7 @@ export function Ledger() {
       )}
 
       {/* Danger zone */}
-      <div className="ledger-danger-zone">
+      <div className="ledger-danger-zone glass-card">
         <h3 className="ledger-danger-title">Data Management</h3>
         <div className="ledger-danger-actions">
           {!wipeConfirm ? (
