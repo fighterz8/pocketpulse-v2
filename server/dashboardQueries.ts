@@ -181,7 +181,10 @@ export async function buildDashboardSummary(
       oneTimeIncome,
       oneTimeExpenses,
       discretionarySpend,
-      safeToSpend: recurringIncome - recurringExpenses,
+      // Net cashflow is a more honest "safe to spend" than recurring-only math.
+      // Most small-business expenses are one-time (invoices, supplies, etc.),
+      // so recurring-only understates costs significantly.
+      safeToSpend: totalInflow - totalOutflow,
       utilitiesMonthly,
       softwareMonthly,
       periodDays,

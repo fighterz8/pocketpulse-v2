@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { motion } from "framer-motion";
+import { useLocation } from "wouter";
 import { useAuth } from "../hooks/use-auth";
 import {
   useTransactions,
@@ -33,9 +34,12 @@ function amountColorClass(txnClass: string): string {
 
 export function Ledger() {
   const { accounts } = useAuth();
+  const [location] = useLocation();
 
-  // Initialise filters from URL search params so dashboard cards can deep-link here
-  const [filters, setFilters] = useState<TransactionFilters>(() => {
+  // Initialise filters from URL search params so dashboard cards can deep-link here.
+  // The useState initialiser handles fresh mounts; the useEffect handles the case
+  // where the component is already mounted and location changes (e.g. browser back/fwd).
+  const filtersFromUrl = (): TransactionFilters => {
     const p = new URLSearchParams(window.location.search);
     return {
       page: 1,
@@ -46,7 +50,16 @@ export function Ledger() {
       dateFrom: p.get("dateFrom") ?? undefined,
       dateTo: p.get("dateTo") ?? undefined,
     };
-  });
+  };
+
+  const [filters, setFilters] = useState<TransactionFilters>(filtersFromUrl);
+
+  // Re-sync when the route changes (e.g. clicking a dashboard card while already on /transactions)
+  useEffect(() => {
+    setFilters(filtersFromUrl());
+    setSearchInput("");
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location]);
 
   const [searchInput, setSearchInput] = useState("");
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);

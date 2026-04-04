@@ -48,7 +48,7 @@ function monthToDateRange(month: string): { dateFrom: string; dateTo: string } {
   return { dateFrom: d(from), dateTo: d(to) };
 }
 
-/** Build a /ledger URL with the given query params. */
+/** Build a /transactions URL with the given query params. */
 function ledgerUrl(
   params: Record<string, string | undefined>,
   dateRange?: { dateFrom?: string; dateTo?: string },
@@ -57,7 +57,7 @@ function ledgerUrl(
   const all = { ...dateRange, ...params };
   Object.entries(all).forEach(([k, v]) => { if (v) qp.set(k, v); });
   const qs = qp.toString();
-  return `/ledger${qs ? `?${qs}` : ""}`;
+  return `/transactions${qs ? `?${qs}` : ""}`;
 }
 
 // ─── Animation variants ──────────────────────────────────────────────────────
@@ -139,14 +139,16 @@ function KpiCard({
   );
 }
 
-function safeToSpendStatus(safeToSpend: number, income: number): {
+function safeToSpendStatus(netCashflow: number, totalInflow: number): {
   label: string;
   badge: string;
 } {
-  if (income === 0) return { label: "No income data", badge: "badge-neutral" };
-  if (safeToSpend > income * 0.2) return { label: "Healthy buffer", badge: "badge-green" };
-  if (safeToSpend > 0) return { label: "Tight but positive", badge: "badge-yellow" };
-  if (safeToSpend > -income * 0.2) return { label: "Slightly over", badge: "badge-orange" };
+  if (totalInflow === 0) return { label: "No income data", badge: "badge-neutral" };
+  const ratio = netCashflow / totalInflow;
+  if (ratio > 0.2) return { label: "Healthy surplus", badge: "badge-green" };
+  if (ratio > 0.05) return { label: "Positive cashflow", badge: "badge-green" };
+  if (ratio >= 0) return { label: "Break-even", badge: "badge-yellow" };
+  if (ratio > -0.15) return { label: "Spending over income", badge: "badge-orange" };
   return { label: "Over budget", badge: "badge-red" };
 }
 
@@ -300,15 +302,15 @@ export function Dashboard() {
   const totalSpending = spendingCategories.reduce((s, c) => s + c.total, 0);
 
   const safeToSpend = totals.safeToSpend;
-  const spendStatus = safeToSpendStatus(safeToSpend, totals.recurringIncome);
+  const spendStatus = safeToSpendStatus(safeToSpend, totals.totalInflow);
   const safeColor = safeToSpend > 0
     ? "text-emerald-600"
-    : safeToSpend > -totals.recurringIncome * 0.2
+    : safeToSpend > -totals.totalInflow * 0.15
     ? "text-orange-500"
     : "text-red-500";
 
-  const recurringRatio = totals.recurringIncome > 0
-    ? Math.min(100, (totals.recurringExpenses / Math.max(totals.recurringIncome, totals.recurringExpenses)) * 100)
+  const spendRatio = totals.totalInflow > 0
+    ? Math.min(100, (totals.totalOutflow / Math.max(totals.totalInflow, totals.totalOutflow)) * 100)
     : 0;
 
   return (
@@ -317,13 +319,13 @@ export function Dashboard() {
 
       {/* ── Row 1: Safe-to-Spend Hero + Expense Leaks ─────────────────── */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-4">
-        {/* Safe-to-Spend Hero — links to all recurring transactions */}
+        {/* Safe-to-Spend Hero — net cashflow = total income − total spending */}
         <GlassCard
           className="lg:col-span-2"
           index={1}
-          href={ledgerUrl({ recurrenceType: "recurring" }, dateRange)}
+          href={ledgerUrl({}, dateRange)}
         >
-          <p className="kpi-label">Safe-to-Spend Estimate</p>
+          <p className="kpi-label">Net Cashflow (Safe to Spend)</p>
           <p data-testid="safe-to-spend-value" className={`dash-hero-value ${safeColor}`}>
             {currency(safeToSpend)}
           </p>
@@ -331,29 +333,29 @@ export function Dashboard() {
           <div className="flex items-center gap-2 mt-3 flex-wrap">
             <span className={`dash-badge ${spendStatus.badge}`}>{spendStatus.label}</span>
             <span className="text-xs text-slate-400">
-              Recurring income minus recurring expenses · {periodLabelFull}
+              Total income minus total spending · {periodLabelFull}
             </span>
           </div>
 
           <div className="mt-5">
             <div className="flex justify-between text-xs text-slate-400 mb-1.5">
-              <span>Recurring expenses</span>
-              <span>Recurring income</span>
+              <span>Total spending</span>
+              <span>Total income</span>
             </div>
             <div className="h-2 bg-blue-50 rounded-full overflow-hidden border border-blue-100">
-              {totals.recurringIncome > 0 && (
+              {totals.totalInflow > 0 && (
                 <div
                   className={`h-full rounded-full transition-all ${safeToSpend >= 0 ? "bg-emerald-500" : "bg-red-400"}`}
-                  style={{ width: `${recurringRatio}%` }}
+                  style={{ width: `${spendRatio}%` }}
                 />
               )}
             </div>
             <div className="flex justify-between text-xs mt-1.5">
-              <span className="text-red-500 font-semibold">{currency(totals.recurringExpenses)}</span>
-              <span className="text-emerald-600 font-semibold">{currency(totals.recurringIncome)}</span>
+              <span className="text-red-500 font-semibold">{currency(totals.totalOutflow)}</span>
+              <span className="text-emerald-600 font-semibold">{currency(totals.totalInflow)}</span>
             </div>
           </div>
-          <p className="kpi-drill mt-4">View recurring transactions →</p>
+          <p className="kpi-drill mt-4">View all transactions →</p>
         </GlassCard>
 
         {/* Expense Leaks — links to /leaks page */}
