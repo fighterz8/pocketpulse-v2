@@ -199,7 +199,10 @@ export async function parseCSV(
     return { ok: false, error: `File "${filename}" is empty` };
   }
 
-  const content = buffer.toString("utf-8").trim();
+  // Strip UTF-8 BOM (\uFEFF) if present. Some bank export tools (including
+  // Bank of America) prepend a BOM that makes the first header cell read as
+  // "\uFEFFDate" instead of "Date", breaking column detection.
+  const content = buffer.toString("utf-8").trimStart().replace(/^\uFEFF/, "").trim();
   if (!content) {
     return { ok: false, error: `File "${filename}" is empty` };
   }
@@ -225,19 +228,36 @@ export async function parseCSV(
   const warnings: string[] = [];
 
   // ── Column detection ────────────────────────────────────────────────────────
-  // First try header-based detection. If that fails, attempt positional fallback
-  // for headerless formats (e.g. Wells Fargo).
-  const firstRow = records[0]!;
-  let mapping: ColumnMapping;
+  // Strategy (in order):
+  //   1. Header-based detection on row 0.
+  //   2. Preamble-row scan: if row 0 fails, try rows 1–4 as the header.
+  //      Some bank exports (e.g. BoA) begin with 1–2 account-summary lines
+  //      before the actual column headers.
+  //   3. Positional fallback for headerless formats (e.g. Wells Fargo).
+  let mapping: ColumnMapping | null = null;
   let dataRows: string[][];
   let usedPositionalFallback = false;
 
-  const headerResult = detectColumns(firstRow);
-  if (typeof headerResult === "string") {
-    // Header-based detection failed — try positional fallback
-    const positional = tryPositionalFallback(firstRow);
+  const MAX_PREAMBLE_ROWS = 4; // scan up to the 5th row (index 0–4)
+
+  let headerRowIndex = -1;
+  let firstDetectionError = "";
+
+  for (let i = 0; i <= Math.min(MAX_PREAMBLE_ROWS, records.length - 1); i++) {
+    const result = detectColumns(records[i]!);
+    if (typeof result !== "string") {
+      headerRowIndex = i;
+      mapping = result;
+      break;
+    }
+    if (i === 0) firstDetectionError = result; // keep original error for reporting
+  }
+
+  if (mapping === null) {
+    // Header-based detection failed on all scanned rows — try positional fallback
+    const positional = tryPositionalFallback(records[0]!);
     if (!positional) {
-      return { ok: false, error: headerResult };
+      return { ok: false, error: firstDetectionError };
     }
     mapping = positional;
     dataRows = records; // no header row to skip
@@ -247,8 +267,13 @@ export async function parseCSV(
       "Verify that amounts and descriptions look correct after upload.",
     );
   } else {
-    mapping = headerResult;
-    dataRows = records.slice(1);
+    if (headerRowIndex > 0) {
+      warnings.push(
+        `Skipped ${headerRowIndex} preamble row${headerRowIndex > 1 ? "s" : ""} before the column header. ` +
+        "This is normal for some bank exports (e.g. Bank of America).",
+      );
+    }
+    dataRows = records.slice(headerRowIndex + 1);
   }
 
   if (dataRows.length === 0) {

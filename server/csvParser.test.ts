@@ -384,4 +384,51 @@ describe("parseCSV", () => {
     expect(payment).toBeDefined();
     expect(payment.amount).toBeGreaterThan(0);
   });
+
+  // ── BOM stripping ──────────────────────────────────────────────────────────
+  // Real BoA exports prepend a UTF-8 BOM (\uFEFF). Without stripping it, the
+  // first header cell becomes "\uFEFFDate" instead of "Date", causing column
+  // detection to fail. The fix strips the BOM before parsing.
+  it("parses a CSV that starts with a UTF-8 BOM (BoA real-world export)", async () => {
+    // Prepend BOM bytes (EF BB BF in UTF-8) to a standard BoA checking CSV string
+    const csvStr = "\uFEFFDate,Description,Amount,Running Bal.\n" +
+      "01/15/2026,NETFLIX INC,-15.99,5000.00\n" +
+      "01/16/2026,PAYROLL DEPOSIT,3500.00,8500.00\n";
+    const buf = Buffer.from(csvStr, "utf-8");
+
+    const result = await parseCSV(buf, "boa_checking_bom.csv");
+    expect(result.ok).toBe(true);
+    const { rows } = result as CSVParseResult & { ok: true };
+    expect(rows).toHaveLength(2);
+    expect(rows[0]!.date).toBe("2026-01-15");
+    expect(rows[0]!.description).toBe("NETFLIX INC");
+    expect(rows[0]!.amount).toBe(-15.99);
+  });
+
+  // ── Preamble-row scanning ──────────────────────────────────────────────────
+  // Some BoA export variants begin with 1–2 account-summary lines before the
+  // actual column headers. Without preamble-row scanning, the parser treats the
+  // first line as the header, fails column detection, and returns an error.
+  // The fix scans up to 5 rows looking for a valid header.
+  it("parses a CSV with 1 preamble row before the column header (BoA real-world export)", async () => {
+    const csvStr =
+      // Preamble row — account summary, not a header
+      '"Beginning balance as of 01/01/2026","","","5000.00"\n' +
+      // Actual column header on row 1
+      "Date,Description,Amount,Running Bal.\n" +
+      "01/15/2026,NETFLIX INC,-15.99,4984.01\n" +
+      "01/16/2026,STARBUCKS,-5.75,4978.26\n";
+    const buf = Buffer.from(csvStr, "utf-8");
+
+    const result = await parseCSV(buf, "boa_preamble.csv");
+    expect(result.ok).toBe(true);
+    const { rows } = result as CSVParseResult & { ok: true };
+    expect(rows).toHaveLength(2);
+    expect(rows[0]!.date).toBe("2026-01-15");
+    expect(rows[0]!.amount).toBe(-15.99);
+    // Warning should note that 1 preamble row was skipped
+    if (result.ok) {
+      expect(result.warnings.some((w) => w.includes("preamble"))).toBe(true);
+    }
+  });
 });

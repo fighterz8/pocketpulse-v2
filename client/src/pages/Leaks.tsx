@@ -123,20 +123,20 @@ function SummaryBar({
       variants={fadeUp} initial="hidden" animate="visible" custom={1}
     >
       <div className="glass-card text-center py-3">
-        <p className="text-xl font-bold text-slate-800">{fmtShort(summary.totalMonthlyActive)}</p>
-        <p className="text-xs text-slate-500 mt-0.5">Active/month</p>
+        <p className="text-xl font-bold text-slate-800 dark:text-slate-100">{fmtShort(summary.totalMonthlyActive)}</p>
+        <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Active/month</p>
       </div>
       <div className="glass-card text-center py-3">
         <p className="text-xl font-bold text-red-500">{fmtShort(summary.totalMonthlyLeak)}</p>
-        <p className="text-xs text-slate-500 mt-0.5">Leaks/month</p>
+        <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Leaks/month</p>
       </div>
       <div className="glass-card text-center py-3">
         <p className="text-xl font-bold text-red-400">{fmtShort(summary.totalMonthlyLeak * 12)}</p>
-        <p className="text-xs text-slate-500 mt-0.5">Leak cost/year</p>
+        <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Leak cost/year</p>
       </div>
       <div className="glass-card text-center py-3">
         <p className="text-xl font-bold text-amber-500">{needReview}</p>
-        <p className="text-xs text-slate-500 mt-0.5">Need review</p>
+        <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Need review</p>
       </div>
     </motion.div>
   );
@@ -178,7 +178,7 @@ function CandidateCard({
       {/* Left: name + badges */}
       <div className="flex-1 min-w-0">
         <div className="flex items-start gap-2 flex-wrap mb-1.5">
-          <span className="font-semibold text-slate-800 text-sm leading-snug">
+          <span className="font-semibold text-slate-800 dark:text-slate-100 text-sm leading-snug">
             {c.merchantDisplay}
           </span>
           {!c.isActive && (
@@ -193,7 +193,7 @@ function CandidateCard({
           )}
         </div>
 
-        <div className="flex items-center gap-2 flex-wrap text-xs text-slate-500">
+        <div className="flex items-center gap-2 flex-wrap text-xs text-slate-500 dark:text-slate-400">
           <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-medium ${categoryColor(c.category)}`}>
             {capitalize(c.category)}
           </span>
@@ -205,14 +205,14 @@ function CandidateCard({
           {c.isActive && (
             <>
               <span>·</span>
-              <span className={c.daysSinceExpected > 0 ? "text-orange-500" : "text-slate-400"}>
+              <span className={c.daysSinceExpected > 0 ? "text-orange-500" : "text-slate-400 dark:text-slate-500"}>
                 {dayLabel(c.daysSinceExpected)}
               </span>
             </>
           )}
         </div>
 
-        <p className="text-xs text-slate-400 mt-1.5 leading-snug">{c.reasonFlagged}</p>
+        <p className="text-xs text-slate-400 dark:text-slate-500 mt-1.5 leading-snug">{c.reasonFlagged}</p>
 
         {/* Confidence bar */}
         <div className="flex items-center gap-2 mt-2">
@@ -222,19 +222,19 @@ function CandidateCard({
               style={{ width: `${Math.round(c.confidence * 100)}%` }}
             />
           </div>
-          <span className="text-[10px] text-slate-400">{Math.round(c.confidence * 100)}% confidence</span>
+          <span className="text-[10px] text-slate-400 dark:text-slate-500">{Math.round(c.confidence * 100)}% confidence</span>
         </div>
       </div>
 
       {/* Center: amounts */}
       <div className="flex flex-row sm:flex-col items-center sm:items-end justify-between sm:justify-center gap-1 sm:min-w-[110px] sm:text-right">
         <div>
-          <p className={`text-lg font-bold leading-none ${c.reviewStatus === "leak" ? "text-red-500" : "text-slate-800"}`}>
-            {fmt(c.monthlyEquivalent)}<span className="text-xs font-normal text-slate-400">/mo</span>
+          <p className={`text-lg font-bold leading-none ${c.reviewStatus === "leak" ? "text-red-500" : "text-slate-800 dark:text-slate-100"}`}>
+            {fmt(c.monthlyEquivalent)}<span className="text-xs font-normal text-slate-400 dark:text-slate-500">/mo</span>
           </p>
-          <p className="text-xs text-slate-400 mt-0.5">{fmt(c.annualEquivalent)}/yr</p>
+          <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">{fmt(c.annualEquivalent)}/yr</p>
         </div>
-        <p className="text-xs text-slate-400">avg {fmt(c.averageAmount)}</p>
+        <p className="text-xs text-slate-400 dark:text-slate-500">avg {fmt(c.averageAmount)}</p>
       </div>
 
       {/* Right: action buttons */}
@@ -450,13 +450,13 @@ export function Leaks() {
                 className="flex items-center gap-2 mb-2"
                 variants={fadeUp} initial="hidden" animate="visible" custom={3}
               >
-                <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">
+                <span className="text-xs font-semibold text-slate-500 dark:text-slate-300 uppercase tracking-wide">
                   Digital Subscriptions
                 </span>
                 <span className="text-[10px] px-1.5 py-0.5 bg-violet-100 text-violet-600 rounded-full font-medium">
                   {subscriptions.length}
                 </span>
-                <span className="text-xs text-slate-400">— can cancel online</span>
+                <span className="text-xs text-slate-400 dark:text-slate-500">— can cancel online</span>
               </motion.div>
               <div className="flex flex-col gap-3">
                 {subscriptions.map((c, i) => (
@@ -477,13 +477,13 @@ export function Leaks() {
                 className="flex items-center gap-2 mb-2"
                 variants={fadeUp} initial="hidden" animate="visible" custom={3 + subscriptions.length}
               >
-                <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">
+                <span className="text-xs font-semibold text-slate-500 dark:text-slate-300 uppercase tracking-wide">
                   Recurring Habits
                 </span>
                 <span className="text-[10px] px-1.5 py-0.5 bg-orange-100 text-orange-600 rounded-full font-medium">
                   {habits.length}
                 </span>
-                <span className="text-xs text-slate-400">— lifestyle spending patterns</span>
+                <span className="text-xs text-slate-400 dark:text-slate-500">— lifestyle spending patterns</span>
               </motion.div>
               <div className="flex flex-col gap-3">
                 {habits.map((c, i) => (
