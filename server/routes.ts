@@ -537,6 +537,11 @@ export function createApp(options?: CreateAppOptions) {
           const parseResult = await parseCSV(file.buffer, file.originalname);
 
           if (!parseResult.ok) {
+            // DEV: log parse failures to the server console with the full error
+            // so the workflow logs give an actionable diagnosis. Remove before GA.
+            console.error(
+              `[upload] parse FAILED for user=${userId} file="${file.originalname}": ${parseResult.error}`,
+            );
             await updateUploadStatus(
               uploadRecord.id,
               "failed",

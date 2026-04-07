@@ -207,6 +207,20 @@ export async function parseCSV(
     return { ok: false, error: `File "${filename}" is empty` };
   }
 
+  // ── Diagnostic logging (remove before public release) ─────────────────────
+  // Log a content preview so the server console shows the raw structure of any
+  // file that comes through — invaluable for diagnosing bank-specific formats.
+  const previewLines = content
+    .split(/\r?\n/)
+    .slice(0, 8)
+    .map((l, i) => `  [${i}] ${l.slice(0, 120)}`);
+  console.log(
+    `[csvParser] parsing "${filename}" — ` +
+    `buffer=${buffer.length}B content=${content.length}ch ` +
+    `lineEnding=${content.includes("\r\n") ? "CRLF" : "LF"}\n` +
+    previewLines.join("\n"),
+  );
+
   let records: string[][];
   try {
     records = parse(content, {
@@ -214,11 +228,36 @@ export async function parseCSV(
       skip_empty_lines: true,
       trim: true,
     });
-  } catch {
-    return {
-      ok: false,
-      error: `File "${filename}" could not be parsed as CSV`,
-    };
+  } catch (firstErr: unknown) {
+    // First pass failed — retry with relax_quotes which tolerates unbalanced
+    // or lone quote characters (seen in some BoA/export-tool variants).
+    console.warn(
+      `[csvParser] strict parse failed for "${filename}", retrying with relax_quotes. ` +
+      `Error: ${firstErr instanceof Error ? firstErr.message : String(firstErr)}`,
+    );
+    try {
+      records = parse(content, {
+        relax_column_count: true,
+        relax_quotes: true,
+        skip_empty_lines: true,
+        trim: true,
+      });
+      console.log(`[csvParser] relax_quotes retry succeeded for "${filename}"`);
+    } catch (secondErr: unknown) {
+      const msg =
+        secondErr instanceof Error ? secondErr.message : String(secondErr);
+      console.error(
+        `[csvParser] both parse attempts failed for "${filename}": ${msg}\n` +
+        `  content preview: ${content.slice(0, 400).replace(/\r/g, "\\r").replace(/\n/g, "\\n")}`,
+      );
+      return {
+        ok: false,
+        error:
+          `File "${filename}" could not be parsed as CSV — ` +
+          `check that it was exported as CSV (not Excel/XLS) and is not corrupted. ` +
+          `Detail: ${msg}`,
+      };
+    }
   }
 
   if (records.length === 0) {
