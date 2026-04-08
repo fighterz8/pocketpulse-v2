@@ -189,15 +189,18 @@ export const transactions = pgTable(
     index("transactions_upload_id_idx").on(t.uploadId),
     index("transactions_account_id_idx").on(t.accountId),
     index("transactions_date_idx").on(t.date),
-    // Dedup guard: prevents duplicate rows when the same CSV is re-uploaded.
-    // Fingerprint: (user, account, date, amount, rawDescription).
-    uniqueIndex("transactions_dedup_idx").on(
-      t.userId,
-      t.accountId,
-      t.date,
-      t.amount,
-      t.rawDescription,
-    ),
+    // NOTE: A DB-level dedup guard also exists as a functional unique index
+    // that is NOT expressed here because Drizzle's DSL does not support
+    // functional index expressions.  The actual constraint lives in the DB as:
+    //
+    //   CREATE UNIQUE INDEX transactions_dedup_idx
+    //     ON transactions (user_id, account_id, date, amount,
+    //                      lower(trim(raw_description)));
+    //
+    // This matches the JS fingerprint in createTransactionBatch exactly
+    // (parseFloat(amount).toFixed(2) is equivalent to the numeric column
+    // stored in DB; description is trim+lower in both places).
+    // If this index is ever recreated, pre-clean any duplicate rows first.
   ],
 );
 

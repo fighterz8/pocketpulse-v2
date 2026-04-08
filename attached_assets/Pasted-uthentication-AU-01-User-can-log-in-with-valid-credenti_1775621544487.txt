@@ -1,0 +1,57 @@
+uthentication
+
+AU-01 User can log in with valid credentials.
+AU-02 Invalid credentials are rejected with an error.
+AU-03 Authenticated session persists until logout or expiration.
+AU-04 User can log out.
+
+Upload and Import
+
+UP-01 User can upload one or more CSV files in one import flow.
+UP-02 Uploaded files appear in a queue before import.
+UP-03 User can remove a file from the queue before import.
+UP-04 User can assign an account label to each file.
+UP-05 User can optionally record the last four digits for an account.
+UP-06 System validates uploaded files before import.
+UP-07 Unsupported, unreadable, or malformed files are blocked and flagged.
+UP-08 System parses accepted CSV files and extracts transaction data.
+UP-09 System creates an import record with date, file name, and status.
+
+Ledger and Transaction Review
+
+LD-01 System normalizes imported transactions into a unified ledger.
+LD-02 Normalized transactions include date, description/merchant, amount, account label, and transaction type.
+LD-03 System displays imported transactions in a ledger view.
+LD-04 System assigns categories using classification logic.
+LD-05 User can manually change a transaction category.
+LD-06 System saves user category overrides.
+LD-07 User can exclude a transaction from analysis.
+LD-08 User can filter or search ledger transactions.
+
+Recurring Leak Review
+
+RL-01 System detects recurring charges or repeated spend patterns.
+RL-02 Detection considers merchant similarity, frequency, and average amount.
+RL-03 System displays recurring findings in a review interface.
+RL-04 Each finding shows merchant/pattern, average amount, frequency, last seen date, and reason flagged.
+RL-05 User can mark a finding as essential.
+RL-06 User can mark a finding as leak-related.
+RL-07 User can dismiss a finding.
+RL-08 System stores the user’s review decisions.
+
+Dashboard and Reporting
+
+DB-01 System provides a dashboard summarizing consolidated spending.
+DB-02 Dashboard displays safe-to-spend as a primary metric.
+DB-03 Dashboard displays income, expenses, and likely leak-related spending.
+DB-04 User can select preset or custom date ranges.
+DB-05 Preset ranges include current month, last month, previous month, and last 30 days.
+DB-06 Dashboard recalculates metrics when date range changes.
+DB-07 Dashboard displays spending summaries by category.
+DB-08 Dashboard displays leak-related findings and summary metrics.
+
+Export
+
+EX-01 User can export summary results as CSV.
+EX-02 Export reflects the currently selected reporting period.
+EX-03 Export reflects reviewed transaction and leak-status data.
