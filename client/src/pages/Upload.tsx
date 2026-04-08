@@ -164,7 +164,7 @@ export function Upload() {
                 {totalRows !== 1 ? "s" : ""} added
                 {totalDuplicates > 0 && (
                   <span className="upload-results-skipped">
-                    &nbsp;&middot;&nbsp;{totalDuplicates} already existed
+                    &nbsp;&middot;&nbsp;{totalDuplicates} skipped (already imported)
                   </span>
                 )}
               </p>
@@ -193,7 +193,7 @@ export function Upload() {
                     {r.rowCount} new
                     {(r.duplicateCount ?? 0) > 0 && (
                       <span className="upload-result-skipped">
-                        &nbsp;&middot;&nbsp;{r.duplicateCount} already existed
+                        &nbsp;&middot;&nbsp;{r.duplicateCount} skipped (already imported)
                       </span>
                     )}
                   </span>

@@ -39,17 +39,25 @@ try {
 
 // ── Startup migration: transactions dedup unique index ────────────────────────
 // Enforces that no two rows for the same user+account have an identical
-// (date, amount, lower(trim(rawDescription))) fingerprint.  This is the
-// DB-level guard that backs the onConflictDoNothing() call in
-// createTransactionBatch and closes race-condition windows.
+// (date, amount, lower(trim(raw_description))) fingerprint — the same key
+// used by the JS fingerprint in createTransactionBatch.
 //
-// Two-step: (1) purge any pre-existing duplicates keeping the lowest ID,
-//           (2) create the functional unique index if it doesn't exist yet.
+// Step 1 (best-effort): purge any pre-existing duplicate rows keeping the
+//   lowest ID per fingerprint group so Step 2 can never fail on existing data.
+//   Wrapped in try/catch: data may already be clean, or another process may
+//   have cleaned it; either way we proceed to Step 2.
 //
-// The functional expression lower(trim(raw_description)) matches the JS
-// fingerprint in server/storage.ts exactly so both sides agree on identity.
+// Step 2 (mandatory): create the functional unique index.  Uses
+//   CREATE UNIQUE INDEX IF NOT EXISTS so it is a no-op on re-runs.
+//   NOT wrapped in try/catch — if this fails the app must not start, because
+//   without the index the onConflictDoNothing() in createTransactionBatch has
+//   no DB constraint to enforce against and race-condition safety is lost.
+//
+// Functional expression lower(trim(raw_description)) is used instead of raw
+// rawDescription because: (a) it matches the JS fingerprint exactly,
+// (b) it tolerates case/whitespace variants, and (c) it bounds index key size
+// to the text content length (typical bank descriptions are <200 chars).
 try {
-  // Step 1: remove duplicate rows (those that would violate the new index).
   await pool.query(`
     DELETE FROM transactions
     WHERE id IN (
@@ -65,16 +73,16 @@ try {
       WHERE rn > 1
     )
   `);
-  // Step 2: create the functional unique index (no-op if already present).
-  await pool.query(`
-    CREATE UNIQUE INDEX IF NOT EXISTS transactions_dedup_idx
-      ON transactions (user_id, account_id, date, amount,
-                       lower(trim(raw_description)))
-  `);
-  console.log("[startup] transactions dedup index migration complete");
-} catch (err) {
-  console.warn("[startup] transactions dedup index migration skipped:", err);
+} catch {
+  // pre-cleanup is best-effort; proceed to index creation regardless
 }
+// Mandatory — throws on failure, crashing startup deliberately.
+await pool.query(`
+  CREATE UNIQUE INDEX IF NOT EXISTS transactions_dedup_idx
+    ON transactions (user_id, account_id, date, amount,
+                     lower(trim(raw_description)))
+`);
+console.log("[startup] transactions dedup index migration complete");
 
 const app = createApp();
 const isProduction = process.env.NODE_ENV === "production";
