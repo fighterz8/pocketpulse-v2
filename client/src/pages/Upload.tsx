@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { FormEvent, useCallback, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import { useAuth, type AuthAccount } from "../hooks/use-auth";
 import { useUploads, type UploadFileResult } from "../hooks/use-uploads";
@@ -284,6 +284,7 @@ export function Upload() {
                         onClick={() => removeFile(q.key)}
                         aria-label={`Remove ${q.file.name}`}
                         disabled={upload.isPending}
+                        data-testid={`button-remove-file-${q.key}`}
                       >
                         &times;
                       </button>
@@ -297,6 +298,7 @@ export function Upload() {
                           value={q.accountId}
                           onChange={(id) => setAccountForFile(q.key, id)}
                           disabled={upload.isPending}
+                          fileKey={q.key}
                         />
                       </label>
                     </div>
@@ -316,6 +318,7 @@ export function Upload() {
                 className="upload-btn upload-btn--primary"
                 disabled={!canImport}
                 onClick={() => void handleImport()}
+                data-testid="button-import"
               >
                 {upload.isPending
                   ? "Importing..."
@@ -334,30 +337,175 @@ function AccountSelector({
   value,
   onChange,
   disabled,
+  fileKey,
 }: {
   accounts: AuthAccount[] | null;
   value: number | null;
   onChange: (id: number) => void;
   disabled?: boolean;
+  fileKey: string;
 }) {
+  const { createAccount } = useAuth();
+
+  const [creating, setCreating] = useState(false);
+  const [label, setLabel] = useState("");
+  const [lastFour, setLastFour] = useState("");
+  const [accountType, setAccountType] = useState("");
+  const [formError, setFormError] = useState<string | null>(null);
+
+  const mutationError =
+    createAccount.error instanceof Error ? createAccount.error.message : null;
+  const shownError = formError ?? mutationError;
+  const busy = createAccount.isPending;
+
+  function handleSelectChange(e: React.ChangeEvent<HTMLSelectElement>) {
+    if (e.target.value === "__create__") {
+      setCreating(true);
+      createAccount.reset();
+      setFormError(null);
+      setLabel("");
+      setLastFour("");
+      setAccountType("");
+    } else {
+      onChange(Number(e.target.value));
+    }
+  }
+
+  function handleCancel() {
+    setCreating(false);
+    setFormError(null);
+    createAccount.reset();
+  }
+
+  async function handleCreate(e: FormEvent) {
+    e.preventDefault();
+    setFormError(null);
+    createAccount.reset();
+
+    const trimmed = label.trim();
+    if (!trimmed) {
+      setFormError("Account name is required");
+      return;
+    }
+
+    try {
+      const result = await createAccount.mutateAsync({
+        label: trimmed,
+        ...(lastFour !== "" ? { lastFour } : {}),
+        ...(accountType.trim() !== ""
+          ? { accountType: accountType.trim() }
+          : {}),
+      });
+      onChange(result.account.id);
+      setCreating(false);
+    } catch {
+      // Error shown via createAccount.error / shownError
+    }
+  }
+
   if (!accounts || accounts.length === 0) {
     return <span className="upload-field-empty">No accounts available</span>;
+  }
+
+  if (creating) {
+    return (
+      <form
+        className="upload-new-account"
+        onSubmit={(e) => void handleCreate(e)}
+        data-testid={`form-new-account-${fileKey}`}
+      >
+        <p className="upload-new-account-title">New account</p>
+
+        <div className="upload-new-account-fields">
+          <input
+            className="upload-new-account-input"
+            type="text"
+            placeholder="Account name (e.g. Chase Checking)"
+            autoComplete="off"
+            value={label}
+            onChange={(e) => setLabel(e.target.value)}
+            disabled={busy}
+            required
+            autoFocus
+            data-testid={`input-new-account-label-${fileKey}`}
+          />
+
+          <input
+            className="upload-new-account-input upload-new-account-input--short"
+            type="text"
+            placeholder="Last 4 digits (optional)"
+            inputMode="numeric"
+            maxLength={4}
+            autoComplete="off"
+            value={lastFour}
+            onChange={(e) =>
+              setLastFour(e.target.value.replace(/\D/g, "").slice(0, 4))
+            }
+            disabled={busy}
+            data-testid={`input-new-account-last-four-${fileKey}`}
+          />
+
+          <input
+            className="upload-new-account-input"
+            type="text"
+            placeholder="Account type (e.g. checking, savings)"
+            autoComplete="off"
+            value={accountType}
+            onChange={(e) => setAccountType(e.target.value)}
+            disabled={busy}
+            data-testid={`input-new-account-type-${fileKey}`}
+          />
+        </div>
+
+        {shownError && (
+          <p
+            className="upload-new-account-error"
+            role="alert"
+            data-testid={`error-new-account-${fileKey}`}
+          >
+            {shownError}
+          </p>
+        )}
+
+        <div className="upload-new-account-actions">
+          <button
+            type="submit"
+            className="upload-new-account-submit"
+            disabled={busy}
+            data-testid={`button-create-account-${fileKey}`}
+          >
+            {busy ? "Creating…" : "Create account"}
+          </button>
+          <button
+            type="button"
+            className="upload-new-account-cancel"
+            onClick={handleCancel}
+            disabled={busy}
+            data-testid={`button-cancel-new-account-${fileKey}`}
+          >
+            Cancel
+          </button>
+        </div>
+      </form>
+    );
   }
 
   return (
     <select
       className="upload-select"
       value={value ?? ""}
-      onChange={(e) => onChange(Number(e.target.value))}
+      onChange={handleSelectChange}
       disabled={disabled}
+      data-testid={`select-account-${fileKey}`}
     >
-      {value === null && <option value="">Select account...</option>}
+      {value === null && <option value="">Select account…</option>}
       {accounts.map((a) => (
         <option key={a.id} value={a.id}>
           {a.label}
           {a.lastFour ? ` (****${a.lastFour})` : ""}
         </option>
       ))}
+      <option value="__create__">+ New account…</option>
     </select>
   );
 }
