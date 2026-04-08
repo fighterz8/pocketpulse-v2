@@ -189,6 +189,15 @@ export const transactions = pgTable(
     index("transactions_upload_id_idx").on(t.uploadId),
     index("transactions_account_id_idx").on(t.accountId),
     index("transactions_date_idx").on(t.date),
+    // Dedup guard: prevents duplicate rows when the same CSV is re-uploaded.
+    // Fingerprint: (user, account, date, amount, rawDescription).
+    uniqueIndex("transactions_dedup_idx").on(
+      t.userId,
+      t.accountId,
+      t.date,
+      t.amount,
+      t.rawDescription,
+    ),
   ],
 );
 

@@ -303,16 +303,22 @@ export async function createTransactionBatch(
       ),
     );
 
-  const existingKeys = new Set(
+  // Seed the seen set from existing DB rows; grow it while scanning incoming
+  // rows to also deduplicate within the same upload batch.
+  const seen = new Set(
     existing.map((r) => fingerprint(r.date, r.amount, r.rawDescription)),
   );
 
-  const newRows = txns.filter(
-    (t) => !existingKeys.has(fingerprint(t.date, t.amount, t.rawDescription)),
-  );
-  const duplicateCount = txns.length - newRows.length;
+  const newRows: CreateTransactionInput[] = [];
+  for (const t of txns) {
+    const fp = fingerprint(t.date, t.amount, t.rawDescription);
+    if (!seen.has(fp)) {
+      seen.add(fp);
+      newRows.push(t);
+    }
+  }
 
-  if (newRows.length === 0) return { insertedCount: 0, duplicateCount };
+  if (newRows.length === 0) return { insertedCount: 0, duplicateCount: txns.length };
 
   const values = newRows.map((t) => ({
     userId: t.userId,
@@ -332,8 +338,17 @@ export async function createTransactionBatch(
     aiAssisted: t.aiAssisted ?? false,
   }));
 
-  const result = await db.insert(transactions).values(values).returning({ id: transactions.id });
-  return { insertedCount: result.length, duplicateCount };
+  // onConflictDoNothing is the final DB-level safety net for race conditions
+  // (two uploads for the same account arriving concurrently).
+  const result = await db
+    .insert(transactions)
+    .values(values)
+    .onConflictDoNothing()
+    .returning({ id: transactions.id });
+
+  // duplicateCount = all txns minus those actually inserted (captures JS
+  // pre-filter duplicates + any race-condition skips at the DB level).
+  return { insertedCount: result.length, duplicateCount: txns.length - result.length };
 }
 
 export type ListTransactionsOptions = {
