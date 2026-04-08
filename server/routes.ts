@@ -700,7 +700,7 @@ export function createApp(options?: CreateAppOptions) {
             uploadId: uploadRecord.id,
             status: "complete",
             rowCount: insertedCount,
-            duplicateCount: duplicateCount > 0 ? duplicateCount : undefined,
+            duplicateCount,
             warnings:
               parseResult.warnings.length > 0
                 ? parseResult.warnings
