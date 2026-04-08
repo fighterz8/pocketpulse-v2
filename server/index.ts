@@ -58,6 +58,8 @@ try {
 // (b) it tolerates case/whitespace variants, and (c) it bounds index key size
 // to the text content length (typical bank descriptions are <200 chars).
 try {
+  // Keep-row priority: user_corrected=true first (preserves manual edits),
+  // then lowest id (original import) among equal-priority rows.
   await pool.query(`
     DELETE FROM transactions
     WHERE id IN (
@@ -66,7 +68,7 @@ try {
                ROW_NUMBER() OVER (
                  PARTITION BY user_id, account_id, date, amount,
                               lower(trim(raw_description))
-                 ORDER BY id ASC
+                 ORDER BY user_corrected DESC, id ASC
                ) AS rn
         FROM transactions
       ) ranked
