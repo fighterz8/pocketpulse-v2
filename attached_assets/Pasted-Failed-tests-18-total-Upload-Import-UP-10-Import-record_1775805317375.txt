@@ -1,0 +1,81 @@
+Failed tests (18 total)
+
+Upload / Import
+
+UP-10 — Import record created
+Feedback: No option to view Upload History.
+UP-14 — Upload-time merchant rules applied
+Feedback: Starbucks was previously corrected to recurring, but on new upload it defaulted back; saved merchant rule did not auto-apply.
+
+Ledger / Transaction Review
+
+LD-06 — Exclude a transaction from analysis
+Feedback: No option to exclude on Ledger.
+LD-10 — Fuzzy merchant propagation
+Feedback: No propagation prompt was given.
+
+Recurring Leak Review
+
+RL-01 — Recurring charges detected
+Feedback: Some recurring items were wrong and some were missing.
+RL-06 — Non-subscription recurring in Habits section
+Feedback: Starbucks did not show as recurring despite multiple purchases over 3 months.
+RL-09 — Dismiss a finding
+Feedback: No “dismiss” option; only Essential, Leak, or Not Recurring.
+RL-13 — Active/inactive candidates handled
+Feedback: Adobe last charged in Dec 2025 still appeared active in April 2026 and due in 23 days.
+
+Dashboard / Reporting
+
+DB-05 — Custom date range works
+Feedback: No custom date option on dashboard.
+DB-08 — Leak summary on Dashboard
+Feedback: Dashboard only shows reviews needed, not confirmed leak summary properly.
+DB-09 — recurringExpenses uses normalized monthly amount
+Feedback: Annual/quarterly charges are not converted to monthly fractions.
+DB-10 — leakMonthlyAmount reflects confirmed leaks only
+Feedback: Leak amounts do not add up correctly.
+
+Export
+
+EX-01 — Export CSV from Dashboard
+Feedback: No CSV export on Dashboard, though Ledger export works.
+
+Dark Mode
+
+DM-03 — All pages render correctly in dark mode
+Feedback: Text in accuracy report is very dark.
+
+Security / Session
+
+SEC-03 — User data isolation
+Feedback: Creating/logging into User B wiped User A’s data without logout.
+
+Data Integrity
+
+DI-04 — Excluded transactions stay excluded
+Feedback: No visible exclude function, so behavior is effectively broken/missing.
+
+UI / UX
+
+UX-02 — Loading states shown during async operations
+Feedback: No spinner/loading indicator during processing.
+UX-05 — Upload queue reflects multi-file state accurately
+Feedback: Upload flow resets and does not retain previously added files for removal.
+
+Tests worth noting
+
+Skipped / blocked
+
+UP-11 — Upload result shows “X new” count
+Marked Skipped, but tester noted it seemed to work aside from the “already imported” issue.
+LD-07 — Excluded transaction stays excluded after sync
+Marked Skipped because the exclude feature appears unavailable.
+
+Not formally failed, but concerning
+
+UP-08 — Upload malformed/empty CSV
+Pass/Fail field was left blank. Tester says the file “imported,” showed an error, and then no details appeared on Ledger. That is worth treating as a defect candidate.
+UP-01 — Single CSV upload passed, but one transaction was unexpectedly marked “already imported.”
+UP-09 — Valid CSV parse passed, but tester noted 5 files were already imported.
+LD-02 — Transaction fields present passed, but account label is not readily visible unless clicking into a transaction.
