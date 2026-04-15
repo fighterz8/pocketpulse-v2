@@ -110,25 +110,41 @@ function maskCell(cell: string): string {
 }
 
 /**
+ * Find the index of the true header row: the first row where ALL non-empty
+ * cells are text-like (no dates, no amounts). Only this single row is sent
+ * verbatim to the AI — all other rows (preamble and data) are masked.
+ * Returns -1 when no header row is found (headerless format).
+ */
+function findHeaderRowIndex(rawRows: string[][]): number {
+  for (let i = 0; i < rawRows.length && i < 10; i++) {
+    const row = rawRows[i];
+    const nonEmpty = row.filter((c) => c.trim());
+    if (nonEmpty.length < 2) continue;
+    if (nonEmpty.every((c) => !looksLikeDate(c.trim()) && !looksLikeAmount(c.trim()))) {
+      return i;
+    }
+  }
+  return -1;
+}
+
+/**
  * Build a privacy-safe, compact representation of sample rows for the AI.
- * Header rows (preamble candidates) are sent verbatim since they contain
- * column names, not user data. Data rows have text cells masked.
  *
- * The heuristic: if a row has ≥ 2 cells that are all text (no dates/numbers),
- * it's likely a header/preamble row — send verbatim. Otherwise mask text cells.
+ * Privacy rules (strict):
+ * - Only the single detected header row is sent verbatim (column names are not PII).
+ * - ALL other rows — including bank preamble rows that may contain account holder
+ *   names, addresses, or statement metadata — have every text cell masked as "[text]".
+ * - Date-like cells in data rows are sent verbatim (needed for format detection).
+ * - Amount-like cells in data rows are sent rounded (sign needed for convention detection).
  */
 function buildMaskedSampleText(rawRows: string[][]): string {
+  const headerIdx = findHeaderRowIndex(rawRows);
+
   return rawRows
     .map((row, i) => {
-      const textCount = row.filter((c) => {
-        const t = c.trim();
-        return t && !looksLikeDate(t) && !looksLikeAmount(t);
-      }).length;
-      const isHeaderLike = textCount >= 2 && textCount === row.filter((c) => c.trim()).length;
-
-      const cells = isHeaderLike
-        ? row.map((c) => JSON.stringify(c))   // header — verbatim
-        : row.map(maskCell);                   // data — mask descriptions
+      const cells = i === headerIdx
+        ? row.map((c) => JSON.stringify(c))  // header row only — verbatim
+        : row.map(maskCell);                  // preamble + data rows — mask text
 
       return `[row ${i}]: ${cells.join(", ")}`;
     })

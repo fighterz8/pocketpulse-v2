@@ -588,10 +588,32 @@ export function createApp(options?: CreateAppOptions) {
                 return crypto.createHash("sha256").update(normalized).digest("hex");
               }
             }
-            // Headerless (e.g. Wells Fargo) — fingerprint first row only if non-empty
-            const firstRow = rows[0];
-            if (!firstRow || firstRow.length === 0) return null;
-            return crypto.createHash("sha256").update(firstRow.join("|")).digest("hex");
+
+            // Headerless (e.g. Wells Fargo) — structural fingerprint that is stable
+            // across monthly exports. Based on: number of columns + per-column type
+            // pattern (D=date, A=amount, T=text, _=empty). Content is NOT used,
+            // so this fingerprint does not change when transaction values change.
+            const dataRows = rows.slice(0, 6).filter((r) => r.some((c) => c.trim()));
+            if (dataRows.length === 0) return null;
+            const colCount = Math.max(...dataRows.map((r) => r.length));
+            const colTypes: string[] = [];
+            for (let col = 0; col < colCount; col++) {
+              const types = dataRows.map((r) => {
+                const c = (r[col] ?? "").trim();
+                if (!c) return "_";
+                if (isDateLike(c)) return "D";
+                if (isAmountLike(c)) return "A";
+                return "T";
+              });
+              // Use the most common type label for this column
+              const freq = types.reduce<Record<string, number>>((acc, t) => {
+                acc[t] = (acc[t] ?? 0) + 1;
+                return acc;
+              }, {});
+              colTypes.push(Object.entries(freq).sort((a, b) => b[1] - a[1])[0][0]);
+            }
+            const pattern = `${colCount}:${colTypes.join("")}`;
+            return crypto.createHash("sha256").update(pattern).digest("hex");
           })();
 
           // The applied format spec for this parse (set after resolution).
@@ -682,6 +704,13 @@ export function createApp(options?: CreateAppOptions) {
                 (e) => { console.warn(`[upload] saveFormatSpec (heuristic) failed: ${e}`); },
               );
             }
+            appliedSpec = parseResult.detectedSpec;
+          }
+
+          // Safety net: appliedSpec must always reflect the spec that was actually
+          // used when parsing succeeded (e.g. low-confidence path where AI didn't
+          // improve things). This guarantees uploads.formatSpec is never null on success.
+          if (parseResult.ok && !appliedSpec && parseResult.detectedSpec) {
             appliedSpec = parseResult.detectedSpec;
           }
 
