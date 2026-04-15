@@ -167,29 +167,6 @@ function LeakCard({
   );
 }
 
-// ─── Section header ───────────────────────────────────────────────────────────
-
-function SectionHeader({ label, count, badge, index }: {
-  label: string;
-  count: number;
-  badge: string;
-  index: number;
-}) {
-  return (
-    <motion.div
-      className="flex items-center gap-2 mb-2"
-      variants={fadeUp} initial="hidden" animate="visible" custom={index}
-    >
-      <span className="text-xs font-semibold text-slate-500 dark:text-slate-300 uppercase tracking-wide">
-        {label}
-      </span>
-      <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${badge}`}>
-        {count}
-      </span>
-    </motion.div>
-  );
-}
-
 // ─── Main page ────────────────────────────────────────────────────────────────
 
 export function Leaks() {
@@ -283,74 +260,22 @@ export function Leaks() {
     </div>
   );
 
-  // T4.2: split into Subscriptions & Memberships vs Spending Habits
-  const subscriptions = leaks.filter((l) => l.isSubscriptionLike);
-  const habits        = leaks.filter((l) => !l.isSubscriptionLike);
-  const showSections  = subscriptions.length > 0 && habits.length > 0;
-
   return (
     <div>
       {pageHeader}
       {summaryBar}
 
-      {showSections ? (
-        <div className="flex flex-col gap-6">
-          {subscriptions.length > 0 && (
-            <div>
-              <SectionHeader
-                label="Subscriptions & Memberships"
-                count={subscriptions.length}
-                badge="bg-violet-100 text-violet-600"
-                index={2}
-              />
-              <div className="flex flex-col gap-3">
-                {subscriptions.map((l, i) => (
-                  <LeakCard
-                    key={`${l.merchant}::${l.category}`}
-                    leak={l}
-                    index={i + 3}
-                    startDate={startDate}
-                    endDate={endDate}
-                  />
-                ))}
-              </div>
-            </div>
-          )}
-          {habits.length > 0 && (
-            <div>
-              <SectionHeader
-                label="Spending Habits"
-                count={habits.length}
-                badge="bg-orange-100 text-orange-600"
-                index={3 + subscriptions.length}
-              />
-              <div className="flex flex-col gap-3">
-                {habits.map((l, i) => (
-                  <LeakCard
-                    key={`${l.merchant}::${l.category}`}
-                    leak={l}
-                    index={i + 4 + subscriptions.length}
-                    startDate={startDate}
-                    endDate={endDate}
-                  />
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-      ) : (
-        <div className="flex flex-col gap-3">
-          {leaks.map((l, i) => (
-            <LeakCard
-              key={`${l.merchant}::${l.category}`}
-              leak={l}
-              index={i + 2}
-              startDate={startDate}
-              endDate={endDate}
-            />
-          ))}
-        </div>
-      )}
+      <div className="flex flex-col gap-3">
+        {leaks.map((l, i) => (
+          <LeakCard
+            key={`${l.merchant}::${l.category}`}
+            leak={l}
+            index={i + 2}
+            startDate={startDate}
+            endDate={endDate}
+          />
+        ))}
+      </div>
     </div>
   );
 }

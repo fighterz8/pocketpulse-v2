@@ -1185,14 +1185,25 @@ export function createApp(options?: CreateAppOptions) {
         ) + 1,
       );
 
-      const txns = await listAllTransactionsForExport({
+      const rows = await listAllTransactionsForExport({
         userId,
         dateFrom: startDate,
         dateTo: endDate,
         excluded: "false",
       });
 
-      const leaks = detectLeaks(txns as any, { rangeDays });
+      // Map DB rows to the typed TxRow shape expected by detectLeaks.
+      const txns = rows.map((t) => ({
+        transactionClass:     t.transactionClass,
+        category:             t.category,
+        merchant:             t.merchant,
+        amount:               t.amount,
+        date:                 t.date,
+        recurrenceType:       t.recurrenceType,
+        excludedFromAnalysis: t.excludedFromAnalysis,
+      }));
+
+      const leaks = detectLeaks(txns, { rangeDays });
       res.json(leaks);
     } catch (e) {
       next(e);
