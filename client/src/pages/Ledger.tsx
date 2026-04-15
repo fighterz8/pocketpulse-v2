@@ -470,6 +470,9 @@ export function Ledger() {
               <p className="ledger-danger-msg">
                 This will permanently delete all transactions and uploads. Your accounts will be kept.
               </p>
+              <p className="ledger-danger-msg ledger-danger-msg--note">
+                Tip: when you re-upload, overlapping bank statement exports (e.g. month-end and month-start statements from the same bank) may contain duplicate rows — these are automatically skipped and reported separately in the import summary.
+              </p>
               <div className="ledger-danger-confirm-actions">
                 <button
                   className="ledger-danger-btn ledger-danger-btn--destructive"

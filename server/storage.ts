@@ -324,11 +324,23 @@ export async function createTransactionBatch(
     existing.map((r) => fingerprint(r.date, r.amount, r.rawDescription)),
   );
 
-  // seen = union of DB fingerprints + any cross-file session fingerprints so
+  // sessionFp scopes the cross-file key to this account so uploads spanning
+  // multiple accounts never false-deduplicate each other.
+  const sessionFp = (fp: string) => `${accountId}|${fp}`;
+
+  // seen = union of DB fingerprints + same-account cross-file session fingerprints so
   // duplicates across files in the same upload are caught without a DB round-trip.
+  // Only same-account entries from sessionSeen are pulled in (they are stored with a
+  // "accountId|" prefix to prevent false-dedup across accounts in the same request).
   const seen = new Set(dbFingerprints);
   if (sessionSeen) {
-    for (const fp of sessionSeen) seen.add(fp);
+    const prefix = `${accountId}|`;
+    for (const sfp of sessionSeen) {
+      if (sfp.startsWith(prefix)) {
+        const raw = sfp.slice(prefix.length);
+        if (!dbFingerprints.has(raw)) seen.add(raw);
+      }
+    }
   }
 
   let previouslyImported = 0;
@@ -339,7 +351,7 @@ export async function createTransactionBatch(
     const fp = fingerprint(t.date, t.amount, t.rawDescription);
     if (seen.has(fp)) {
       // "previously imported" = existed in DB before this upload request.
-      // "intra-batch" = appeared earlier in THIS upload (same file or other file in batch).
+      // "intra-batch" = appeared earlier in THIS upload (same file or other file).
       if (dbFingerprints.has(fp)) {
         previouslyImported++;
       } else {
@@ -347,8 +359,8 @@ export async function createTransactionBatch(
       }
     } else {
       seen.add(fp);
-      // Track across files within the same upload request.
-      if (sessionSeen) sessionSeen.add(fp);
+      // Track across files within the same upload request (account-scoped).
+      if (sessionSeen) sessionSeen.add(sessionFp(fp));
       newRows.push(t);
     }
   }
