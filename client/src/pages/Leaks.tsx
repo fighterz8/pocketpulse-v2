@@ -171,9 +171,6 @@ function LeakCard({
 
   const slug = l.merchantKey.replace(/\W+/g, "-");
 
-  // Show breakdown row only when merchant spans multiple categories
-  const showBreakdown = l.categoryBreakdown.length > 1;
-
   // Date span: only show if first and last differ
   const dateSpan =
     l.firstDate !== l.lastDate
@@ -212,22 +209,20 @@ function LeakCard({
           {/* Bucket label */}
           <p className="text-xs text-slate-500 dark:text-slate-400 mb-1.5">{l.label}</p>
 
-          {/* Category breakdown (multi-category merchants only) */}
-          {showBreakdown && (
-            <div
-              className="flex flex-wrap gap-x-2 gap-y-0.5 text-[11px] text-slate-500 dark:text-slate-400 mb-1.5"
-              data-testid={`leak-breakdown-${slug}`}
-            >
-              {l.categoryBreakdown.map((b) => (
-                <span key={b.category}>
-                  <span className={`inline-block px-1 py-0 rounded text-[10px] font-medium mr-0.5 ${categoryColor(b.category)}`}>
-                    {capitalize(b.category)}
-                  </span>
-                  {b.count}x {fmt(b.total)}
+          {/* Category breakdown */}
+          <div
+            className="flex flex-wrap gap-x-2 gap-y-0.5 text-[11px] text-slate-500 dark:text-slate-400 mb-1.5"
+            data-testid={`leak-breakdown-${slug}`}
+          >
+            {l.categoryBreakdown.map((b) => (
+              <span key={b.category}>
+                <span className={`inline-block px-1 py-0 rounded text-[10px] font-medium mr-0.5 ${categoryColor(b.category)}`}>
+                  {capitalize(b.category)}
                 </span>
-              ))}
-            </div>
-          )}
+                {b.count}x {fmt(b.total)}
+              </span>
+            ))}
+          </div>
 
           {/* Stats row: occurrences, avg, date span */}
           <div className="flex items-center gap-2 flex-wrap text-xs text-slate-500 dark:text-slate-400">
