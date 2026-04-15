@@ -371,7 +371,7 @@ export function Upload() {
         >
           <h2 className="upload-history-title">Past Imports</h2>
           <ul className="upload-history-list">
-            {[...uploads].reverse().map((u) => {
+            {uploads.map((u) => {
               const acct = accounts?.find((a) => a.id === u.accountId);
               return (
                 <li key={u.id} className="upload-history-item" data-testid={`row-upload-${u.id}`}>
