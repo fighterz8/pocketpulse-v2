@@ -350,11 +350,18 @@ export async function createTransactionBatch(
   for (const t of txns) {
     const fp = fingerprint(t.date, t.amount, t.rawDescription);
     if (seen.has(fp)) {
-      // "previously imported" = existed in DB before this upload request.
-      // "intra-batch" = appeared earlier in THIS upload (same file or other file).
-      if (dbFingerprints.has(fp)) {
+      // Classification priority:
+      // 1. sessionSeen first — if this fingerprint was seen earlier in THIS upload
+      //    request (even if an earlier file just wrote it to DB), it's intra-batch.
+      //    This prevents rows inserted by earlier files in the same request from
+      //    being mis-classified as "previously imported".
+      // 2. dbFingerprints only when not in sessionSeen — genuinely from a prior session.
+      if (sessionSeen?.has(sessionFp(fp))) {
+        intraBatchDuplicates++;
+      } else if (dbFingerprints.has(fp)) {
         previouslyImported++;
       } else {
+        // Within-file duplicate (no sessionSeen provided, or first file in session).
         intraBatchDuplicates++;
       }
     } else {
