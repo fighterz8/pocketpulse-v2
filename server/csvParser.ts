@@ -442,7 +442,7 @@ export async function parseCSV(
     const rowNum = i + rowOffset;
 
     const rawDate = row[mapping.dateIdx] ?? "";
-    const date = parseDate(rawDate);
+    const date = parseDate(rawDate, specOverride?.dateFormat);
     if (!date) {
       warnings.push(
         `Row ${rowNum}: skipped — could not parse date "${rawDate}"`,

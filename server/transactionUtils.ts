@@ -278,20 +278,56 @@ export function normalizeMerchant(raw: string): string {
   return cleaned;
 }
 
+const MONTH_NAMES: Record<string, number> = {
+  jan: 1, january: 1,
+  feb: 2, february: 2,
+  mar: 3, march: 3,
+  apr: 4, april: 4,
+  may: 5,
+  jun: 6, june: 6,
+  jul: 7, july: 7,
+  aug: 8, august: 8,
+  sep: 9, sept: 9, september: 9,
+  oct: 10, october: 10,
+  nov: 11, november: 11,
+  dec: 12, december: 12,
+};
+
 /**
  * Parse a date string from common CSV formats into ISO YYYY-MM-DD.
- * Supports: MM/DD/YYYY, M/D/YYYY, MM-DD-YYYY, YYYY-MM-DD, MM/DD/YY.
+ * Supports: MM/DD/YYYY, M/D/YYYY, MM-DD-YYYY, YYYY-MM-DD, MM/DD/YY,
+ *           "Jan 01 2024", "January 1, 2024", "01 Jan 2024", "Jan 1st 2024",
+ *           and "YYYY/MM/DD".
+ *
+ * @param raw  The raw date cell value from the CSV.
+ * @param formatHint  Optional format string hint from AI spec (e.g. "MMM D YYYY",
+ *                    "D MMM YYYY"). When present, the matching parser is tried first.
+ *                    Falls through to all built-in formats on mismatch.
  * Returns null if the date cannot be parsed.
  */
-export function parseDate(raw: string): string | null {
+export function parseDate(raw: string, formatHint?: string): string | null {
   const trimmed = raw.trim();
   if (!trimmed) return null;
+
+  // When the AI spec provides a format hint, try the hint-specific parser first.
+  if (formatHint) {
+    const hinted = parseDateWithHint(trimmed, formatHint);
+    if (hinted) return hinted;
+  }
 
   // Already ISO: YYYY-MM-DD
   const isoMatch = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})$/);
   if (isoMatch) {
     const [, y, m, d] = isoMatch;
     if (isValidDate(+y!, +m!, +d!)) return trimmed;
+    return null;
+  }
+
+  // YYYY/MM/DD
+  const isoSlashMatch = trimmed.match(/^(\d{4})\/(\d{2})\/(\d{2})$/);
+  if (isoSlashMatch) {
+    const [, y, m, d] = isoSlashMatch;
+    if (isValidDate(+y!, +m!, +d!)) return `${y}-${m}-${d}`;
     return null;
   }
 
@@ -334,6 +370,122 @@ export function parseDate(raw: string): string | null {
     return null;
   }
 
+  // "Jan 01 2024" / "January 1, 2024" / "Jan 1st 2024" (month-name first)
+  const mmmDYYYY = trimmed.match(
+    /^([A-Za-z]+)\.?\s+(\d{1,2})(?:st|nd|rd|th)?,?\s+(\d{4})$/i,
+  );
+  if (mmmDYYYY) {
+    const [, mon, d, y] = mmmDYYYY;
+    const month = MONTH_NAMES[mon!.toLowerCase()];
+    if (month) {
+      const day = +d!;
+      const year = +y!;
+      if (isValidDate(year, month, day)) return `${year}-${pad(month)}-${pad(day)}`;
+    }
+  }
+
+  // "01 Jan 2024" / "1 January 2024" (day first, month name second)
+  const dMMMMYYYY = trimmed.match(
+    /^(\d{1,2})(?:st|nd|rd|th)?\s+([A-Za-z]+)\.?\s+(\d{4})$/i,
+  );
+  if (dMMMMYYYY) {
+    const [, d, mon, y] = dMMMMYYYY;
+    const month = MONTH_NAMES[mon!.toLowerCase()];
+    if (month) {
+      const day = +d!;
+      const year = +y!;
+      if (isValidDate(year, month, day)) return `${year}-${pad(month)}-${pad(day)}`;
+    }
+  }
+
+  // "2024 Jan 01" (year first, then month name)
+  const yyyyMMMD = trimmed.match(/^(\d{4})\s+([A-Za-z]+)\.?\s+(\d{1,2})(?:st|nd|rd|th)?$/i);
+  if (yyyyMMMD) {
+    const [, y, mon, d] = yyyyMMMD;
+    const month = MONTH_NAMES[mon!.toLowerCase()];
+    if (month) {
+      const day = +d!;
+      const year = +y!;
+      if (isValidDate(year, month, day)) return `${year}-${pad(month)}-${pad(day)}`;
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Try to parse a date using a format hint string returned by the AI spec.
+ * Format tokens (case-insensitive):
+ *   YYYY / YY — 4 or 2 digit year
+ *   MM / M    — numeric month
+ *   DD / D    — numeric day
+ *   MMM       — abbreviated month name (Jan, Feb …)
+ *   MMMM      — full month name
+ */
+function parseDateWithHint(trimmed: string, fmt: string): string | null {
+  // Build a regex from the format token by token, capture groups in order.
+  const normalized = fmt.toUpperCase();
+
+  const tokens: Array<{ token: string; pattern: string; type: string }> = [];
+
+  let remaining = normalized;
+  while (remaining.length > 0) {
+    if (remaining.startsWith("YYYY")) {
+      tokens.push({ token: "YYYY", pattern: "(\\d{4})", type: "year4" });
+      remaining = remaining.slice(4);
+    } else if (remaining.startsWith("YY")) {
+      tokens.push({ token: "YY", pattern: "(\\d{2})", type: "year2" });
+      remaining = remaining.slice(2);
+    } else if (remaining.startsWith("MMMM")) {
+      tokens.push({ token: "MMMM", pattern: "([A-Za-z]+)", type: "monthName" });
+      remaining = remaining.slice(4);
+    } else if (remaining.startsWith("MMM")) {
+      tokens.push({ token: "MMM", pattern: "([A-Za-z]+)", type: "monthName" });
+      remaining = remaining.slice(3);
+    } else if (remaining.startsWith("MM")) {
+      tokens.push({ token: "MM", pattern: "(\\d{1,2})", type: "month" });
+      remaining = remaining.slice(2);
+    } else if (remaining.startsWith("M")) {
+      tokens.push({ token: "M", pattern: "(\\d{1,2})", type: "month" });
+      remaining = remaining.slice(1);
+    } else if (remaining.startsWith("DD")) {
+      tokens.push({ token: "DD", pattern: "(\\d{1,2})(?:st|nd|rd|th)?", type: "day" });
+      remaining = remaining.slice(2);
+    } else if (remaining.startsWith("D")) {
+      tokens.push({ token: "D", pattern: "(\\d{1,2})(?:st|nd|rd|th)?", type: "day" });
+      remaining = remaining.slice(1);
+    } else {
+      // Separator character — escape and match literally (or optionally)
+      const ch = remaining[0]!;
+      tokens.push({ token: ch, pattern: `[${ch.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s,]*`, type: "sep" });
+      remaining = remaining.slice(1);
+    }
+  }
+
+  const regexStr = "^" + tokens.map((t) => t.pattern).join("") + "$";
+  let match: RegExpMatchArray | null;
+  try {
+    match = trimmed.match(new RegExp(regexStr, "i"));
+  } catch {
+    return null;
+  }
+  if (!match) return null;
+
+  const capGroups = tokens.filter((t) => t.type !== "sep");
+  let year = 0, month = 0, day = 0;
+
+  for (let i = 0; i < capGroups.length; i++) {
+    const val = match[i + 1] ?? "";
+    const type = capGroups[i]!.type;
+    if (type === "year4") year = +val;
+    else if (type === "year2") year = +val + (+val >= 50 ? 1900 : 2000);
+    else if (type === "month") month = +val;
+    else if (type === "monthName") month = MONTH_NAMES[val.toLowerCase()] ?? 0;
+    else if (type === "day") day = +val;
+  }
+
+  if (!year || !month || !day) return null;
+  if (isValidDate(year, month, day)) return `${year}-${pad(month)}-${pad(day)}`;
   return null;
 }
 

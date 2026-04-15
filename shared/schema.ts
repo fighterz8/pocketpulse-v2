@@ -284,6 +284,13 @@ export type CsvFormatSpec = {
    *   "unsigned" — all values are positive; direction from description or type column
    */
   signConvention: "signed" | "unsigned";
+  /**
+   * Date format hint detected by the AI for non-standard date strings.
+   * Examples: "MM/DD/YYYY", "YYYY-MM-DD", "MMM D YYYY", "D MMM YYYY"
+   * When present, the parser tries this format first before its built-in list.
+   * Optional — absent for formats already handled by the heuristic date parser.
+   */
+  dateFormat?: string;
 };
 
 /**
