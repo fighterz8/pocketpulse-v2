@@ -14,9 +14,8 @@ The app automatically scans your transactions to identify charges that repeat on
 - Recurring charges are flagged in the ledger and factored into the dashboard separately from one-time purchases
 
 **What it looks like now:**
-- The Dashboard shows a dedicated recurring expenses total
-- Individual transactions marked as recurring are labeled in the ledger
-- The Leaks page lists all detected recurring patterns ranked by cost
+- The Dashboard shows a dedicated recurring expenses total, and individual transactions marked as recurring are labeled in the ledger
+- The Leaks page lists all detected recurring patterns ranked by estimated monthly cost
 
 ---
 
@@ -69,6 +68,7 @@ The account picker on the upload page would sometimes stay open after a selectio
 
 **What changed:**
 - The dropdown now closes automatically as soon as you select an account
+- The selected account name is displayed immediately in the field so you can confirm the right one was chosen
 
 **What it looks like now:**
 - Choosing an account in the upload form works in a single click with no stray open dropdowns
