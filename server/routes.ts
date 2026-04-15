@@ -511,6 +511,11 @@ export function createApp(options?: CreateAppOptions) {
           warnings?: string[];
         }> = [];
 
+        // Shared across all files in this request so that cross-file duplicates
+        // (e.g. month-end and month-start exports from the same bank) are counted
+        // as intraBatchDuplicates rather than previouslyImported.
+        const sessionSeen = new Set<string>();
+
         for (const file of files) {
           const fileMeta = metadata[file.originalname];
           if (!fileMeta || !fileMeta.accountId) {
@@ -864,7 +869,7 @@ export function createApp(options?: CreateAppOptions) {
           }
 
           const { insertedCount, previouslyImported, intraBatchDuplicates } =
-            await createTransactionBatch(txnInputs);
+            await createTransactionBatch(txnInputs, sessionSeen);
 
           await updateUploadStatus(
             uploadRecord.id,

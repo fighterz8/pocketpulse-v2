@@ -275,9 +275,17 @@ export type CreateBatchResult = {
  *
  * Dedup check is a single bulk SELECT restricted to the date range of the
  * incoming batch, so it stays efficient even for large accounts.
+ *
+ * @param txns         The transactions to insert.
+ * @param sessionSeen  Optional cross-file fingerprint accumulator for multi-file
+ *                     uploads. Pass the same Set instance for every file in one
+ *                     upload request so overlaps between files are counted as
+ *                     `intraBatchDuplicates` rather than `previouslyImported`.
+ *                     The set is mutated in-place as new rows are processed.
  */
 export async function createTransactionBatch(
   txns: CreateTransactionInput[],
+  sessionSeen?: Set<string>,
 ): Promise<CreateBatchResult> {
   if (txns.length === 0) return { insertedCount: 0, previouslyImported: 0, intraBatchDuplicates: 0 };
 
@@ -310,14 +318,18 @@ export async function createTransactionBatch(
       ),
     );
 
-  // Fingerprints that exist in the DB BEFORE this batch starts.
-  // Used to distinguish "already in DB" skips from "intra-batch" skips.
+  // Fingerprints that exist in the DB BEFORE this upload request started.
+  // Used to distinguish "already in DB from prior session" from "intra-batch" skips.
   const dbFingerprints = new Set(
     existing.map((r) => fingerprint(r.date, r.amount, r.rawDescription)),
   );
 
-  // seen grows as we process the batch so we also catch within-batch duplicates.
+  // seen = union of DB fingerprints + any cross-file session fingerprints so
+  // duplicates across files in the same upload are caught without a DB round-trip.
   const seen = new Set(dbFingerprints);
+  if (sessionSeen) {
+    for (const fp of sessionSeen) seen.add(fp);
+  }
 
   let previouslyImported = 0;
   let intraBatchDuplicates = 0;
@@ -326,6 +338,8 @@ export async function createTransactionBatch(
   for (const t of txns) {
     const fp = fingerprint(t.date, t.amount, t.rawDescription);
     if (seen.has(fp)) {
+      // "previously imported" = existed in DB before this upload request.
+      // "intra-batch" = appeared earlier in THIS upload (same file or other file in batch).
       if (dbFingerprints.has(fp)) {
         previouslyImported++;
       } else {
@@ -333,6 +347,8 @@ export async function createTransactionBatch(
       }
     } else {
       seen.add(fp);
+      // Track across files within the same upload request.
+      if (sessionSeen) sessionSeen.add(fp);
       newRows.push(t);
     }
   }
