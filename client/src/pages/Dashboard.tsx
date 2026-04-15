@@ -462,7 +462,7 @@ export function Dashboard() {
         <KpiCard
           label="Recurring Income"
           value={currencyShort(totals.recurringIncome)}
-          sub="Baseline revenue"
+          sub="Recurring inflows · this period"
           accent="green"
           data-testid="kpi-recurring-income"
           index={5}
@@ -471,7 +471,7 @@ export function Dashboard() {
         <KpiCard
           label="Recurring Expenses"
           value={currencyShort(totals.recurringExpenses)}
-          sub="Baseline costs"
+          sub="Est. monthly baseline · normalized"
           accent="red"
           data-testid="kpi-recurring-expenses"
           index={6}
