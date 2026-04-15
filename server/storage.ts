@@ -3,6 +3,7 @@ import { DatabaseError } from "pg";
 
 import {
   accounts,
+  csvFormatSpecs,
   merchantRules,
   recurringReviews,
   transactions,
@@ -10,6 +11,7 @@ import {
   USER_PREFERENCE_DEFAULTS,
   userPreferences,
   users,
+  type CsvFormatSpec,
 } from "../shared/schema.js";
 
 import { normalizeEmail } from "./auth.js";
@@ -872,4 +874,49 @@ export async function getMerchantRules(userId: number): Promise<Map<string, Merc
     });
   }
   return map;
+}
+
+// ---------------------------------------------------------------------------
+// CSV format spec cache
+// ---------------------------------------------------------------------------
+
+/**
+ * Look up a cached CSV format spec by (userId, headerFingerprint).
+ * Returns null when no spec has been saved for this user + fingerprint pair.
+ */
+export async function getFormatSpec(
+  userId: number,
+  headerFingerprint: string,
+): Promise<CsvFormatSpec | null> {
+  const [row] = await db
+    .select({ spec: csvFormatSpecs.spec })
+    .from(csvFormatSpecs)
+    .where(
+      and(
+        eq(csvFormatSpecs.userId, userId),
+        eq(csvFormatSpecs.headerFingerprint, headerFingerprint),
+      ),
+    )
+    .limit(1);
+  return row?.spec ?? null;
+}
+
+/**
+ * Persist a CSV format spec for a (userId, headerFingerprint) pair.
+ * Uses upsert so duplicate calls (e.g. concurrent uploads of the same bank's
+ * CSV) are safe and always store the latest spec.
+ */
+export async function saveFormatSpec(
+  userId: number,
+  headerFingerprint: string,
+  spec: CsvFormatSpec,
+  source: "heuristic" | "ai" = "ai",
+): Promise<void> {
+  await db
+    .insert(csvFormatSpecs)
+    .values({ userId, headerFingerprint, spec, source })
+    .onConflictDoUpdate({
+      target: [csvFormatSpecs.userId, csvFormatSpecs.headerFingerprint],
+      set: { spec, source },
+    });
 }

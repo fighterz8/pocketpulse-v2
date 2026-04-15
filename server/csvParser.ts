@@ -22,6 +22,7 @@ import {
   normalizeAmount,
   parseDate,
 } from "./transactionUtils.js";
+import type { CsvFormatSpec } from "../shared/schema.js";
 
 export type ParsedRow = {
   date: string;
@@ -38,7 +39,17 @@ export type ParsedRow = {
 };
 
 export type CSVParseResult =
-  | { ok: true; rows: ParsedRow[]; warnings: string[] }
+  | {
+      ok: true;
+      rows: ParsedRow[];
+      warnings: string[];
+      /**
+       * The format spec that was used (or detected) for this parse.
+       * Present on successful parses so the caller can cache it for next time.
+       * Absent when parsing was done via a caller-supplied spec override.
+       */
+      detectedSpec?: CsvFormatSpec;
+    }
   | { ok: false; error: string };
 
 type ColumnMapping = {
@@ -191,9 +202,31 @@ function classifyTypeColumn(rawType: string): "debit" | "credit" | null {
   return null;
 }
 
+/**
+ * Re-export so callers can reference the type without importing from shared.
+ */
+export type { CsvFormatSpec } from "../shared/schema.js";
+
+/**
+ * Build a ColumnMapping from a CsvFormatSpec returned by the AI detector
+ * or reconstructed from a cached spec.  This bypasses heuristic detection.
+ */
+function specToMapping(spec: CsvFormatSpec): ColumnMapping {
+  return {
+    dateIdx: spec.dateColumn,
+    descriptionIdx: spec.descriptionColumn,
+    amountIdx: spec.amountColumn ?? null,
+    debitIdx: spec.debitColumn ?? null,
+    creditIdx: spec.creditColumn ?? null,
+    typeIdx: spec.typeColumn ?? null,
+  };
+}
+
 export async function parseCSV(
   buffer: Buffer,
   filename: string,
+  /** When provided, skips heuristic column detection and uses this spec instead. */
+  specOverride?: CsvFormatSpec,
 ): Promise<CSVParseResult> {
   if (buffer.length === 0) {
     return { ok: false, error: `File "${filename}" is empty` };
@@ -300,6 +333,8 @@ export async function parseCSV(
 
   // ── Column detection ────────────────────────────────────────────────────────
   // Strategy (in order):
+  //   0. AI/cached spec override — when a FormatSpec is supplied by the caller,
+  //      use it directly without any heuristic scanning.
   //   1. Header-based detection on row 0.
   //   2. Preamble-row scan: if row 0 fails, try rows 1–9 as the header.
   //      BoA's default export includes a 5-row "Account Summary" block before
@@ -312,45 +347,76 @@ export async function parseCSV(
   let dataRows: string[][];
   let usedPositionalFallback = false;
 
-  const MAX_PREAMBLE_ROWS = 9; // scan up to the 10th row (index 0–9)
   // Track how many columns the header row had — used for overflow detection.
   let headerColCount = 0;
+  // For building detectedSpec on the heuristic path: how many preamble rows were skipped.
+  let heuristicPreambleRows = 0;
 
-  let headerRowIndex = -1;
-  let firstDetectionError = "";
+  if (specOverride) {
+    // ── Path 0: AI/cached spec override ──────────────────────────────────────
+    mapping = specToMapping(specOverride);
 
-  for (let i = 0; i <= Math.min(MAX_PREAMBLE_ROWS, records.length - 1); i++) {
-    const result = detectColumns(records[i]!);
-    if (typeof result !== "string") {
-      headerRowIndex = i;
-      mapping = result;
-      headerColCount = records[i]!.length;
-      break;
+    const dataStartIdx = specOverride.preambleRows + (specOverride.hasHeader ? 1 : 0);
+    dataRows = records.slice(dataStartIdx);
+
+    if (!specOverride.hasHeader) {
+      usedPositionalFallback = true;
     }
-    if (i === 0) firstDetectionError = result; // keep original error for reporting
-  }
 
-  if (mapping === null) {
-    // Header-based detection failed on all scanned rows — try positional fallback
-    const positional = tryPositionalFallback(records[0]!);
-    if (!positional) {
-      return { ok: false, error: firstDetectionError };
+    // Header column count: use the row at preambleRows (the header row) if present.
+    const headerRowIdx = specOverride.hasHeader ? specOverride.preambleRows : -1;
+    if (headerRowIdx >= 0 && headerRowIdx < records.length) {
+      headerColCount = records[headerRowIdx]!.length;
     }
-    mapping = positional;
-    dataRows = records; // no header row to skip
-    usedPositionalFallback = true;
-    warnings.push(
-      "No column headers detected — using positional column layout (Wells Fargo-style). " +
-      "Verify that amounts and descriptions look correct after upload.",
-    );
-  } else {
-    if (headerRowIndex > 0) {
+
+    if (specOverride.preambleRows > 0) {
       warnings.push(
-        `Skipped ${headerRowIndex} preamble row${headerRowIndex > 1 ? "s" : ""} before the column header. ` +
+        `Skipped ${specOverride.preambleRows} preamble row${specOverride.preambleRows > 1 ? "s" : ""} before the column header. ` +
         "This is normal for some bank exports (e.g. Bank of America).",
       );
     }
-    dataRows = records.slice(headerRowIndex + 1);
+  } else {
+    // ── Path 1–3: heuristic detection ─────────────────────────────────────────
+    const MAX_PREAMBLE_ROWS = 9; // scan up to the 10th row (index 0–9)
+
+    let headerRowIndex = -1;
+    let firstDetectionError = "";
+
+    for (let i = 0; i <= Math.min(MAX_PREAMBLE_ROWS, records.length - 1); i++) {
+      const result = detectColumns(records[i]!);
+      if (typeof result !== "string") {
+        headerRowIndex = i;
+        mapping = result;
+        headerColCount = records[i]!.length;
+        break;
+      }
+      if (i === 0) firstDetectionError = result; // keep original error for reporting
+    }
+
+    if (mapping === null) {
+      // Header-based detection failed on all scanned rows — try positional fallback
+      const positional = tryPositionalFallback(records[0]!);
+      if (!positional) {
+        return { ok: false, error: firstDetectionError };
+      }
+      mapping = positional;
+      dataRows = records; // no header row to skip
+      usedPositionalFallback = true;
+      heuristicPreambleRows = 0;
+      warnings.push(
+        "No column headers detected — using positional column layout (Wells Fargo-style). " +
+        "Verify that amounts and descriptions look correct after upload.",
+      );
+    } else {
+      heuristicPreambleRows = headerRowIndex;
+      if (headerRowIndex > 0) {
+        warnings.push(
+          `Skipped ${headerRowIndex} preamble row${headerRowIndex > 1 ? "s" : ""} before the column header. ` +
+          "This is normal for some bank exports (e.g. Bank of America).",
+        );
+      }
+      dataRows = records.slice(headerRowIndex + 1);
+    }
   }
 
   if (dataRows.length === 0) {
@@ -361,6 +427,13 @@ export async function parseCSV(
   }
 
   const rows: ParsedRow[] = [];
+
+  // When the spec says amounts are pre-signed (negative = outflow), a positive
+  // amount is unambiguously an inflow and should NOT be flagged for AI review.
+  // For unsigned conventions or heuristic-detected formats, positives are
+  // ambiguous until direction is confirmed via description or type column.
+  const treatAmountAsSigned =
+    specOverride !== undefined && specOverride.signConvention === "signed";
 
   const rowOffset = usedPositionalFallback ? 1 : 2; // for row number in warnings
 
@@ -436,17 +509,19 @@ export async function parseCSV(
       } else if (direction === "credit") {
         amount = Math.abs(parsed);
       } else {
-        // Unrecognized type — trust the amount's existing sign
+        // Unrecognized type — trust the amount's existing sign.
+        // If spec says amounts are pre-signed, positive = inflow (not ambiguous).
         amount = parsed;
-        ambiguous = amount >= 0;
+        ambiguous = treatAmountAsSigned ? false : amount >= 0;
       }
     } else if (mapping.amountIdx !== null) {
       // Priority 3: Amount column only — negative sign is reliable, but a
       // positive value in a single-column format is ambiguous: some banks
       // show all amounts as positive and rely on the description for direction.
+      // When spec says amounts are pre-signed, positive is always unambiguous.
       const rawAmount = adjAmountIdx !== null ? row[adjAmountIdx] ?? "" : "";
       amount = normalizeAmount(rawAmount);
-      ambiguous = amount >= 0;
+      ambiguous = treatAmountAsSigned ? false : amount >= 0;
     } else {
       amount = NaN;
     }
@@ -468,5 +543,24 @@ export async function parseCSV(
     };
   }
 
-  return { ok: true, rows, warnings };
+  // Build detectedSpec for the heuristic path so the caller can cache it.
+  // Not populated when the caller supplied a specOverride (spec is already known).
+  let detectedSpec: CsvFormatSpec | undefined;
+  if (!specOverride && mapping !== null) {
+    detectedSpec = {
+      preambleRows: heuristicPreambleRows,
+      hasHeader: !usedPositionalFallback,
+      dateColumn: mapping.dateIdx,
+      descriptionColumn: mapping.descriptionIdx,
+      amountColumn: mapping.amountIdx,
+      debitColumn: mapping.debitIdx,
+      creditColumn: mapping.creditIdx,
+      typeColumn: mapping.typeIdx,
+      // Default to "unsigned" — the heuristic doesn't determine sign convention.
+      // The AI detector fills in the real value if this spec is ever replaced.
+      signConvention: "unsigned",
+    };
+  }
+
+  return { ok: true, rows, warnings, detectedSpec };
 }

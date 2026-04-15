@@ -257,6 +257,64 @@ export const merchantRules = pgTable(
 );
 
 /**
+ * Structured description of how to read a bank's CSV file.
+ * Produced by the heuristic parser or the AI format detector and cached
+ * per user + header fingerprint so repeat uploads skip the detection step.
+ */
+export type CsvFormatSpec = {
+  /** Number of leading rows to skip before the header (or data when hasHeader=false). */
+  preambleRows: number;
+  /** True when the CSV has a named header row; false for positional/headerless formats. */
+  hasHeader: boolean;
+  /** 0-based column index of the date field. */
+  dateColumn: number;
+  /** 0-based column index of the description/merchant field. */
+  descriptionColumn: number;
+  /** 0-based index of a combined amount column, or null when debit/credit columns are used. */
+  amountColumn: number | null;
+  /** 0-based index of a debit (outflow) column, or null if not present. */
+  debitColumn: number | null;
+  /** 0-based index of a credit (inflow) column, or null if not present. */
+  creditColumn: number | null;
+  /** 0-based index of a transaction-type column (e.g. "DR"/"CR"), or null if not present. */
+  typeColumn: number | null;
+  /**
+   * How to interpret the amount column sign:
+   *   "signed"   — negative = outflow, positive = inflow (most banks)
+   *   "unsigned" — all values are positive; direction from description or type column
+   */
+  signConvention: "signed" | "unsigned";
+};
+
+/**
+ * Cached CSV format specs keyed by (userId, headerFingerprint).
+ * The fingerprint is a SHA-256 hex of the first up-to-10 raw lines of the file,
+ * which is stable across different monthly exports from the same bank.
+ */
+export const csvFormatSpecs = pgTable(
+  "csv_format_specs",
+  {
+    id: serial("id").primaryKey(),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    /** SHA-256 hex of the first up-to-10 lines of the normalized CSV content. */
+    headerFingerprint: text("header_fingerprint").notNull(),
+    /** The detected format spec as a JSON blob. */
+    spec: json("spec").$type<CsvFormatSpec>().notNull(),
+    /** How this spec was produced: "heuristic" or "ai". */
+    source: text("source").notNull().default("ai"),
+    createdAt: timestamp("created_at", { mode: "date", withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    index("csv_format_specs_user_id_idx").on(t.userId),
+    uniqueIndex("csv_format_specs_user_fp_idx").on(t.userId, t.headerFingerprint),
+  ],
+);
+
+/**
  * Matches `connect-pg-simple` expected shape (`table.sql` in that package).
  * Default store table name is `session`; keep this name for drop-in use later.
  */

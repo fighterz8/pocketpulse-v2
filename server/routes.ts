@@ -6,10 +6,12 @@ import session from "express-session";
 import multer from "multer";
 import helmet from "helmet";
 
+import crypto from "crypto";
 import { doubleCsrfProtection, generateToken, invalidCsrfTokenError } from "./csrf.js";
 import { hashPassword, verifyPassword } from "./auth.js";
 import { classifyTransaction } from "./classifier.js";
 import { parseCSV } from "./csvParser.js";
+import { detectCsvFormat } from "./csvFormatDetector.js";
 import { ensureUserPreferences, pool } from "./db.js";
 import { AUTO_ESSENTIAL_CATEGORIES, REVIEW_STATUSES, V1_CATEGORIES } from "../shared/schema.js";
 import { DEV_MODE_ENABLED } from "../shared/devConfig.js";
@@ -21,6 +23,7 @@ import {
   deleteAllTransactionsForUser,
   deleteWorkspaceDataForUser,
   DuplicateEmailError,
+  getFormatSpec,
   getMerchantRules,
   getTransactionById,
   getUserByEmailForAuth,
@@ -31,6 +34,7 @@ import {
   listTransactionsForUser,
   listUploadsForUser,
   propagateUserCorrection,
+  saveFormatSpec,
   updateTransaction,
   updateUploadStatus,
   upsertMerchantRule,
@@ -537,8 +541,92 @@ export function createApp(options?: CreateAppOptions) {
             status: "processing",
           });
 
-          // Parse the CSV
-          const parseResult = await parseCSV(file.buffer, file.originalname);
+          // ── CSV parsing with AI format detection fallback ─────────────────
+          // 1. Compute a fingerprint from the file's structural header lines.
+          //    SHA-256 of the first 10 raw lines — stable across same-bank
+          //    monthly exports because headers/preamble are always identical.
+          const headerFingerprint = (() => {
+            const raw = file.buffer.toString("utf-8").replace(/^\uFEFF/, "");
+            const structuralLines = raw.split(/\r?\n/).slice(0, 10).join("\n");
+            return crypto.createHash("sha256").update(structuralLines).digest("hex");
+          })();
+
+          // 2. Check for a cached format spec (skip detection for repeat uploads).
+          const cachedSpec = await getFormatSpec(userId, headerFingerprint);
+
+          // 3a. Parse with cached spec (fast path for known bank formats).
+          // 3b. If no cache, run the heuristic parser.
+          let parseResult = await parseCSV(
+            file.buffer,
+            file.originalname,
+            cachedSpec ?? undefined,
+          );
+
+          // 3c. If heuristic (or stale cache) failed, try AI format detection.
+          if (!parseResult.ok) {
+            const heuristicError = parseResult.error;
+            let aiTriedAndFailed = false;
+            try {
+              // Build raw rows for the AI — parse just the first 12 lines.
+              const { parse: csvParse } = await import("csv-parse/sync");
+              const rawText = file.buffer
+                .toString("utf-8")
+                .replace(/^\uFEFF/, "")
+                .trimStart();
+              let sampleRecords: string[][];
+              try {
+                sampleRecords = csvParse(rawText, {
+                  relax_column_count: true,
+                  relax_quotes: true,
+                  skip_empty_lines: true,
+                  trim: true,
+                  to: 12,
+                }) as string[][];
+              } catch {
+                sampleRecords = [];
+              }
+
+              if (sampleRecords.length > 0) {
+                const aiSpec = await detectCsvFormat(sampleRecords);
+                if (aiSpec) {
+                  const aiParseResult = await parseCSV(file.buffer, file.originalname, aiSpec);
+                  if (aiParseResult.ok) {
+                    // Cache the AI spec so repeat uploads skip detection.
+                    saveFormatSpec(userId, headerFingerprint, aiSpec, "ai").catch((e) => {
+                      console.warn(`[upload] saveFormatSpec failed: ${e}`);
+                    });
+                    parseResult = aiParseResult;
+                    console.log(
+                      `[upload] AI format detection succeeded for "${file.originalname}" ` +
+                      `(user=${userId}, fp=${headerFingerprint.slice(0, 8)})`,
+                    );
+                  } else {
+                    aiTriedAndFailed = true;
+                  }
+                } else {
+                  aiTriedAndFailed = true;
+                }
+              } else {
+                aiTriedAndFailed = true;
+              }
+            } catch (aiErr) {
+              console.warn(
+                `[upload] AI format detection threw for "${file.originalname}": ${aiErr}`,
+              );
+              aiTriedAndFailed = true;
+            }
+
+            if (!parseResult.ok) {
+              // Restore original heuristic error message for the user.
+              parseResult = { ok: false, error: heuristicError };
+            }
+            void aiTriedAndFailed; // suppress unused-var warning
+          } else if (!cachedSpec && parseResult.detectedSpec) {
+            // 4. Heuristic succeeded without a cached spec — save the mapping for next time.
+            saveFormatSpec(userId, headerFingerprint, parseResult.detectedSpec, "heuristic").catch(
+              (e) => { console.warn(`[upload] saveFormatSpec (heuristic) failed: ${e}`); },
+            );
+          }
 
           if (!parseResult.ok) {
             // DEV: log parse failures to the server console with the full error
