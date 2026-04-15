@@ -263,7 +263,10 @@ export type CreateTransactionInput = {
 
 export type CreateBatchResult = {
   insertedCount: number;
-  duplicateCount: number;
+  /** Rows skipped because they matched a row already in the DB from a prior upload. */
+  previouslyImported: number;
+  /** Rows skipped because the same row appeared more than once within this upload batch. */
+  intraBatchDuplicates: number;
 };
 
 /**
@@ -276,7 +279,7 @@ export type CreateBatchResult = {
 export async function createTransactionBatch(
   txns: CreateTransactionInput[],
 ): Promise<CreateBatchResult> {
-  if (txns.length === 0) return { insertedCount: 0, duplicateCount: 0 };
+  if (txns.length === 0) return { insertedCount: 0, previouslyImported: 0, intraBatchDuplicates: 0 };
 
   // All rows in a batch share the same userId and accountId (one file → one account).
   const { userId, accountId } = txns[0]!;
@@ -307,22 +310,36 @@ export async function createTransactionBatch(
       ),
     );
 
-  // Seed the seen set from existing DB rows; grow it while scanning incoming
-  // rows to also deduplicate within the same upload batch.
-  const seen = new Set(
+  // Fingerprints that exist in the DB BEFORE this batch starts.
+  // Used to distinguish "already in DB" skips from "intra-batch" skips.
+  const dbFingerprints = new Set(
     existing.map((r) => fingerprint(r.date, r.amount, r.rawDescription)),
   );
+
+  // seen grows as we process the batch so we also catch within-batch duplicates.
+  const seen = new Set(dbFingerprints);
+
+  let previouslyImported = 0;
+  let intraBatchDuplicates = 0;
 
   const newRows: CreateTransactionInput[] = [];
   for (const t of txns) {
     const fp = fingerprint(t.date, t.amount, t.rawDescription);
-    if (!seen.has(fp)) {
+    if (seen.has(fp)) {
+      if (dbFingerprints.has(fp)) {
+        previouslyImported++;
+      } else {
+        intraBatchDuplicates++;
+      }
+    } else {
       seen.add(fp);
       newRows.push(t);
     }
   }
 
-  if (newRows.length === 0) return { insertedCount: 0, duplicateCount: txns.length };
+  if (newRows.length === 0) {
+    return { insertedCount: 0, previouslyImported, intraBatchDuplicates };
+  }
 
   const values = newRows.map((t) => ({
     userId: t.userId,
@@ -350,9 +367,13 @@ export async function createTransactionBatch(
     .onConflictDoNothing()
     .returning({ id: transactions.id });
 
-  // duplicateCount = all txns minus those actually inserted (captures JS
-  // pre-filter duplicates + any race-condition skips at the DB level).
-  return { insertedCount: result.length, duplicateCount: txns.length - result.length };
+  // Any race-condition DB skips (concurrent uploads) are counted as intra-batch duplicates.
+  const raceSkips = newRows.length - result.length;
+  return {
+    insertedCount: result.length,
+    previouslyImported,
+    intraBatchDuplicates: intraBatchDuplicates + raceSkips,
+  };
 }
 
 export type ListTransactionsOptions = {

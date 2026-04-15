@@ -505,7 +505,8 @@ export function createApp(options?: CreateAppOptions) {
           uploadId: number | null;
           status: string;
           rowCount: number;
-          duplicateCount?: number;
+          previouslyImported?: number;
+          intraBatchDuplicates?: number;
           error?: string;
           warnings?: string[];
         }> = [];
@@ -862,7 +863,8 @@ export function createApp(options?: CreateAppOptions) {
             }
           }
 
-          const { insertedCount, duplicateCount } = await createTransactionBatch(txnInputs);
+          const { insertedCount, previouslyImported, intraBatchDuplicates } =
+            await createTransactionBatch(txnInputs);
 
           await updateUploadStatus(
             uploadRecord.id,
@@ -877,7 +879,8 @@ export function createApp(options?: CreateAppOptions) {
             uploadId: uploadRecord.id,
             status: "complete",
             rowCount: insertedCount,
-            duplicateCount,
+            previouslyImported: previouslyImported > 0 ? previouslyImported : undefined,
+            intraBatchDuplicates: intraBatchDuplicates > 0 ? intraBatchDuplicates : undefined,
             warnings:
               parseResult.warnings.length > 0
                 ? parseResult.warnings

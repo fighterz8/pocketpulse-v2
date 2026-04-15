@@ -135,8 +135,11 @@ export function Upload() {
   const totalRows = hasResults
     ? results!.reduce((sum, r) => sum + r.rowCount, 0)
     : 0;
-  const totalDuplicates = hasResults
-    ? results!.reduce((sum, r) => sum + (r.duplicateCount ?? 0), 0)
+  const totalPreviouslyImported = hasResults
+    ? results!.reduce((sum, r) => sum + (r.previouslyImported ?? 0), 0)
+    : 0;
+  const totalIntraBatch = hasResults
+    ? results!.reduce((sum, r) => sum + (r.intraBatchDuplicates ?? 0), 0)
     : 0;
 
   return (
@@ -167,9 +170,14 @@ export function Upload() {
               >
                 Import complete &mdash; {totalRows} transaction
                 {totalRows !== 1 ? "s" : ""} added
-                {totalDuplicates > 0 && (
-                  <span className="upload-results-skipped">
-                    &nbsp;&middot;&nbsp;{totalDuplicates} skipped (already imported)
+                {totalPreviouslyImported > 0 && (
+                  <span className="upload-results-skipped" data-testid="text-previously-imported">
+                    &nbsp;&middot;&nbsp;{totalPreviouslyImported} already in ledger
+                  </span>
+                )}
+                {totalIntraBatch > 0 && (
+                  <span className="upload-results-skipped" data-testid="text-intra-batch-dupes">
+                    &nbsp;&middot;&nbsp;{totalIntraBatch} duplicate row{totalIntraBatch !== 1 ? "s" : ""} in file
                   </span>
                 )}
               </p>
@@ -196,9 +204,14 @@ export function Upload() {
                     data-testid={`text-result-count-${i}`}
                   >
                     {r.rowCount} new
-                    {(r.duplicateCount ?? 0) > 0 && (
+                    {(r.previouslyImported ?? 0) > 0 && (
                       <span className="upload-result-skipped">
-                        &nbsp;&middot;&nbsp;{r.duplicateCount} skipped (already imported)
+                        &nbsp;&middot;&nbsp;{r.previouslyImported} already in ledger
+                      </span>
+                    )}
+                    {(r.intraBatchDuplicates ?? 0) > 0 && (
+                      <span className="upload-result-skipped">
+                        &nbsp;&middot;&nbsp;{r.intraBatchDuplicates} duplicate row{r.intraBatchDuplicates !== 1 ? "s" : ""} in file
                       </span>
                     )}
                   </span>

@@ -24,7 +24,10 @@ export type UploadFileResult = {
   uploadId: number | null;
   status: string;
   rowCount: number;
-  duplicateCount?: number;
+  /** Rows skipped because they already existed in the DB from a prior upload. */
+  previouslyImported?: number;
+  /** Rows skipped because the same row appeared more than once within this upload batch. */
+  intraBatchDuplicates?: number;
   error?: string;
   warnings?: string[];
 };
