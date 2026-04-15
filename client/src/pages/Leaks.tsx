@@ -8,18 +8,28 @@ import {
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
+interface CategoryBreakdownItem {
+  category: string;
+  total: number;
+  count: number;
+}
+
 interface LeakItem {
   merchant: string;
+  merchantKey: string;
   merchantFilter: string;
-  category: string;
+  dominantCategory: string;
+  categoryBreakdown: CategoryBreakdownItem[];
   bucket: "repeat_discretionary" | "micro_spend" | "high_frequency_convenience";
   label: string;
   monthlyAmount: number;
   occurrences: number;
+  firstDate: string;
   lastDate: string;
   confidence: "High" | "Medium" | "Low";
   averageAmount: number;
   recentSpend: number;
+  dailyAverage?: number;
   transactionClass: "expense";
   recurrenceType?: "recurring" | "one-time";
   isSubscriptionLike: boolean;
@@ -144,13 +154,14 @@ function LeakCard({
   startDate: string;
   endDate: string;
 }) {
+  // Use ?search= so the Ledger's ILIKE filter picks up all of this merchant's
+  // transactions across every category within the selected date range.
   const ledgerParams = new URLSearchParams({
-    merchant: l.merchantFilter,
+    search: l.merchantFilter,
     transactionClass: "expense",
     dateFrom: startDate,
     dateTo: endDate,
   });
-  if (l.recurrenceType === "recurring") ledgerParams.set("recurrenceType", "recurring");
   const ledgerHref = `/transactions?${ledgerParams.toString()}`;
 
   const bucketBorderColor =
@@ -158,7 +169,16 @@ function LeakCard({
     l.bucket === "high_frequency_convenience" ? "border-l-orange-400" :
                                                 "border-l-pink-400";
 
-  const slug = l.merchant.toLowerCase().replace(/\W+/g, "-");
+  const slug = l.merchantKey.replace(/\W+/g, "-");
+
+  // Show breakdown row only when merchant spans multiple categories
+  const showBreakdown = l.categoryBreakdown.length > 1;
+
+  // Date span: only show if first and last differ
+  const dateSpan =
+    l.firstDate !== l.lastDate
+      ? `${shortDate(l.firstDate)} – ${shortDate(l.lastDate)}`
+      : shortDate(l.lastDate);
 
   return (
     <motion.div
@@ -171,12 +191,13 @@ function LeakCard({
     >
       <div className="flex flex-col sm:flex-row gap-4">
         <div className="flex-1 min-w-0">
+          {/* Header: merchant name + badge row */}
           <div className="flex items-start gap-2 flex-wrap mb-1.5">
             <span className="font-semibold text-slate-800 dark:text-slate-100 text-sm leading-snug">
               {l.merchant}
             </span>
-            <span className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium ${categoryColor(l.category)}`}>
-              {capitalize(l.category)}
+            <span className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium ${categoryColor(l.dominantCategory)}`}>
+              {capitalize(l.dominantCategory)}
             </span>
             <span className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium ${CONFIDENCE_COLORS[l.confidence] ?? "bg-slate-100 text-slate-500"}`}>
               {l.confidence} confidence
@@ -188,17 +209,37 @@ function LeakCard({
             )}
           </div>
 
+          {/* Bucket label */}
           <p className="text-xs text-slate-500 dark:text-slate-400 mb-1.5">{l.label}</p>
 
+          {/* Category breakdown (multi-category merchants only) */}
+          {showBreakdown && (
+            <div
+              className="flex flex-wrap gap-x-2 gap-y-0.5 text-[11px] text-slate-500 dark:text-slate-400 mb-1.5"
+              data-testid={`leak-breakdown-${slug}`}
+            >
+              {l.categoryBreakdown.map((b) => (
+                <span key={b.category}>
+                  <span className={`inline-block px-1 py-0 rounded text-[10px] font-medium mr-0.5 ${categoryColor(b.category)}`}>
+                    {capitalize(b.category)}
+                  </span>
+                  {b.count}x {fmt(b.total)}
+                </span>
+              ))}
+            </div>
+          )}
+
+          {/* Stats row: occurrences, avg, date span */}
           <div className="flex items-center gap-2 flex-wrap text-xs text-slate-500 dark:text-slate-400">
             <span data-testid={`leak-occurrences-${slug}`}>{l.occurrences} charges</span>
             <span>·</span>
             <span>avg {fmt(l.averageAmount)}</span>
             <span>·</span>
-            <span>last {shortDate(l.lastDate)}</span>
+            <span data-testid={`leak-datespan-${slug}`}>{dateSpan}</span>
           </div>
         </div>
 
+        {/* Right column: amounts + link */}
         <div className="flex flex-row sm:flex-col items-center sm:items-end justify-between sm:justify-center gap-2 sm:min-w-[120px] sm:text-right">
           <div>
             <p className="text-lg font-bold leading-none text-red-500" data-testid={`leak-monthly-${slug}`}>
@@ -207,6 +248,14 @@ function LeakCard({
             <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">
               {fmt(l.recentSpend)} total
             </p>
+            {l.dailyAverage !== undefined && (
+              <p
+                className="text-xs text-amber-600 dark:text-amber-400 mt-0.5"
+                data-testid={`leak-daily-avg-${slug}`}
+              >
+                ~{fmt(l.dailyAverage)}/day
+              </p>
+            )}
           </div>
           <a
             href={ledgerHref}
@@ -347,7 +396,7 @@ export function Leaks() {
       <div className="flex flex-col gap-3">
         {leaks.map((l, i) => (
           <LeakCard
-            key={`${l.merchant}::${l.category}`}
+            key={l.merchantKey}
             leak={l}
             index={i + 3}
             startDate={startDate}

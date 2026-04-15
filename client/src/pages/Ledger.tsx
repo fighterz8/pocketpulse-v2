@@ -39,6 +39,7 @@ export function Ledger() {
     return {
       page: 1,
       limit: 50,
+      search: p.get("search") ?? undefined,
       category: p.get("category") ?? undefined,
       transactionClass: p.get("transactionClass") ?? undefined,
       recurrenceType: p.get("recurrenceType") ?? undefined,
@@ -47,16 +48,19 @@ export function Ledger() {
     };
   };
 
+  const searchFromUrl = (): string =>
+    new URLSearchParams(window.location.search).get("search") ?? "";
+
   const [filters, setFilters] = useState<TransactionFilters>(filtersFromUrl);
 
   // Re-sync when the route changes (e.g. clicking a dashboard card while already on /transactions)
   useEffect(() => {
     setFilters(filtersFromUrl());
-    setSearchInput("");
+    setSearchInput(searchFromUrl());
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location]);
 
-  const [searchInput, setSearchInput] = useState("");
+  const [searchInput, setSearchInput] = useState(searchFromUrl);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const onSearchChange = useCallback((value: string) => {

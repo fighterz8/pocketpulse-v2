@@ -3,11 +3,13 @@
  *
  * `detectLeaks()` scans expense transactions for high-frequency, micro-spend,
  * and repeat discretionary patterns and returns a ranked list of LeakItems.
- * It never imports from recurrenceDetector.ts or the DB layer.
+ * Groups by normalized merchant key so each merchant appears at most once
+ * regardless of how many categories its transactions span.
  */
 
 import { AUTO_ESSENTIAL_CATEGORIES } from "../shared/schema.js";
 import type { V1Category } from "../shared/schema.js";
+import { recurrenceKey } from "./recurrenceDetector.js";
 
 // ─── Category sets ────────────────────────────────────────────────────────────
 
@@ -79,10 +81,19 @@ function detectSubscriptionLike(
 // ─── LeakItem interface ───────────────────────────────────────────────────────
 
 export interface LeakItem {
+  /** Display name — the raw merchant string from the most recent transaction. */
   merchant: string;
-  /** Same as merchant — passed as the ?merchant= query param in Ledger drilldowns. */
+  /** Normalized merchant key used for deduplication. */
+  merchantKey: string;
+  /**
+   * Display merchant name passed as ?search= in Ledger drilldowns so the
+   * ILIKE filter catches all of the merchant's expense transactions.
+   */
   merchantFilter: string;
-  category: V1Category;
+  /** Dominant category (most frequent by transaction count within the group). */
+  dominantCategory: V1Category;
+  /** Per-category breakdown within the merchant group. Sorted by count desc. */
+  categoryBreakdown: Array<{ category: string; total: number; count: number }>;
   bucket: "repeat_discretionary" | "micro_spend" | "high_frequency_convenience";
   /** Human-readable bucket label shown under the merchant name. */
   label: string;
@@ -92,12 +103,16 @@ export interface LeakItem {
    */
   monthlyAmount: number;
   occurrences: number;
+  /** ISO date of earliest transaction in the group. */
+  firstDate: string;
   /** ISO date of most recent transaction in the group. */
   lastDate: string;
   confidence: "High" | "Medium" | "Low";
   averageAmount: number;
   /** Raw total spend in the selected window (not normalized). */
   recentSpend: number;
+  /** Daily average spend — populated only for micro_spend items. */
+  dailyAverage?: number;
   transactionClass: "expense";
   recurrenceType?: "recurring" | "one-time";
   /** True for fixed/predictable charges (subscriptions, memberships). */
@@ -143,7 +158,9 @@ function getRangeDaysFromTransactions(txns: TxRow[]): number {
  * Detect expense spending patterns that are likely avoidable.
  *
  * Pure function — takes a transaction array, returns a ranked LeakItem list.
- * Does NOT touch the database or import from recurrenceDetector.
+ * Does NOT touch the database. Groups by normalized merchant key (recurrenceKey)
+ * so the same physical merchant never produces more than one leak card even when
+ * its transactions span multiple categories.
  *
  * @param txns   Flat transaction rows (all classes/flow-types are accepted — the
  *               function itself filters to `transactionClass === "expense"` and
@@ -167,67 +184,99 @@ export function detectLeaks(
       !tx.excludedFromAnalysis,
   );
 
-  // Group by (merchant.lowercase :: category) composite key
-  type Group = {
+  // Group by normalized merchant key so one physical merchant → one group,
+  // regardless of how many categories its transactions fall under.
+  type TxEntry = {
+    date: string;
     merchant: string;
+    amount: number;
     category: string;
-    amounts: number[];
-    dates: string[];
-    recurrenceTypes: string[];
+    recurrenceType: string;
   };
-
-  const merchantGroups: Record<string, Group> = {};
+  const merchantGroups: Record<string, TxEntry[]> = {};
 
   for (const tx of candidates) {
-    const key = `${tx.merchant.toLowerCase()}::${tx.category}`;
-    if (!merchantGroups[key]) {
-      merchantGroups[key] = {
-        merchant: tx.merchant,
-        category: tx.category,
-        amounts: [],
-        dates: [],
-        recurrenceTypes: [],
-      };
-    }
-    merchantGroups[key].amounts.push(Math.abs(parseFloat(String(tx.amount))));
-    merchantGroups[key].dates.push(tx.date);
-    merchantGroups[key].recurrenceTypes.push(tx.recurrenceType ?? "one-time");
+    const key = recurrenceKey(tx.merchant);
+    if (!merchantGroups[key]) merchantGroups[key] = [];
+    merchantGroups[key].push({
+      date: tx.date,
+      merchant: tx.merchant,
+      amount: Math.abs(parseFloat(String(tx.amount))),
+      category: tx.category,
+      recurrenceType: tx.recurrenceType ?? "one-time",
+    });
   }
 
   const leaks: LeakItem[] = [];
 
-  for (const group of Object.values(merchantGroups)) {
-    if (group.amounts.length < 2) continue;
+  for (const [key, entries] of Object.entries(merchantGroups)) {
+    if (entries.length < 2) continue;
 
-    const totalSpend = group.amounts.reduce((a, b) => a + b, 0);
-    const avgAmount = totalSpend / group.amounts.length;
-    const sortedDates = [...group.dates].sort().reverse();
+    const amounts = entries.map((e) => e.amount);
+    const totalSpend = amounts.reduce((a, b) => a + b, 0);
+    const avgAmount = totalSpend / amounts.length;
+
+    const sortedDates = [...entries.map((e) => e.date)].sort();
+    const firstDate = sortedDates[0]!;
+    const lastDate = sortedDates[sortedDates.length - 1]!;
+
+    // Display merchant: raw string from the most recent transaction
+    const mostRecent = entries.reduce((a, b) => (a.date >= b.date ? a : b));
+    const displayMerchant = mostRecent.merchant;
+
     const amountVariance =
-      group.amounts.length > 1
-        ? Math.max(...group.amounts) - Math.min(...group.amounts)
-        : 0;
+      amounts.length > 1 ? Math.max(...amounts) - Math.min(...amounts) : 0;
 
-    const isRecurring = group.recurrenceTypes.includes("recurring");
+    const isRecurring = entries.some((e) => e.recurrenceType === "recurring");
+
+    // Build per-category breakdown (sorted by count desc, tiebreak by total desc)
+    const catMap: Record<string, { total: number; count: number }> = {};
+    for (const e of entries) {
+      if (!catMap[e.category]) catMap[e.category] = { total: 0, count: 0 };
+      catMap[e.category].total += e.amount;
+      catMap[e.category].count += 1;
+    }
+    const categoryBreakdown = Object.entries(catMap)
+      .map(([category, { total, count }]) => ({
+        category,
+        total: roundCurrency(total),
+        count,
+      }))
+      .sort((a, b) => b.count - a.count || b.total - a.total);
+
+    // Dominant category: most frequent by count, tiebreak by total
+    const dominantCategory = categoryBreakdown[0]?.category ?? "other";
+
+    // Category diversity: number of distinct categories in the group
+    const uniqueCategories = categoryBreakdown.length;
 
     // ── Bucket threshold checks ──────────────────────────────────────────────
-    const isMicroSpend = avgAmount <= 20 && group.amounts.length >= 4;
+    const isMicroSpend = avgAmount <= 20 && amounts.length >= 4;
 
-    // Convenience: dining, coffee, OR delivery — any of these convenience categories
+    // Convenience: dominant category is dining/coffee/delivery with ≥3 charges
     const isConvenience =
-      (group.category === "dining" ||
-        group.category === "coffee" ||
-        group.category === "delivery") &&
-      group.amounts.length >= 3;
+      (dominantCategory === "dining" ||
+        dominantCategory === "coffee" ||
+        dominantCategory === "delivery") &&
+      amounts.length >= 3;
 
+    // Standard repeat discretionary: known discretionary dominant category, ≥3 charges, ≥$60 total
     const isRepeatDiscretionary =
-      DISCRETIONARY_CATEGORIES.has(group.category) &&
-      group.amounts.length >= 3 &&
+      DISCRETIONARY_CATEGORIES.has(dominantCategory) &&
+      amounts.length >= 3 &&
       totalSpend >= 60;
 
+    // High-spend fallback: ≥2 charges AND ≥$150 total qualifies as repeat_discretionary.
+    // Catches bimonthly large-spend merchants (e.g. two $90 restaurant visits).
+    const isHighSpendFallback =
+      DISCRETIONARY_CATEGORIES.has(dominantCategory) &&
+      amounts.length >= 2 &&
+      totalSpend >= 150;
+
     // isRecurring boosts confidence and adjusts bucket metadata, but does NOT
-    // independently qualify a group as a leak — one of the three behavioral
-    // thresholds (micro, convenience, or repeat discretionary) must still be met.
-    if (!isMicroSpend && !isConvenience && !isRepeatDiscretionary) {
+    // independently qualify a group as a leak — one of the four behavioral
+    // thresholds must still be met.
+    if (!isMicroSpend && !isConvenience && !isRepeatDiscretionary && !isHighSpendFallback) {
       continue;
     }
 
@@ -246,31 +295,48 @@ export function detectLeaks(
     // isRecurring contributes here — stable recurring amounts raise confidence.
     let confidence: "High" | "Medium" | "Low" = "Medium";
     if (
-      group.amounts.length >= 6 ||
+      amounts.length >= 6 ||
       (isRecurring && amountVariance < avgAmount * 0.15)
     ) {
       confidence = "High";
-    } else if (group.amounts.length <= 2) {
+    } else if (amounts.length <= 2) {
       confidence = "Low";
     }
 
+    // Category diversity penalty: spread across 3+ categories lowers confidence
+    // (less certain this is one habitual spend pattern vs. a multi-purpose merchant).
+    if (uniqueCategories >= 3) {
+      if (confidence === "High") confidence = "Medium";
+      else if (confidence === "Medium") confidence = "Low";
+    }
+
+    // Daily average — only for micro_spend items
+    const dailyAverage =
+      bucket === "micro_spend"
+        ? roundCurrency(totalSpend / Math.max(1, rangeDays))
+        : undefined;
+
     leaks.push({
-      merchant: group.merchant,
-      merchantFilter: group.merchant,
-      category: group.category as V1Category,
+      merchant: displayMerchant,
+      merchantKey: key,
+      merchantFilter: displayMerchant,
+      dominantCategory: dominantCategory as V1Category,
+      categoryBreakdown,
       bucket,
       label,
       monthlyAmount: roundCurrency(totalSpend / monthFactor),
-      occurrences: group.amounts.length,
-      lastDate: sortedDates[0]!,
+      occurrences: amounts.length,
+      firstDate,
+      lastDate,
       confidence,
       averageAmount: roundCurrency(avgAmount),
       recentSpend: roundCurrency(totalSpend),
+      dailyAverage,
       transactionClass: "expense",
       recurrenceType: isRecurring ? "recurring" : undefined,
       isSubscriptionLike: detectSubscriptionLike(
-        group.merchant,
-        group.category,
+        displayMerchant,
+        dominantCategory,
         isRecurring,
         amountVariance,
         avgAmount,
