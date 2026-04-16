@@ -319,7 +319,7 @@ export function detectLeaks(
     leaks.push({
       merchant: displayMerchant,
       merchantKey: key,
-      merchantFilter: displayMerchant,
+      merchantFilter: key,
       dominantCategory: dominantCategory as V1Category,
       categoryBreakdown,
       bucket,

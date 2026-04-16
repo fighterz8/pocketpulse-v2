@@ -85,10 +85,6 @@ export function Ledger() {
 
   const [wipeConfirm, setWipeConfirm] = useState(false);
   const [resetConfirm, setResetConfirm] = useState(false);
-  const [reclassifyResult, setReclassifyResult] = useState<{ updated: number; total: number } | null>(null);
-  const [aiProgress, setAiProgress] = useState(0);
-  const aiProgressRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
   // Propagation notice: shown briefly after a correction is auto-applied to
   // same-merchant transactions.
   const [propagationNotice, setPropagationNotice] = useState<{ merchant: string; count: number } | null>(null);
@@ -109,7 +105,6 @@ export function Ledger() {
     updateTransaction,
     wipeData,
     resetWorkspace,
-    reclassify,
   } = useTransactions(filters);
 
   const setPage = (p: number) => setFilters((f) => ({ ...f, page: p }));
@@ -128,32 +123,6 @@ export function Ledger() {
     setSearchInput("");
     setFilters({ page: 1, limit: 50 });
   };
-
-  useEffect(() => {
-    if (reclassify.isPending) {
-      setAiProgress(0);
-      const start = Date.now();
-      const DURATION = 35_000;
-      const MAX_PCT = 92;
-      aiProgressRef.current = setInterval(() => {
-        const elapsed = Date.now() - start;
-        const pct = Math.min(MAX_PCT, (elapsed / DURATION) * MAX_PCT);
-        setAiProgress(pct);
-      }, 120);
-    } else {
-      if (aiProgressRef.current) {
-        clearInterval(aiProgressRef.current);
-        aiProgressRef.current = null;
-      }
-      if (aiProgress > 0) {
-        setAiProgress(100);
-        setTimeout(() => setAiProgress(0), 1200);
-      }
-    }
-    return () => {
-      if (aiProgressRef.current) clearInterval(aiProgressRef.current);
-    };
-  }, [reclassify.isPending]);
 
   // Clean up propagation notice timer on unmount.
   useEffect(() => {
@@ -287,62 +256,6 @@ export function Ledger() {
           </div>
         </div>
       </div>
-      </motion.div>
-
-      {/* AI Re-categorization */}
-      <motion.div
-        className="ledger-ai-section glass-card mb-4"
-        initial={{ opacity: 0, y: 14 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.35, delay: 0.14 }}
-      >
-        <div className="ledger-ai-header">
-          <div>
-            <h3 className="ledger-ai-title">AI Categorization</h3>
-            <p className="ledger-ai-desc">
-              Uses your past corrections as examples to re-classify transactions the AI labeled automatically.
-              Skips anything you or the system have manually set. Run after uploading new data or fixing a pattern of wrong categories.
-            </p>
-          </div>
-          <button
-            className="ledger-ai-btn"
-            onClick={() => {
-              setReclassifyResult(null);
-              reclassify.mutate(undefined, {
-                onSuccess: (data) => setReclassifyResult({ updated: data.updated, total: data.total }),
-              });
-            }}
-            disabled={reclassify.isPending}
-            data-testid="btn-reclassify"
-          >
-            {reclassify.isPending ? "Analyzing…" : "Re-run AI Categorization"}
-          </button>
-        </div>
-
-        {(reclassify.isPending || aiProgress > 0) && (
-          <div className="ledger-ai-progress-wrap">
-            <div
-              className={`ledger-ai-progress-bar${aiProgress >= 100 ? " ledger-ai-progress-bar--done" : ""}`}
-              style={{ width: `${aiProgress}%` }}
-            />
-            <span className="ledger-ai-progress-label">
-              {aiProgress >= 100
-                ? "Complete"
-                : `Analyzing merchants… ${Math.round(aiProgress)}%`}
-            </span>
-          </div>
-        )}
-
-        {reclassifyResult && !reclassify.isPending && aiProgress === 0 && (
-          <p className="ledger-ai-status ledger-ai-status--success">
-            Done — updated {reclassifyResult.updated} of {reclassifyResult.total} transactions.
-          </p>
-        )}
-        {reclassify.isError && (
-          <p className="ledger-ai-status ledger-ai-status--error">
-            {(reclassify.error as Error)?.message ?? "An error occurred. Please try again."}
-          </p>
-        )}
       </motion.div>
 
       {error && <p className="ledger-error">{error.message}</p>}
