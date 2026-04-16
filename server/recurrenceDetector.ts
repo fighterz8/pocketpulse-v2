@@ -141,7 +141,8 @@ const LIFESTYLE_BLOCK_CATEGORIES = new Set([
 
 /**
  * Merchant key fragments that unambiguously indicate a subscription product.
- * Matched against the lowercased candidateKey with a simple includes() check.
+ * Matched against the lowercased candidateKey with a substring includes() check.
+ * Used only for the isSubscriptionLike signal — not for lifestyle gate bypass.
  */
 const SUBSCRIPTION_BRAND_FRAGMENTS = [
   "netflix", "spotify", "hulu", "disney", "hbo", "max.com", "paramount",
@@ -157,6 +158,22 @@ const SUBSCRIPTION_BRAND_FRAGMENTS = [
   "hellofresh", "hello fresh", "factor", "freshly", "marley spoon",
   "everyplate", "home chef", "green chef", "dinnerly", "gobble",
 ];
+
+/**
+ * Exact canonical merchant keys (output of recurrenceKey()) that are allowed
+ * through the LIFESTYLE_BLOCK_CATEGORIES gate.
+ *
+ * These brands are billed as recurring subscriptions but may be auto-tagged by
+ * the categorizer into a lifestyle category (delivery, shopping, convenience).
+ * Using exact key matching (vs substring) prevents incidental false positives.
+ */
+const LIFESTYLE_SUBSCRIPTION_EXCEPTION_KEYS = new Set([
+  // Meal-kit subscriptions (often tagged delivery/shopping)
+  "hellofresh", "factor", "freshly", "marley spoon",
+  "everyplate", "home chef", "green chef", "dinnerly", "gobble",
+  // Streaming/digital that occasionally lands in shopping
+  "amazon prime", "amazon prime video", "audible",
+]);
 
 /**
  * Merchant key fragments that are NEVER subscription-like, regardless of amount
@@ -458,40 +475,35 @@ function bucketByAmount(txns: TransactionLike[]): AmountBucket[] {
 // ─── Monthly coverage check ──────────────────────────────────────────────────
 
 /**
- * Returns true when the candidate's transactions cover at least `minCoverage`
- * of the calendar months between their first and last occurrence.
+ * Returns true when the candidate's transactions appear in at least `minCoverage`
+ * of the calendar months present in the FULL DATASET (lookback window), not just
+ * the candidate's own first→last span.
  *
- * Protects against "Starbucks 3 times over 90 days with ~30-day gaps"
- * being classified as monthly recurring — those 3 visits would each be in
- * a different month, giving 3/3 = 100 % coverage. Wait — that would PASS.
+ * Using the dataset span instead of the candidate span catches patterns like:
+ *   - Dataset covers 12 months; candidate appears in only 3 consecutive months
+ *     → 3/12 = 25 % → FAIL (correctly rejected as non-recurring)
+ *   - Dataset covers 12 months; genuine monthly subscription misses 2 months
+ *     → 10/12 = 83 % → PASS
  *
- * The key insight: a lifestyle merchant that happens to have one purchase per
- * month is still a lifestyle merchant and should be blocked by the category
- * gate BEFORE reaching this check. This function is a secondary guard for
- * non-lifestyle categories where we still want to ensure genuine monthly
- * regularity.
+ * `datasetTotalMonths` is the count of distinct YYYY-MM months present in the
+ * full set of filtered outflow transactions passed to detectRecurringCandidates.
  *
- * Always returns true (pass) when the span is fewer than 2 calendar months.
+ * Short-dataset guard: if the dataset spans fewer than 2 calendar months the
+ * check is skipped (returns true) because a short CSV upload genuinely cannot
+ * provide 65 % coverage of a 1-month window.
  */
 function passesMonthlyDatasetCoverage(
   sorted: TransactionLike[],
+  datasetTotalMonths: number,
   minCoverage = MONTHLY_COVERAGE_MIN,
 ): boolean {
   if (sorted.length < 2) return false;
 
-  const firstMonth = sorted[0]!.date.slice(0, 7); // "YYYY-MM"
-  const lastMonth  = sorted[sorted.length - 1]!.date.slice(0, 7);
-
-  const [fy, fm] = firstMonth.split("-").map(Number) as [number, number];
-  const [ly, lm] = lastMonth.split("-").map(Number) as [number, number];
-
-  const totalMonthsSpanned = (ly - fy) * 12 + (lm - fm) + 1;
-
-  // Skip check for short date ranges (< 2 calendar months)
-  if (totalMonthsSpanned < 2) return true;
+  // Short dataset guard — skip when the full dataset is < 2 calendar months
+  if (datasetTotalMonths < 2) return true;
 
   const distinctMonths = new Set(sorted.map((t) => t.date.slice(0, 7))).size;
-  return distinctMonths / totalMonthsSpanned >= minCoverage;
+  return distinctMonths / datasetTotalMonths >= minCoverage;
 }
 
 // ─── Frequency detection ─────────────────────────────────────────────────────
@@ -603,6 +615,20 @@ export function detectRecurringCandidates(txns: TransactionLike[]): RecurringCan
 
   const today = todayISO();
   const candidates: RecurringCandidate[] = [];
+
+  // Pre-compute the dataset's calendar-month footprint (within the lookback window).
+  // This is used by passesMonthlyDatasetCoverage() as the denominator so a
+  // candidate that only appears in 3 of 12 dataset months correctly fails (3/12 < 65%)
+  // rather than trivially passing (3/3 = 100%) against its own narrow span.
+  const cutoff = lookbackCutoff();
+  const datasetTotalMonths = new Set(
+    txns
+      .filter(
+        (t) => !t.excludedFromAnalysis && t.flowType === "outflow" && t.date >= cutoff,
+      )
+      .map((t) => t.date.slice(0, 7)),
+  ).size;
+
   const groups = groupTransactions(txns);
 
   for (const group of groups) {
@@ -616,14 +642,13 @@ export function detectRecurringCandidates(txns: TransactionLike[]): RecurringCan
 
       // ── Lifestyle category hard block ────────────────────────────────────
       // Use the most recent transaction's category as the representative.
-      // Skip lifestyle categories UNLESS the merchant is a known subscription
-      // brand (meal-kit services, etc.) that happen to land in delivery/shopping.
+      // Skip lifestyle categories UNLESS the merchant's canonical key exactly
+      // matches a known recurring-subscription brand (meal-kits, etc.) that
+      // happens to land in a lifestyle category. Exact key matching (Set.has)
+      // avoids incidental substring false positives.
       const category = sorted[sorted.length - 1]!.category;
       if (LIFESTYLE_BLOCK_CATEGORIES.has(category)) {
-        const isKnownSubscription = SUBSCRIPTION_BRAND_FRAGMENTS.some(
-          (frag) => group.key.includes(frag),
-        );
-        if (!isKnownSubscription) continue;
+        if (!LIFESTYLE_SUBSCRIPTION_EXCEPTION_KEYS.has(group.key)) continue;
       }
 
       const freq = detectFrequency(sorted);
@@ -639,10 +664,10 @@ export function detectRecurringCandidates(txns: TransactionLike[]): RecurringCan
       }
 
       // ── Monthly coverage check ───────────────────────────────────────────
-      // For monthly candidates only: must appear in ≥65 % of calendar months
-      // between first and last occurrence. Skipped when span < 2 months.
+      // For monthly candidates only: must appear in ≥65 % of the dataset's
+      // calendar months (lookback window). Short-dataset guard applied inside.
       if (freq.frequency === "monthly") {
-        if (!passesMonthlyDatasetCoverage(sorted)) continue;
+        if (!passesMonthlyDatasetCoverage(sorted, datasetTotalMonths)) continue;
       }
 
       const { score: confidence, amountScore, recencyScore } = scoreConfidence(sorted, freq, category);
