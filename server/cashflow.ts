@@ -31,6 +31,11 @@ const DISCRETIONARY_CATEGORIES = new Set<string>([
  * Categories that are NEVER flagged as leaks.
  * Combines AUTO_ESSENTIAL_CATEGORIES (housing, utilities, insurance, medical, debt)
  * with other obligatory / non-discretionary spend.
+ *
+ * NOTE: "software" was intentionally removed. Software merchants that ARE
+ * recurring (e.g. Netflix, iCloud) are excluded by the recurring mutual-exclusion
+ * rule. Software merchants that are NOT recurring (e.g. a one-off tool purchase
+ * repeated a few times) correctly appear as leaks.
  */
 const ESSENTIAL_LEAK_EXCLUSIONS = new Set<string>([
   ...AUTO_ESSENTIAL_CATEGORIES,
@@ -40,8 +45,17 @@ const ESSENTIAL_LEAK_EXCLUSIONS = new Set<string>([
   "auto",
   "parking",
   "travel",
-  "software",
   "fees",
+]);
+
+/**
+ * Categories that are excluded from the catch-all repeat-purchase rule.
+ * These are non-negotiable financial obligations that should never be flagged
+ * as "leaks" regardless of frequency or amount.
+ */
+const CATCH_ALL_HARD_EXCLUSIONS = new Set<string>([
+  "housing", "utilities", "insurance", "medical", "debt",
+  "income", "groceries", "gas", "auto", "parking", "travel",
 ]);
 
 // ─── isSubscriptionLike helpers ───────────────────────────────────────────────
@@ -165,16 +179,22 @@ function getRangeDaysFromTransactions(txns: TxRow[]): number {
  * @param txns   Flat transaction rows (all classes/flow-types are accepted — the
  *               function itself filters to `transactionClass === "expense"` and
  *               excludes the essential category set).
- * @param options.rangeDays  Explicit date-window length in days. When omitted the
- *                           function calculates it from the earliest → latest date
- *                           found in the provided transactions.
+ * @param options.rangeDays             Explicit date-window length in days. When omitted the
+ *                                      function calculates it from the earliest → latest date
+ *                                      found in the provided transactions.
+ * @param options.recurringMerchantKeys Normalized merchant keys (output of recurrenceKey())
+ *                                      of currently active recurring candidates. Any merchant
+ *                                      whose key appears in this set is SKIPPED — preventing
+ *                                      double-counting between the Recurring Expenses and
+ *                                      Leaks views. Pass an empty set when unknown.
  */
 export function detectLeaks(
   txns: TxRow[],
-  options: { rangeDays?: number } = {},
+  options: { rangeDays?: number; recurringMerchantKeys?: ReadonlySet<string> } = {},
 ): LeakItem[] {
   const rangeDays = options.rangeDays ?? getRangeDaysFromTransactions(txns);
   const monthFactor = getMonthFactor(rangeDays);
+  const recurringKeys = options.recurringMerchantKeys ?? new Set<string>();
 
   // Filter to leak candidates: expense class, non-essential category, not excluded
   const candidates = txns.filter(
@@ -197,6 +217,10 @@ export function detectLeaks(
 
   for (const tx of candidates) {
     const key = recurrenceKey(tx.merchant);
+    // Mutual exclusion: skip merchants that are currently tracked as recurring.
+    // This prevents the same merchant from appearing on both the Recurring Expenses
+    // dashboard card and the Leaks page simultaneously.
+    if (recurringKeys.has(key)) continue;
     if (!merchantGroups[key]) merchantGroups[key] = [];
     merchantGroups[key].push({
       date: tx.date,
@@ -273,10 +297,27 @@ export function detectLeaks(
       amounts.length >= 2 &&
       totalSpend >= 150;
 
+    // Catch-all repeat-purchase rule: any merchant with ≥3 transactions, avg ≥$25,
+    // and total ≥$75 is surfaced as a low-confidence leak regardless of category,
+    // as long as it is not a hard-excluded essential obligation.
+    // This catches unfamiliar merchant types (e.g. "other" or unknown categories)
+    // for new CSV sources where discretionary classification may be imprecise.
+    const isRepeatPurchaseCatchAll =
+      amounts.length >= 3 &&
+      avgAmount >= 25 &&
+      totalSpend >= 75 &&
+      !CATCH_ALL_HARD_EXCLUSIONS.has(dominantCategory);
+
     // isRecurring boosts confidence and adjusts bucket metadata, but does NOT
-    // independently qualify a group as a leak — one of the four behavioral
+    // independently qualify a group as a leak — one of the behavioral
     // thresholds must still be met.
-    if (!isMicroSpend && !isConvenience && !isRepeatDiscretionary && !isHighSpendFallback) {
+    if (
+      !isMicroSpend &&
+      !isConvenience &&
+      !isRepeatDiscretionary &&
+      !isHighSpendFallback &&
+      !isRepeatPurchaseCatchAll
+    ) {
       continue;
     }
 
@@ -308,6 +349,18 @@ export function detectLeaks(
     if (uniqueCategories >= 3) {
       if (confidence === "High") confidence = "Medium";
       else if (confidence === "Medium") confidence = "Low";
+    }
+
+    // Catch-all-only items: cap at Low confidence since they qualified solely
+    // on frequency/amount heuristics without a strong discretionary category signal.
+    if (
+      isRepeatPurchaseCatchAll &&
+      !isMicroSpend &&
+      !isConvenience &&
+      !isRepeatDiscretionary &&
+      !isHighSpendFallback
+    ) {
+      confidence = "Low";
     }
 
     // Daily average — only for micro_spend items

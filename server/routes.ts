@@ -1387,7 +1387,26 @@ export function createApp(options?: CreateAppOptions) {
         excludedFromAnalysis: t.excludedFromAnalysis,
       }));
 
-      const leaks = detectLeaks(txns, { rangeDays });
+      // Build the recurring merchant key exclusion set from the DB.
+      // The sync pipeline keeps recurrenceType up-to-date on every upload/edit,
+      // so this accurately reflects the current recurring candidate state without
+      // re-running the expensive detectRecurringCandidates() detector.
+      const recurringRows = await db
+        .select({ merchant: txnTable.merchant })
+        .from(txnTable)
+        .where(
+          and(
+            eq(txnTable.userId, userId),
+            eq(txnTable.flowType, "outflow"),
+            eq(txnTable.recurrenceType, "recurring"),
+            eq(txnTable.excludedFromAnalysis, false),
+          ),
+        );
+      const recurringMerchantKeys = new Set(
+        recurringRows.map((r) => recurrenceKey(r.merchant)),
+      );
+
+      const leaks = detectLeaks(txns, { rangeDays, recurringMerchantKeys });
       res.json(leaks);
     } catch (e) {
       next(e);
