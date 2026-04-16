@@ -68,6 +68,29 @@ export type DashboardSummary = {
   accountCount: number;
 };
 
+/**
+ * Pure helper — compute `periodDays` from a min/max date pair (all-time mode).
+ * Exported for unit-testing without hitting the database.
+ *
+ * - Multi-day span:  ceil(diff_ms / 86_400_000) + 1  (inclusive of both endpoints)
+ * - Same day:        30  (single-day or empty dataset — default to one month)
+ * - One/both absent: 30
+ */
+export function computePeriodDaysFromSpan(
+  minDate: string | null | undefined,
+  maxDate: string | null | undefined,
+): number {
+  if (minDate && maxDate && minDate !== maxDate) {
+    return Math.max(
+      1,
+      Math.ceil(
+        (new Date(maxDate).getTime() - new Date(minDate).getTime()) / 86_400_000,
+      ) + 1,
+    );
+  }
+  return 30;
+}
+
 export async function buildDashboardSummary(
   userId: number,
   range?: DashboardDateRange,
@@ -164,18 +187,27 @@ export async function buildDashboardSummary(
   const isAllTime = !(range?.dateFrom || range?.dateTo);
 
   // Calculate period length for monthly baselines.
-  // When no explicit date range is supplied we query the actual first→last
-  // transaction span instead of falling back to an arbitrary 90-day constant.
+  // When no explicit date range is supplied (isAllTime) we query the actual
+  // first→last transaction span instead of falling back to an arbitrary constant.
+  // The two branches are tied directly to isAllTime so a partial range (one bound
+  // only) never accidentally triggers the all-time min/max path.
   let periodDays: number;
-  if (range?.dateFrom && range?.dateTo) {
-    periodDays = Math.max(
-      1,
-      Math.ceil(
-        (new Date(range.dateTo).getTime() - new Date(range.dateFrom).getTime()) /
-          86_400_000,
-      ),
-    );
+  if (!isAllTime) {
+    // Explicit range mode — use provided bounds when both are present.
+    // A single-bound edge case falls back to 30 days (deterministic).
+    if (range?.dateFrom && range?.dateTo) {
+      periodDays = Math.max(
+        1,
+        Math.ceil(
+          (new Date(range.dateTo).getTime() - new Date(range.dateFrom).getTime()) /
+            86_400_000,
+        ),
+      );
+    } else {
+      periodDays = 30; // deterministic fallback for single-bound edge case
+    }
   } else {
+    // All-time mode — derive span from actual transaction data.
     const spanResult = await db
       .select({
         minDate: sql<string>`MIN(${transactions.date})`,
@@ -185,16 +217,7 @@ export async function buildDashboardSummary(
       .where(and(eq(transactions.userId, userId), eq(transactions.excludedFromAnalysis, false)));
     const minDate = spanResult[0]?.minDate;
     const maxDate = spanResult[0]?.maxDate;
-    if (minDate && maxDate && minDate !== maxDate) {
-      periodDays = Math.max(
-        1,
-        Math.ceil(
-          (new Date(maxDate).getTime() - new Date(minDate).getTime()) / 86_400_000,
-        ) + 1, // +1 to include both the first and last day
-      );
-    } else {
-      periodDays = 30; // single-day or empty dataset — default to one month
-    }
+    periodDays = computePeriodDaysFromSpan(minDate, maxDate);
   }
   const months = Math.max(1, periodDays / 30);
 
