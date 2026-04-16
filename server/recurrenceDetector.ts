@@ -8,6 +8,24 @@
  *
  * Only considers transactions from the past 18 months so stale
  * subscriptions that were cancelled years ago don't contaminate results.
+ *
+ * Detection is CATEGORY-STRATIFIED:
+ *  • Bill categories (utilities, housing, insurance, medical, debt) —
+ *    liberal amount tolerance (25 %) and category+amount grouping so
+ *    unfamiliar bank merchant names still cluster correctly.
+ *  • Subscription categories (software, entertainment) — tight tolerance
+ *    (10 %) because SaaS prices are fixed.
+ *  • Lifestyle categories (dining, coffee, delivery, convenience, shopping)
+ *    — HARD BLOCKED from recurring detection. Starbucks, Amazon retail,
+ *    DoorDash, etc. can never be "recurring expenses" regardless of how
+ *    often they appear. Exception: known subscription brands that happen
+ *    to be tagged in a lifestyle category (e.g. meal-kit services).
+ *  • All other categories — moderate tolerance (15 %).
+ *
+ * Monthly-frequency candidates must also appear in ≥ 65 % of calendar
+ * months between their first and last occurrence. The check is skipped
+ * when the candidate spans fewer than 2 distinct calendar months (short
+ * CSV uploads).
  */
 
 export type RecurringCandidate = {
@@ -33,15 +51,6 @@ export type RecurringCandidate = {
   /**
    * true when the charge pattern looks like a digital subscription rather
    * than a lifestyle habit (coffee, dining, gym visits, etc.).
-   *
-   * Used in the Leaks page to split candidates into "Subscriptions" and
-   * "Habits" sections so the user knows which ones they can cancel vs. change.
-   *
-   * Criteria (any one suffices):
-   *  1. Category is software, entertainment, or streaming-adjacent (fitness)
-   *  2. Monthly/annual and the average amount has a ".99" or ".00" suffix
-   *     (classic SaaS pricing)
-   *  3. Merchant key contains a known subscription brand name
    */
   isSubscriptionLike: boolean;
 };
@@ -95,16 +104,39 @@ const MONTHLY_FACTOR: Record<RecurringCandidate["frequency"], number> = {
   annual:    1 / 12,
 };
 
-const AMOUNT_TOLERANCE_PERCENT = 0.30; // 30% tolerance — more flexible
-const AMOUNT_TOLERANCE_FLOOR   = 3.0;  // at least $3 tolerance
-const CONFIDENCE_THRESHOLD     = 0.30; // lower floor, UI shows confidence badge
-const VARIABLE_AMOUNT_CATEGORIES = new Set(["utilities", "insurance", "medical", "housing"]);
+/**
+ * Categories where bills legitimately vary in amount (utility usage,
+ * insurance adjustments, etc.). Given generous amount tolerance.
+ */
+const VARIABLE_AMOUNT_CATEGORIES = new Set([
+  "utilities", "insurance", "medical", "housing", "debt",
+]);
 
 /**
  * Categories that are almost always digital subscriptions (billed to a card,
  * cancellable online) rather than in-person lifestyle habits.
  */
 const SUBSCRIPTION_CATEGORIES = new Set(["software", "entertainment"]);
+
+/**
+ * Lifestyle categories that are HARD BLOCKED from recurring detection.
+ *
+ * Purchases at Starbucks, Amazon retail, DoorDash, etc. may happen
+ * repeatedly but they are NOT recurring expenses — they are discretionary
+ * lifestyle spend whose amounts and frequency vary per visit. These should
+ * be surfaced as Leaks, not Recurring Expenses.
+ *
+ * Exception: a merchant whose normalized key appears in
+ * SUBSCRIPTION_BRAND_FRAGMENTS is allowed through even if its category
+ * lands here (e.g. a meal-kit service tagged "delivery").
+ */
+const LIFESTYLE_BLOCK_CATEGORIES = new Set([
+  "dining",
+  "coffee",
+  "delivery",
+  "convenience",
+  "shopping",
+]);
 
 /**
  * Merchant key fragments that unambiguously indicate a subscription product.
@@ -120,43 +152,47 @@ const SUBSCRIPTION_BRAND_FRAGMENTS = [
   "elevenlabs", "shopify", "quickbooks", "freshbooks", "xero", "squarespace",
   "wix", "godaddy", "namecheap", "cloudflare", "digitalocean", "linode",
   "aws", "azure", "heroku", "vercel", "netlify", "twilio",
+  // Meal-kit subscriptions billed as "delivery" or "shopping"
+  "hellofresh", "hello fresh", "factor", "freshly", "marley spoon",
+  "everyplate", "home chef", "green chef", "dinnerly", "gobble",
 ];
 
 /**
  * Merchant key fragments that are NEVER subscription-like, regardless of amount
- * or frequency. These represent cash/banking transactions that recur by nature
- * but cannot be "cancelled" — they should always land in Habits, not Subscriptions.
- *
- * Checked against the lowercased candidateKey with includes() — any match forces
- * isSubscriptionLike to false, short-circuiting all other signals.
- *
- * Outflow-only note: inflows (direct deposits, wire transfers in, ACH credits,
- * mobile deposits) are already excluded from candidate detection at the grouping
- * stage (flowType !== "outflow" filter), so they never reach this check.
+ * or frequency.
  */
 const NEVER_SUBSCRIPTION_FRAGMENTS = [
-  "atm",              // ATM withdrawals / ATM fees (round-dollar amounts trigger isSaasPrice)
-  "wire transfer",    // outgoing wire transfers (not cancellable)
-  "ach credit",       // inbound ACH credits (direct deposits, refunds, government payments)
-  "mobile deposit",   // mobile check deposits
-  "interest payment", // bank interest paid to user or loan interest charges
-  "zelle",            // Zelle P2P payments
-  "venmo",            // Venmo P2P payments / cashouts
-  "cash app",         // CashApp P2P transfers
-  "cashout",          // "ACH CREDIT VENMO CASHOUT" and similar P2P cashout descriptions
+  "atm",
+  "wire transfer",
+  "ach credit",
+  "mobile deposit",
+  "interest payment",
+  "zelle",
+  "venmo",
+  "cash app",
+  "cashout",
 ];
 
 /**
  * Transaction categories that are never subscription-like.
- * Includes "banking" and "transfer" as future-proof guards even though these
- * category values do not currently exist in V1_CATEGORIES — if they are added
- * later, affected transactions will be protected immediately.
- * "income" catches any edge case where an inflow slips through the flowType filter.
  */
 const NEVER_SUBSCRIPTION_CATEGORIES = new Set(["income", "banking", "transfer"]);
 
 /** Only look at transactions from the past 18 months */
 const LOOKBACK_DAYS = 548; // ~18 months
+
+/**
+ * Confidence threshold — candidates below this score are discarded.
+ * Raised from 0.30 to 0.42 to cut out borderline weak detections.
+ */
+const CONFIDENCE_THRESHOLD = 0.42;
+
+/**
+ * Minimum fraction of calendar months (first → last occurrence) that a
+ * monthly-frequency candidate must appear in. 65 % allows a single missed
+ * month in a 3-month window (66 %) while still blocking random clusters.
+ */
+const MONTHLY_COVERAGE_MIN = 0.65;
 
 const WEIGHTS = {
   interval: 0.35,
@@ -165,15 +201,50 @@ const WEIGHTS = {
   recency:  0.20,
 };
 
+// ─── Category-stratified amount tolerance ────────────────────────────────────
+
+/**
+ * Returns the maximum dollar difference allowed when deciding whether a
+ * transaction belongs to an existing amount bucket.
+ *
+ * Tiers:
+ *  • Bill categories (utilities, housing, insurance, medical, debt)
+ *    → 25 % or $5 minimum (bills legitimately vary by usage/adjustment)
+ *  • Subscription categories (software, entertainment)
+ *    → 10 % or $1 minimum (SaaS prices are fixed; price bumps stay in bucket)
+ *  • All other non-lifestyle categories
+ *    → 15 % or $1.50 minimum
+ *  • Lifestyle categories (blocked before bucketing)
+ *    → 2 % or $0.10 minimum (safety-net only — should never reach here)
+ */
+function getAmountTolerance(centroid: number, category: string): number {
+  if (VARIABLE_AMOUNT_CATEGORIES.has(category)) {
+    return Math.max(5.0, centroid * 0.25);
+  }
+  if (SUBSCRIPTION_CATEGORIES.has(category)) {
+    return Math.max(1.0, centroid * 0.10);
+  }
+  if (LIFESTYLE_BLOCK_CATEGORIES.has(category)) {
+    return Math.max(0.10, centroid * 0.02);
+  }
+  return Math.max(1.5, centroid * 0.15);
+}
+
 // ─── Merchant key normalisation ─────────────────────────────────────────────
 
 /**
- * Strips payment processor prefixes, account numbers, "-dc NNNN" prefixes,
- * "Payment To " prefixes, and known suffix noise so that
- *   "-dc 4305 Replit, Inc. Replit.com"  →  "replit"
- *   "Payment To At&t"                   →  "at&t"
- *   "Openai Httpsopenai.c Ca Null"       →  "openai"
- *   "Chatgpt Subscripti Httpsopenai.c"  →  "openai"
+ * Strips payment processor prefixes, ACH/EFT/bill-pay prefixes, account
+ * numbers, URL noise, and known suffix noise so that merchant descriptions
+ * from any bank normalise to a clean, comparable key.
+ *
+ * Examples:
+ *   "ACH PMT DUKE ENERGY 8473923"      → "duke energy"
+ *   "ACH DEBIT 4305 AT&T WIRELESS"     → "at&t"
+ *   "CHECKCARD 1234 STATE FARM INS"    → "state farm ins"
+ *   "PYMT*NETFLIX.COM"                 → "netflix"
+ *   "-dc 4305 Replit, Inc. Replit.com" → "replit"
+ *   "Payment To At&t"                  → "at&t"
+ *   "Openai Httpsopenai.c Ca Null"     → "openai"
  */
 export function recurrenceKey(merchant: string): string {
   let k = merchant.toLowerCase().trim();
@@ -184,13 +255,29 @@ export function recurrenceKey(merchant: string): string {
   // Strip leading debit-card prefix: "-dc NNNN " or "debit NNNN "
   k = k.replace(/^-dc\s+\d+\s*/i, "");
 
+  // Strip ACH / EFT / bill-pay / check-card prefixes that banks prepend.
+  // These obscure the real merchant name and prevent grouping across banks.
+  //   "ACH PMT DUKE ENERGY 8473923" → "DUKE ENERGY 8473923"
+  //   "ACH DEBIT 4305 AT&T"         → "AT&T"
+  //   "CHECKCARD 1234 STATE FARM"   → "STATE FARM"
+  //   "EFT PMT ALLSTATE INS"        → "ALLSTATE INS"
+  //   "BILLPAY DISCOVER CARD"       → "DISCOVER CARD"
+  //   "PYMT*NETFLIX.COM"            → "NETFLIX.COM"
+  k = k.replace(/^(ach\s+(pmt|debit|payment|credit|trnsfr|xfer)\s*[\d]*\s*)/i, "");
+  k = k.replace(/^(eft\s+(pmt|debit|payment)\s*[\d]*\s*)/i, "");
+  k = k.replace(/^(checkcard|check\s*card)\s+\d+\s*/i, "");
+  k = k.replace(/^(billpay|bill\s*pay)\s+/i, "");
+  k = k.replace(/^(pymt|pmt)\s*[*]?\s*/i, "");
+  k = k.replace(/^(online\s+(pmt|payment|pmnt)\s*[\d]*\s*)/i, "");
+  k = k.replace(/^debit\s+\d+\s*/i, "");
+
   // Strip payment processor square/toast/stripe/doordash prefixes
   k = k.replace(/^(sq\s*\*|tst\s*\*|sp\s*\*|pos\s*|pp\s*\*|paypal\s*\*|dd\s*\*)\s*/i, "");
 
   // Strip "Payment To " prefix (e.g. "Payment To Tesla Insurance")
   k = k.replace(/^payment\s+(to\s+)?/i, "");
 
-  // Strip trailing URL noise (e.g. "Replit.com", "Httpsopenai.c Ca Null", "Openai.com")
+  // Strip trailing URL noise
   k = k.replace(/\s+(https?:\S+|http\S*|\w+\.\w{2,4})\s*.*/i, "");
   k = k.replace(/\s+(ca|null|us|co)\s*$/i, "");
 
@@ -206,8 +293,8 @@ export function recurrenceKey(merchant: string): string {
     [/\bdoordash\b/, "doordash"],
     [/\bamazon prime video\b/, "amazon prime video"],
     [/\bamazon prime\b/, "amazon prime"],
-    [/\bamazon\b|\bamzn\b/, "amazon"],
-    [/\bnetflix\b/, "netflix"],
+    [/\bamazon\b|\bamzn\b|\bnflx\b.*dvd/, "amazon"],
+    [/\bnetflix\b|\bnflx\b/, "netflix"],
     [/\bspotify\b/, "spotify"],
     [/\bhulu\b/, "hulu"],
     [/\byoutube\b|\byt premium\b/, "youtube"],
@@ -216,12 +303,30 @@ export function recurrenceKey(merchant: string): string {
     [/\bicloud\b/, "icloud"],
     [/\bshopify\b/, "shopify"],
     [/\belevenlabs\b/, "elevenlabs"],
-    [/\b24 hour fitness\b|\b24hr fitness\b/, "24 hour fitness"],
+    [/\b24 hour fitness\b|\b24hr fitness\b|\b24\s*hour\b/, "24 hour fitness"],
     [/\bchuze fitness\b/, "chuze fitness"],
+    [/\bplanet fitness\b/, "planet fitness"],
     [/\bcrunchyroll\b/, "crunchyroll"],
-    [/\bat&t\b|\bat and t\b/, "at&t"],
+    [/\bat&t\b|\bat and t\b|\batt\s*(wireless|mobility|u-verse|internet|tv)\b/, "at&t"],
     [/\btesla insurance\b/, "tesla insurance"],
     [/\blumetry\b/, "lumetry"],
+    // Common utility/telecom aliases
+    [/\bverizon\b/, "verizon"],
+    [/\bt.?mobile\b|\btmobile\b/, "t-mobile"],
+    [/\bcomcast\b|\bxfinity\b/, "xfinity"],
+    [/\bspectrum\b/, "spectrum"],
+    [/\bcox\s*(comm|cable|internet)?\b/, "cox"],
+    [/\bduke\s*energy\b/, "duke energy"],
+    [/\bpg&e\b|\bpacific\s*gas\b/, "pge"],
+    [/\bconedison\b|\bcon\s*ed\b/, "con edison"],
+    [/\bstate\s*farm\b/, "state farm"],
+    [/\bgeico\b/, "geico"],
+    [/\ballstate\b/, "allstate"],
+    [/\bprogressive\s*(ins|insurance)?\b/, "progressive"],
+    [/\bnationwide\b/, "nationwide"],
+    [/\bhellofresh\b|\bhello\s*fresh\b/, "hellofresh"],
+    [/\bfactor\s*(meals|75)?\b/, "factor"],
+    [/\bdiscover\s*(card|bank|financial)?\b/, "discover card"],
   ];
   for (const [re, canonical] of ALIASES) {
     if (re.test(k)) { k = canonical; break; }
@@ -232,18 +337,6 @@ export function recurrenceKey(merchant: string): string {
 
 /**
  * Build a stable candidate key from a merchant key and bucket index.
- *
- * The primary (most-common-amount) bucket for a merchant gets the bare
- * merchantKey so that a price change (e.g. Netflix $9.99 → $11.99) does NOT
- * create a new key and orphan the user's existing review.
- *
- * Secondary buckets (a merchant with truly distinct price tiers, e.g. a gym
- * that bills both a monthly membership and an annual day-pass fee) get a
- * numeric suffix: "merchant|1", "merchant|2", etc.
- *
- * Migration note: old keys had the format "merchantKey|avgAmount.toFixed(2)".
- * A one-time startup migration (see routes.ts) strips that suffix so existing
- * reviews automatically re-attach to the new key format.
  */
 export function buildCandidateKey(merchantKey: string, bucketIndex: number): string {
   return bucketIndex === 0 ? merchantKey : `${merchantKey}|${bucketIndex}`;
@@ -281,11 +374,28 @@ function lookbackCutoff(): string {
   return d.toISOString().slice(0, 10);
 }
 
-// Categories where we group by amount bucket instead of merchant name.
-// Mortgage / rent payments often appear with different merchant names in bank
-// exports (e.g. "Payment To Lakeview Loan Servicing" vs "- Lakeview Ln Srv Mtg Pymt")
-// but always represent the same underlying recurring obligation.
-const CATEGORY_KEY_OVERRIDES = new Set(["housing"]);
+/**
+ * Categories where we group by category+amount bucket instead of merchant name.
+ *
+ * Housing and debt payments often appear under completely different merchant
+ * strings across banks (e.g. "Payment To Lakeview Loan Servicing" vs
+ * "- Lakeview Ln Srv Mtg Pymt", or "LOAN PMT 8374983" vs "AUTO LOAN 9384789").
+ * Grouping by category+amount ensures they still cluster as one recurring item.
+ *
+ * Utilities, insurance: handled by the improved recurrenceKey() normalization
+ * (ACH prefix stripping + extended brand aliases) to avoid incorrectly merging
+ * distinct utility bills that happen to be the same amount.
+ */
+const CATEGORY_KEY_OVERRIDES = new Set(["housing", "debt"]);
+
+/**
+ * Dollar-rounding applied when building the category+amount group key.
+ * Tighter rounding keeps genuinely different bills in separate groups.
+ */
+const CATEGORY_AMOUNT_ROUNDING: Record<string, number> = {
+  housing: 200, // mortgage/rent: round to nearest $200
+  debt:    50,  // loan/debt payments: round to nearest $50
+};
 
 // ─── Grouping ────────────────────────────────────────────────────────────────
 
@@ -295,15 +405,13 @@ function groupTransactions(txns: TransactionLike[]): MerchantGroup[] {
   for (const txn of txns) {
     if (txn.excludedFromAnalysis) continue;
     if (txn.flowType !== "outflow") continue;
-    if (txn.date < cutoff) continue; // ignore data older than 18 months
+    if (txn.date < cutoff) continue;
 
     let key: string;
     if (CATEGORY_KEY_OVERRIDES.has(txn.category)) {
-      // Group by category + rounded-amount bucket so mortgage/rent payments
-      // cluster together regardless of how the bank formats the merchant name.
-      // Round to nearest $200 so minor payment adjustments stay in the same group.
       const amt = Math.abs(parseFloat(txn.amount) || 0);
-      const bucket = Math.round(amt / 200) * 200;
+      const rounding = CATEGORY_AMOUNT_ROUNDING[txn.category] ?? 200;
+      const bucket = Math.round(amt / rounding) * rounding;
       key = `__${txn.category}_${bucket}`;
     } else {
       key = recurrenceKey(txn.merchant);
@@ -325,10 +433,7 @@ function bucketByAmount(txns: TransactionLike[]): AmountBucket[] {
     if (isNaN(amt) || amt === 0) continue;
     let placed = false;
     for (const bucket of buckets) {
-      const tolerance = Math.max(
-        bucket.centroid * AMOUNT_TOLERANCE_PERCENT,
-        AMOUNT_TOLERANCE_FLOOR,
-      );
+      const tolerance = getAmountTolerance(bucket.centroid, txn.category);
       if (Math.abs(amt - bucket.centroid) <= tolerance) {
         bucket.transactions.push(txn);
         bucket.centroid =
@@ -343,6 +448,45 @@ function bucketByAmount(txns: TransactionLike[]): AmountBucket[] {
     }
   }
   return buckets;
+}
+
+// ─── Monthly coverage check ──────────────────────────────────────────────────
+
+/**
+ * Returns true when the candidate's transactions cover at least `minCoverage`
+ * of the calendar months between their first and last occurrence.
+ *
+ * Protects against "Starbucks 3 times over 90 days with ~30-day gaps"
+ * being classified as monthly recurring — those 3 visits would each be in
+ * a different month, giving 3/3 = 100 % coverage. Wait — that would PASS.
+ *
+ * The key insight: a lifestyle merchant that happens to have one purchase per
+ * month is still a lifestyle merchant and should be blocked by the category
+ * gate BEFORE reaching this check. This function is a secondary guard for
+ * non-lifestyle categories where we still want to ensure genuine monthly
+ * regularity.
+ *
+ * Always returns true (pass) when the span is fewer than 2 calendar months.
+ */
+function passesMonthlyDatasetCoverage(
+  sorted: TransactionLike[],
+  minCoverage = MONTHLY_COVERAGE_MIN,
+): boolean {
+  if (sorted.length < 2) return false;
+
+  const firstMonth = sorted[0]!.date.slice(0, 7); // "YYYY-MM"
+  const lastMonth  = sorted[sorted.length - 1]!.date.slice(0, 7);
+
+  const [fy, fm] = firstMonth.split("-").map(Number) as [number, number];
+  const [ly, lm] = lastMonth.split("-").map(Number) as [number, number];
+
+  const totalMonthsSpanned = (ly - fy) * 12 + (lm - fm) + 1;
+
+  // Skip check for short date ranges (< 2 calendar months)
+  if (totalMonthsSpanned < 2) return true;
+
+  const distinctMonths = new Set(sorted.map((t) => t.date.slice(0, 7))).size;
+  return distinctMonths / totalMonthsSpanned >= minCoverage;
 }
 
 // ─── Frequency detection ─────────────────────────────────────────────────────
@@ -457,8 +601,6 @@ export function detectRecurringCandidates(txns: TransactionLike[]): RecurringCan
   const groups = groupTransactions(txns);
 
   for (const group of groups) {
-    // Sort buckets largest-first so the highest-spend tier gets bucket index 0
-    // (the bare merchantKey, no suffix). Lower-spend tiers get |1, |2, etc.
     const buckets = bucketByAmount(group.transactions).sort(
       (a, b) => b.centroid - a.centroid,
     );
@@ -466,6 +608,18 @@ export function detectRecurringCandidates(txns: TransactionLike[]): RecurringCan
     for (let bucketIndex = 0; bucketIndex < buckets.length; bucketIndex++) {
       const bucket = buckets[bucketIndex]!;
       const sorted = bucket.transactions.sort((a, b) => a.date.localeCompare(b.date));
+
+      // ── Lifestyle category hard block ────────────────────────────────────
+      // Use the most recent transaction's category as the representative.
+      // Skip lifestyle categories UNLESS the merchant is a known subscription
+      // brand (meal-kit services, etc.) that happen to land in delivery/shopping.
+      const category = sorted[sorted.length - 1]!.category;
+      if (LIFESTYLE_BLOCK_CATEGORIES.has(category)) {
+        const isKnownSubscription = SUBSCRIPTION_BRAND_FRAGMENTS.some(
+          (frag) => group.key.includes(frag),
+        );
+        if (!isKnownSubscription) continue;
+      }
 
       const freq = detectFrequency(sorted);
       if (!freq) continue;
@@ -479,7 +633,13 @@ export function detectRecurringCandidates(txns: TransactionLike[]): RecurringCan
         if (span < 300) continue;
       }
 
-      const category = sorted[sorted.length - 1]!.category;
+      // ── Monthly coverage check ───────────────────────────────────────────
+      // For monthly candidates only: must appear in ≥65 % of calendar months
+      // between first and last occurrence. Skipped when span < 2 months.
+      if (freq.frequency === "monthly") {
+        if (!passesMonthlyDatasetCoverage(sorted)) continue;
+      }
+
       const { score: confidence, amountScore, recencyScore } = scoreConfidence(sorted, freq, category);
       if (confidence < CONFIDENCE_THRESHOLD) continue;
 
@@ -503,11 +663,10 @@ export function detectRecurringCandidates(txns: TransactionLike[]): RecurringCan
 
       const candidateKey = buildCandidateKey(group.key, bucketIndex);
 
-      // For category-override groups (e.g. __housing_3400), build a clean display name
-      // from the most common merchant name in the group rather than the raw bucket key.
+      // For category-override groups (e.g. __housing_3400, __debt_300),
+      // build a clean display name from the most common merchant name.
       let merchantDisplay: string;
       if (group.key.startsWith("__")) {
-        // Pick the most frequently appearing merchant name
         const nameCounts = new Map<string, number>();
         for (const t of sorted) {
           const n = t.merchant.replace(/^[\s\-–—_*#]+/, "").trim();
@@ -518,21 +677,7 @@ export function detectRecurringCandidates(txns: TransactionLike[]): RecurringCan
         merchantDisplay = sorted[sorted.length - 1]!.merchant;
       }
 
-      // ── isSubscriptionLike signal ──────────────────────────────────────
-      // A charge is "subscription-like" if any of the following hold:
-      //  1. It belongs to a known digital-subscription category
-      //  2. The merchant key matches a known SaaS/streaming brand
-      //  3. It's a fixed monthly/annual charge with a classic ".99" or ".00"
-      //     price point (e.g. $9.99, $14.99, $99.00, $19.00)
-      //
-      // Two hard overrides force isSubscriptionLike to false first, regardless
-      // of all other signals:
-      //  A. NEVER_SUBSCRIPTION_FRAGMENTS — cash/banking merchant keywords (ATM,
-      //     Zelle, Venmo, wire transfers) that recur by nature but cannot be
-      //     cancelled like a subscription.  DEF-014: round-dollar ATM withdrawals
-      //     were triggering isSaasPrice and landing in Digital Subscriptions.
-      //  B. NEVER_SUBSCRIPTION_CATEGORIES — "income" catches mislabelled inflows
-      //     that slipped through the flowType filter.
+      // ── isSubscriptionLike signal ────────────────────────────────────────
       const neverFragment = NEVER_SUBSCRIPTION_FRAGMENTS.some((frag) =>
         candidateKey.includes(frag),
       );

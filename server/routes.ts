@@ -49,7 +49,7 @@ import { detectRecurringCandidates, recurrenceKey } from "./recurrenceDetector.j
 import { detectLeaks } from "./cashflow.js";
 import { reclassifyTransactions } from "./reclassify.js";
 import { aiClassifyBatch, type AiClassificationInput, type AiClassificationResult } from "./ai-classifier.js";
-import { transactions as txnTable } from "../shared/schema.js";
+import { transactions as txnTable, users as usersTable } from "../shared/schema.js";
 
 declare module "express-session" {
   interface SessionData {
@@ -1433,6 +1433,20 @@ export function createApp(options?: CreateAppOptions) {
       res.status(500).json({ error: "Internal server error" });
     },
   );
+
+  // Startup recurring re-sync: ensures the updated detector logic applies
+  // immediately for all existing users without requiring a manual re-upload.
+  setImmediate(async () => {
+    try {
+      const allUsers = await db.select({ id: usersTable.id }).from(usersTable);
+      for (const user of allUsers) {
+        await syncRecurringCandidates(user.id);
+      }
+      console.log(`[startup] recurring-sync complete for ${allUsers.length} user(s)`);
+    } catch (err) {
+      console.warn("[startup] recurring-sync skipped:", err);
+    }
+  });
 
   return app;
 }
