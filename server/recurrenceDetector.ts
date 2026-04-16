@@ -11,8 +11,9 @@
  *
  * Detection is CATEGORY-STRATIFIED:
  *  • Bill categories (utilities, housing, insurance, medical, debt) —
- *    liberal amount tolerance (25 %) and category+amount grouping so
- *    unfamiliar bank merchant names still cluster correctly.
+ *    liberal amount tolerance (25 %) and category+amount grouping
+ *    (utilities $10, insurance $20, housing $200, debt $50 rounding)
+ *    so cross-bank merchant name variance still clusters correctly.
  *  • Subscription categories (software, entertainment) — tight tolerance
  *    (10 %) because SaaS prices are fixed.
  *  • Lifestyle categories (dining, coffee, delivery, convenience, shopping)
@@ -293,7 +294,7 @@ export function recurrenceKey(merchant: string): string {
     [/\bdoordash\b/, "doordash"],
     [/\bamazon prime video\b/, "amazon prime video"],
     [/\bamazon prime\b/, "amazon prime"],
-    [/\bamazon\b|\bamzn\b|\bnflx\b.*dvd/, "amazon"],
+    [/\bamazon\b|\bamzn\b/, "amazon"],
     [/\bnetflix\b|\bnflx\b/, "netflix"],
     [/\bspotify\b/, "spotify"],
     [/\bhulu\b/, "hulu"],
@@ -377,24 +378,28 @@ function lookbackCutoff(): string {
 /**
  * Categories where we group by category+amount bucket instead of merchant name.
  *
- * Housing and debt payments often appear under completely different merchant
+ * Bills in these categories often appear under completely different merchant
  * strings across banks (e.g. "Payment To Lakeview Loan Servicing" vs
- * "- Lakeview Ln Srv Mtg Pymt", or "LOAN PMT 8374983" vs "AUTO LOAN 9384789").
- * Grouping by category+amount ensures they still cluster as one recurring item.
+ * "- Lakeview Ln Srv Mtg Pymt", or "ACH PMT DUKE ENERGY 8473923" vs
+ * "DUKE ENERGY CAROLINAS 9384789"). Grouping by category+amount bucket
+ * ensures they still cluster as one recurring item regardless of bank formatting.
  *
- * Utilities, insurance: handled by the improved recurrenceKey() normalization
- * (ACH prefix stripping + extended brand aliases) to avoid incorrectly merging
- * distinct utility bills that happen to be the same amount.
+ * Rounding granularity is calibrated per category to keep genuinely distinct
+ * bills (e.g. two different utility companies charging close amounts) in
+ * separate buckets while still grouping the same bill's minor month-to-month
+ * fluctuations together.
  */
-const CATEGORY_KEY_OVERRIDES = new Set(["housing", "debt"]);
+const CATEGORY_KEY_OVERRIDES = new Set(["housing", "utilities", "insurance", "debt"]);
 
 /**
  * Dollar-rounding applied when building the category+amount group key.
  * Tighter rounding keeps genuinely different bills in separate groups.
  */
 const CATEGORY_AMOUNT_ROUNDING: Record<string, number> = {
-  housing: 200, // mortgage/rent: round to nearest $200
-  debt:    50,  // loan/debt payments: round to nearest $50
+  housing:   200, // mortgage/rent: round to nearest $200
+  debt:       50, // loan/debt payments: round to nearest $50
+  utilities:  10, // utility bills: round to nearest $10 (usage varies)
+  insurance:  20, // insurance premiums: round to nearest $20 (adjustment cycles)
 };
 
 // ─── Grouping ────────────────────────────────────────────────────────────────
@@ -678,8 +683,16 @@ export function detectRecurringCandidates(txns: TransactionLike[]): RecurringCan
       }
 
       // ── isSubscriptionLike signal ────────────────────────────────────────
-      const neverFragment = NEVER_SUBSCRIPTION_FRAGMENTS.some((frag) =>
-        candidateKey.includes(frag),
+      // Check NEVER_SUBSCRIPTION_FRAGMENTS against both the candidateKey and
+      // the original merchant names. This is necessary because ACH/EFT prefix
+      // stripping in recurrenceKey() destroys signals like "ach credit" from
+      // the normalized key, and category-override keys like "__debt_50" contain
+      // no merchant name information at all.
+      const rawMerchantLower = sorted.map((t) => t.merchant.toLowerCase());
+      const neverFragment = NEVER_SUBSCRIPTION_FRAGMENTS.some(
+        (frag) =>
+          candidateKey.includes(frag) ||
+          rawMerchantLower.some((m) => m.includes(frag)),
       );
       const neverCategory = NEVER_SUBSCRIPTION_CATEGORIES.has(category);
 
