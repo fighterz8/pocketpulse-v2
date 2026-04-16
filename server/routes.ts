@@ -1387,23 +1387,18 @@ export function createApp(options?: CreateAppOptions) {
         excludedFromAnalysis: t.excludedFromAnalysis,
       }));
 
-      // Build the recurring merchant key exclusion set from the DB.
-      // The sync pipeline keeps recurrenceType up-to-date on every upload/edit,
-      // so this accurately reflects the current recurring candidate state without
-      // re-running the expensive detectRecurringCandidates() detector.
-      const recurringRows = await db
-        .select({ merchant: txnTable.merchant })
-        .from(txnTable)
-        .where(
-          and(
-            eq(txnTable.userId, userId),
-            eq(txnTable.flowType, "outflow"),
-            eq(txnTable.recurrenceType, "recurring"),
-            eq(txnTable.excludedFromAnalysis, false),
-          ),
-        );
+      // Build the recurring merchant key exclusion set from the active recurring
+      // candidates.  Using detectRecurringCandidates() + isActive filter (rather
+      // than the raw recurrenceType='recurring' DB column) ensures only currently
+      // active subscriptions suppress leak detection.  Inactive/cancelled recurring
+      // items (isActive=false) are NOT excluded so they can still surface as leaks
+      // if the user's pattern now looks discretionary rather than scheduled.
+      const allTxnsForRecurring = await listAllTransactionsForExport({ userId });
+      const activeRecurringCandidates = detectRecurringCandidates(
+        allTxnsForRecurring as any,
+      ).filter((c) => c.isActive);
       const recurringMerchantKeys = new Set(
-        recurringRows.map((r) => recurrenceKey(r.merchant)),
+        activeRecurringCandidates.map((c) => c.merchantKey),
       );
 
       const leaks = detectLeaks(txns, { rangeDays, recurringMerchantKeys });

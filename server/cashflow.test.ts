@@ -1,0 +1,157 @@
+/**
+ * Unit tests for detectLeaks() — focusing on Task #38 requirements:
+ *   (a) mutual exclusion with recurring merchant keys
+ *   (b) catch-all repeat-purchase rule for unfamiliar categories
+ *   (c) inactive recurring merchants (not in exclusion set) can surface as leaks
+ */
+
+import { describe, expect, it } from "vitest";
+import { detectLeaks } from "./cashflow.js";
+
+type TxRow = {
+  transactionClass: string;
+  category: string;
+  merchant: string;
+  amount: string | number;
+  date: string;
+  recurrenceType?: string | null;
+  excludedFromAnalysis?: boolean | null;
+};
+
+function makeTx(overrides: Partial<TxRow> & { merchant: string }): TxRow {
+  return {
+    transactionClass: "expense",
+    category:         overrides.category ?? "dining",
+    merchant:         overrides.merchant,
+    amount:           overrides.amount ?? "-25.00",
+    date:             overrides.date ?? "2026-01-15",
+    recurrenceType:   overrides.recurrenceType ?? "one-time",
+    excludedFromAnalysis: overrides.excludedFromAnalysis ?? false,
+  };
+}
+
+/** Build N monthly expense transactions for the same merchant. */
+function monthlyTxns(
+  merchant: string,
+  amount: string,
+  category: string,
+  n = 4,
+): TxRow[] {
+  return Array.from({ length: n }, (_, i) => {
+    const month = String(i + 1).padStart(2, "0");
+    return makeTx({ merchant, amount, category, date: `2026-${month}-15` });
+  });
+}
+
+// ─── (a) Mutual exclusion with active recurring merchant keys ─────────────────
+
+describe("detectLeaks: recurringMerchantKeys mutual exclusion", () => {
+  it("merchant in recurringMerchantKeys is excluded from leaks entirely", () => {
+    const txns = monthlyTxns("Netflix.com", "-15.99", "entertainment", 6);
+    const leaks = detectLeaks(txns, {
+      recurringMerchantKeys: new Set(["netflix"]),
+    });
+    expect(leaks.some((l) => l.merchantKey === "netflix")).toBe(false);
+  });
+
+  it("same merchant NOT in recurringMerchantKeys still appears as a leak", () => {
+    const txns = monthlyTxns("Hulu.com", "-7.99", "entertainment", 6);
+    const leaks = detectLeaks(txns, {
+      recurringMerchantKeys: new Set(["netflix"]), // hulu not in the set
+    });
+    expect(leaks.some((l) => l.merchantKey === "hulu")).toBe(true);
+  });
+
+  it("a merchant blocked by recurringMerchantKeys does not appear even if it meets leak thresholds", () => {
+    // Starbucks 4× counts as convenience leak — but if it were in the recurring set, skip it
+    const txns = monthlyTxns("Starbucks", "-8.50", "coffee", 4);
+    const leaks = detectLeaks(txns, {
+      recurringMerchantKeys: new Set(["starbucks"]),
+    });
+    expect(leaks.find((l) => l.merchantKey === "starbucks")).toBeUndefined();
+  });
+});
+
+// ─── (b) Catch-all repeat-purchase rule ──────────────────────────────────────
+
+describe("detectLeaks: catch-all repeat-purchase rule", () => {
+  it("'banking' category merchant with ≥3 txns, avg ≥$25, total ≥$75 appears as Low-confidence leak via catch-all", () => {
+    // 'banking' is NOT in ESSENTIAL_LEAK_EXCLUSIONS, NOT in DISCRETIONARY_CATEGORIES,
+    // NOT in CATCH_ALL_HARD_EXCLUSIONS — so only the catch-all rule qualifies it → Low confidence.
+    const txns = monthlyTxns("QuickPay ProcessingFee", "-30.00", "banking", 3);
+    const leaks = detectLeaks(txns);
+    const found = leaks.find((l) => l.merchantKey === "quickpay processingfee");
+    expect(found).toBeDefined();
+    expect(found!.confidence).toBe("Low");
+    expect(found!.bucket).toBe("repeat_discretionary");
+  });
+
+  it("non-discretionary non-excluded category surfaces only via catch-all (Low confidence, not Medium)", () => {
+    // 'software' is now outside ESSENTIAL_LEAK_EXCLUSIONS and outside DISCRETIONARY_CATEGORIES.
+    // 3 txns of $35 each = total $105 ≥ $75, avg $35 ≥ $25 → catch-all fires → Low confidence.
+    const txns = monthlyTxns("DevToolX", "-35.00", "software", 3);
+    const leaks = detectLeaks(txns);
+    const found = leaks.find((l) => l.merchantKey === "devtoolx");
+    expect(found).toBeDefined();
+    expect(found!.confidence).toBe("Low");
+  });
+
+  it("housing category merchant is NEVER surfaced by catch-all (hard exclusion)", () => {
+    const txns = monthlyTxns("Mortgage Payment", "-1500.00", "housing", 6);
+    const leaks = detectLeaks(txns);
+    expect(leaks.some((l) => l.merchantKey.includes("mortgage"))).toBe(false);
+  });
+
+  it("catch-all requires ≥3 transactions — 2 transactions do not qualify", () => {
+    const txns = [
+      makeTx({ merchant: "RareSoftwareTool", amount: "-49.99", category: "other", date: "2026-01-15" }),
+      makeTx({ merchant: "RareSoftwareTool", amount: "-49.99", category: "other", date: "2026-02-15" }),
+    ];
+    const leaks = detectLeaks(txns);
+    expect(leaks.some((l) => l.merchantKey === "raresoftwaretool")).toBe(false);
+  });
+
+  it("catch-all requires avg ≥$25 — low-average-amount merchant below threshold is not surfaced", () => {
+    // avg = $10, total = $30 — both below thresholds
+    const txns = monthlyTxns("TinyPurchase", "-10.00", "other", 3);
+    const leaks = detectLeaks(txns);
+    expect(leaks.some((l) => l.merchantKey === "tinypurchase")).toBe(false);
+  });
+
+  it("software category repeat purchases now surface as leaks (software removed from exclusion list)", () => {
+    // A software tool bought 3× at $35/ea with category 'software' — NOT in CATCH_ALL_HARD_EXCLUSIONS
+    const txns = monthlyTxns("SomeDevTool", "-35.00", "software", 3);
+    const leaks = detectLeaks(txns);
+    const found = leaks.find((l) => l.merchantKey === "somedevtool");
+    expect(found).toBeDefined();
+    expect(found!.confidence).toBe("Low");
+  });
+});
+
+// ─── (c) Inactive recurring merchants do NOT over-suppress leaks ──────────────
+
+describe("detectLeaks: inactive recurring merchants", () => {
+  it("a merchant key NOT in recurringMerchantKeys can appear as a leak (inactive candidates do not suppress)", () => {
+    // Simulate: Netflix was recurring but now inactive (not passed in the set)
+    const txns = monthlyTxns("Netflix.com", "-15.99", "entertainment", 4);
+    // Empty exclusion set = no active recurring candidates
+    const leaks = detectLeaks(txns, {
+      recurringMerchantKeys: new Set<string>(), // netflix is NOT excluded
+    });
+    expect(leaks.some((l) => l.merchantKey === "netflix")).toBe(true);
+  });
+
+  it("passing only the active subset in recurringMerchantKeys leaves inactive merchants unblocked", () => {
+    const netflix = monthlyTxns("Netflix.com",  "-15.99", "entertainment", 6);
+    const hulu    = monthlyTxns("Hulu.com",     "-7.99",  "entertainment", 6);
+    const all     = [...netflix, ...hulu];
+
+    // Only netflix is currently active; hulu is inactive (not in the set)
+    const leaks = detectLeaks(all, {
+      recurringMerchantKeys: new Set(["netflix"]),
+    });
+
+    expect(leaks.some((l) => l.merchantKey === "netflix")).toBe(false); // excluded
+    expect(leaks.some((l) => l.merchantKey === "hulu")).toBe(true);     // not excluded
+  });
+});
