@@ -1,127 +1,18 @@
 import http from "node:http";
 
 import { createApp } from "./routes.js";
-import { pool } from "./db.js";
-import { db } from "./db.js";
-import { users } from "../shared/schema.js";
-import { seedMerchantClassificationsForUser } from "./storage.js";
+import { runMigrations } from "./migrations.js";
+import { seedMerchantClassifications } from "./startup.js";
 
-// ── One-time startup migration: strip old "|amount.toFixed(2)" suffix ──────
-// Old candidateKey format: "merchantKey|15.99"
-// New format: "merchantKey" (bare) or "merchantKey|1" (bucket index suffix)
-//
-// This preserves existing reviews by re-attaching them to the new key format.
-// The regex matches a pipe followed by a decimal number at the end of the key.
-// Housing keys like "__housing_3200" are unaffected (no pipe + decimal suffix).
-//
-// Two-step process:
-//  1. Delete lower-priority duplicates (same user, same new key after stripping)
-//     keeping the row with the highest id (most recently created/updated).
-//  2. Update the surviving rows to the new key format.
-try {
-  await pool.query(`
-    DELETE FROM recurring_reviews rr_old
-    USING recurring_reviews rr_keep
-    WHERE rr_old.user_id = rr_keep.user_id
-      AND rr_old.candidate_key ~ '\\|\\d+\\.\\d{2}$'
-      AND rr_keep.candidate_key ~ '\\|\\d+\\.\\d{2}$'
-      AND regexp_replace(rr_old.candidate_key, '\\|\\d+\\.\\d{2}$', '')
-        = regexp_replace(rr_keep.candidate_key, '\\|\\d+\\.\\d{2}$', '')
-      AND rr_old.candidate_key <> rr_keep.candidate_key
-      AND rr_old.id < rr_keep.id
-  `);
-  await pool.query(`
-    UPDATE recurring_reviews
-    SET candidate_key = regexp_replace(candidate_key, '\\|\\d+\\.\\d{2}$', '')
-    WHERE candidate_key ~ '\\|\\d+\\.\\d{2}$'
-  `);
-  console.log("[startup] candidateKey migration complete");
-} catch (err) {
-  console.warn("[startup] candidateKey migration skipped:", err);
-}
+// Apply any pending Drizzle migrations before the server accepts traffic.
+// Idempotent — already-applied migrations are skipped automatically.
+await runMigrations();
+console.log("[startup] migrations applied");
 
-// ── Startup migration: transactions dedup unique index ────────────────────────
-// Enforces that no two rows for the same user+account have an identical
-// (date, amount, lower(trim(raw_description))) fingerprint — the same key
-// used by the JS fingerprint in createTransactionBatch.
-//
-// Step 1 (best-effort): purge any pre-existing duplicate rows keeping the
-//   lowest ID per fingerprint group so Step 2 can never fail on existing data.
-//   Wrapped in try/catch: data may already be clean, or another process may
-//   have cleaned it; either way we proceed to Step 2.
-//
-// Step 2 (mandatory): create the functional unique index.  Uses
-//   CREATE UNIQUE INDEX IF NOT EXISTS so it is a no-op on re-runs.
-//   NOT wrapped in try/catch — if this fails the app must not start, because
-//   without the index the onConflictDoNothing() in createTransactionBatch has
-//   no DB constraint to enforce against and race-condition safety is lost.
-//
-// Functional expression lower(trim(raw_description)) is used instead of raw
-// rawDescription because: (a) it matches the JS fingerprint exactly,
-// (b) it tolerates case/whitespace variants, and (c) it bounds index key size
-// to the text content length (typical bank descriptions are <200 chars).
+// Seed the merchant classification cache from user-corrected rows.
+// Runs every boot to pick up corrections made since the last restart.
 try {
-  // Keep-row priority: user_corrected=true first (preserves manual edits),
-  // then lowest id (original import) among equal-priority rows.
-  await pool.query(`
-    DELETE FROM transactions
-    WHERE id IN (
-      SELECT id FROM (
-        SELECT id,
-               ROW_NUMBER() OVER (
-                 PARTITION BY user_id, account_id, date, amount,
-                              lower(trim(raw_description))
-                 ORDER BY user_corrected DESC, id ASC
-               ) AS rn
-        FROM transactions
-      ) ranked
-      WHERE rn > 1
-    )
-  `);
-} catch {
-  // pre-cleanup is best-effort; proceed to index creation regardless
-}
-// Mandatory — throws on failure, crashing startup deliberately.
-await pool.query(`
-  CREATE UNIQUE INDEX IF NOT EXISTS transactions_dedup_idx
-    ON transactions (user_id, account_id, date, amount,
-                     lower(trim(raw_description)))
-`);
-console.log("[startup] transactions dedup index migration complete");
-
-// ── Startup migration: recurrenceSource check constraint ─────────────────────
-// Enforces the allowed values for recurrence_source at the DB level so that
-// any future write path that passes an unexpected string is rejected immediately.
-// Uses IF NOT EXISTS / DO NOTHING patterns so it is idempotent on every restart.
-try {
-  // PostgreSQL does not support ADD CONSTRAINT IF NOT EXISTS; check pg_constraint first.
-  const { rows: existing } = await pool.query<{ conname: string }>(`
-    SELECT conname FROM pg_constraint
-    WHERE conname = 'chk_recurrence_source' AND conrelid = 'transactions'::regclass
-  `);
-  if (existing.length === 0) {
-    await pool.query(`
-      ALTER TABLE transactions
-        ADD CONSTRAINT chk_recurrence_source
-          CHECK (recurrence_source IN ('none', 'hint', 'detected'))
-    `);
-  }
-  console.log("[startup] recurrenceSource check constraint migration complete");
-} catch (err) {
-  console.warn("[startup] recurrenceSource check constraint migration skipped:", err);
-}
-
-// ── Day-one seed: populate merchant_classifications from userCorrected rows ──
-// Seeds only from rows where userCorrected=true or labelSource="manual".
-// Uses onConflictDoNothing so it is idempotent and safe on every startup.
-try {
-  const allUsers = await db.select({ id: users.id }).from(users);
-  let totalSeeded = 0;
-  for (const u of allUsers) {
-    const n = await seedMerchantClassificationsForUser(u.id);
-    totalSeeded += n;
-  }
-  console.log(`[startup] merchant classification seed complete (${totalSeeded} entries)`);
+  await seedMerchantClassifications();
 } catch (err) {
   console.warn("[startup] merchant classification seed skipped:", err);
 }
