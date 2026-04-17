@@ -74,7 +74,8 @@ describe("shared schema", () => {
   it("exports the V1 category set with expected categories", () => {
     expect(V1_CATEGORIES).toContain("income");
     expect(V1_CATEGORIES).toContain("other");
-    expect(V1_CATEGORIES).toContain("subscriptions");
+    expect(V1_CATEGORIES).toContain("entertainment");
+    expect(V1_CATEGORIES).toContain("software");
     expect(V1_CATEGORIES.length).toBeGreaterThanOrEqual(15);
   });
 

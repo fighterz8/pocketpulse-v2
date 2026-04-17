@@ -43,7 +43,7 @@ describe("reclassifyTransactions", () => {
     vi.clearAllMocks();
   });
 
-  it("reclassifies unsigned Netflix from income to subscriptions", async () => {
+  it("reclassifies unsigned Netflix from income to entertainment", async () => {
     mockList.mockResolvedValue([makeTxn({})]);
     mockBulkUpdate.mockResolvedValue(undefined);
 
@@ -59,7 +59,7 @@ describe("reclassifyTransactions", () => {
     const updates = calls[0]![1];
     expect(updates[0]).toMatchObject({
       id: 1,
-      category: "subscriptions",
+      category: "entertainment",
       transactionClass: "expense",
       flowType: "outflow",
       amount: "-15.99",
@@ -84,7 +84,8 @@ describe("reclassifyTransactions", () => {
         amount: "-15.99",
         flowType: "outflow",
         transactionClass: "expense",
-        category: "subscriptions",
+        category: "entertainment",
+        recurrenceType: "recurring",
       }),
     ]);
 
