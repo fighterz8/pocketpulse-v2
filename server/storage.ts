@@ -1040,16 +1040,19 @@ export async function getMerchantClassifications(
  *
  * hitCount and lastUsedAt are only updated on actual cache hits — this
  * function handles writes only; hit tracking is separate.
+ *
+ * Returns true when a row was actually inserted (relevant for rule-seed only);
+ * always returns true for manual and ai upserts.
  */
 export async function upsertMerchantClassification(
   userId: number,
   entry: MerchantClassification,
-): Promise<void> {
+): Promise<boolean> {
   const now = new Date();
   const confidenceStr = entry.labelConfidence.toFixed(2);
 
   if (entry.source === "rule-seed") {
-    await db
+    const rows = await db
       .insert(merchantClassifications)
       .values({
         userId,
@@ -1061,8 +1064,9 @@ export async function upsertMerchantClassification(
         source: entry.source,
         updatedAt: now,
       })
-      .onConflictDoNothing();
-    return;
+      .onConflictDoNothing()
+      .returning({ id: merchantClassifications.id });
+    return rows.length > 0;
   }
 
   if (entry.source === "manual") {
@@ -1089,7 +1093,7 @@ export async function upsertMerchantClassification(
           updatedAt: now,
         },
       });
-    return;
+    return true;
   }
 
   // source === "ai": overwrite any row except manual
@@ -1117,6 +1121,7 @@ export async function upsertMerchantClassification(
       },
       setWhere: sql`${merchantClassifications.source} <> 'manual'`,
     });
+  return true;
 }
 
 /**
@@ -1200,7 +1205,7 @@ export async function seedMerchantClassificationsForUser(userId: number): Promis
     if (!key || seen.has(key)) continue;
     seen.add(key);
     try {
-      await upsertMerchantClassification(userId, {
+      const wasInserted = await upsertMerchantClassification(userId, {
         merchantKey: key,
         category: row.category,
         transactionClass: row.transactionClass,
@@ -1208,7 +1213,7 @@ export async function seedMerchantClassificationsForUser(userId: number): Promis
         labelConfidence: 1.0,
         source: "rule-seed",
       });
-      inserted++;
+      if (wasInserted) inserted++;
     } catch {
       // Non-fatal
     }
