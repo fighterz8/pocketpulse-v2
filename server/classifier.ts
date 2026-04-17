@@ -1,13 +1,7 @@
 /**
- * Rules-based transaction classifier.
- *
- * Assigns category, transaction class, recurrence hints, and a human-readable
- * label reason using keyword matching against the merchant name. Rules are
- * intentionally deterministic and explainable (V1 spec section 10.2).
- *
- * The keyword tables below drive classification. Each entry maps a set of
- * merchant substrings to a category. Order matters: the first matching rule
- * wins, so more specific patterns should appear before broader ones.
+ * Rules-based transaction classifier (structural keywords only).
+ * Merchant-specific keywords have been migrated to classifierRuleMigration.ts
+ * and are seeded into the merchant cache via classifyPipeline Phase 1.8.
  */
 import type { V1Category } from "../shared/schema.js";
 import { getDirectionHint, isDebitCardDescription, normalizeMerchant } from "./transactionUtils.js";
@@ -38,21 +32,6 @@ const TRANSFER_KEYWORDS = [
   "remote deposit",
 ];
 
-/**
- * P2P-payment-app keywords that are EXEMPT from the transfer label when the
- * raw description also has a debit-card swipe signal (e.g. "-dc NNNN", "POS",
- * "checkcard").
- *
- * Rationale: "-dc 4305 Cash App*nicholas" is a debit card charge — money
- * going OUT of the account — not an account-to-account transfer. The same
- * logic applies to Venmo and Zelle payments made from a card.
- *
- * Wire / mobile-deposit / remittance keywords are NOT in this set because
- * those flows are always bank-initiated and never tied to a card swipe.
- *
- * The exemption ONLY fires when isDebitCardDescription() is true, so ACH
- * debits (e.g. "ACH DEBIT CASHAPP") remain classified as transfers.
- */
 const P2P_DEBIT_EXEMPT: ReadonlySet<string> = new Set([
   "cash app",
   "cashapp",
@@ -60,35 +39,16 @@ const P2P_DEBIT_EXEMPT: ReadonlySet<string> = new Set([
   "zelle",
 ]);
 
-/**
- * Result produced by classifyTransaction(). The classifier now fully owns
- * flowType (no more flowOverride to reconcile at the call site), and exposes
- * the cleaned merchant name and the aiAssisted flag so callers can determine
- * which rows need LLM enrichment without additional logic.
- */
 export type ClassificationResult = {
   transactionClass: "income" | "expense" | "transfer" | "refund";
   flowType: "inflow" | "outflow";
   category: V1Category;
   recurrenceType: "recurring" | "one-time";
-  /**
-   * Indicates the origin of the recurrenceType value:
-   *  "hint"     — a keyword pass (8, 8b, or 9) flagged this as recurring.
-   *               Tentative; will be overwritten by the batch detector.
-   *  "detected" — the batch recurrence detector confirmed this as recurring
-   *               based on multi-occurrence pattern matching.
-   *  "none"     — no recurring signal; recurrenceType is "one-time".
-   */
   recurrenceSource: "none" | "hint" | "detected";
   merchant: string;
   labelSource: "rule";
   labelConfidence: number;
   labelReason: string;
-  /**
-   * True when no specific merchant rule matched AND no recurring signal was
-   * found AND no strong directional language appeared in the description.
-   * When true the LLM enrichment layer should review this row.
-   */
   aiAssisted: boolean;
 };
 
@@ -96,1398 +56,202 @@ type CategoryRule = {
   category: V1Category;
   keywords: string[];
   confidence: number;
-  /**
-   * Optional explicit transaction-class override. Set this on categories
-   * (e.g. "debt") where a rule match should always produce the given class
-   * regardless of what earlier passes (transfer detection, income detection)
-   * decided. When omitted, any category in EXPENSE_CATEGORIES auto-locks to
-   * "expense" during Pass 6.
-   */
   transactionClass?: "expense" | "income";
-  /**
-   * Optional explicit recurrence hint. When set the merchant rule wins over
-   * the Pass 8 subscription-keyword heuristic.
-   */
   recurrenceType?: "recurring" | "one-time";
 };
 
-/**
- * Keyword rules ordered from specific to general. Each keyword is matched
- * as a case-insensitive substring of the merchant name.
- */
+// Structural keyword rules — describes the *form* of the transaction, not a brand.
+// Merchant-specific entries live in classifierRuleMigration.ts (rule-seed cache).
 const CATEGORY_RULES: CategoryRule[] = [
-  // Note: Transfers are handled in Pass 1 of classifyTransaction (TRANSFER_KEYWORDS).
-  // Genuine bank transfers (Zelle, Venmo, mobile deposits) get transactionClass="transfer"
-  // and category="other". Debt-related transfers (e.g. "transfer to credit card") are
-  // caught by the "debt" rule below, which overrides to transactionClass="expense".
-  // There is intentionally no CATEGORY_RULES entry for "transfers".
-
-  // Debt payments — loan repayments, credit card payments, line-of-credit payments.
-  // transactionClass is explicitly set to "expense" so that "TRANSFER TO AUTO LOAN" (which
-  // matches Pass 1 transfer detection) is correctly overridden back to expense in Pass 6.
+  // Debt — generic debt phrases (must come before housing/utilities to override transfers)
   {
     category: "debt",
     transactionClass: "expense",
     keywords: [
-      // Generic debt patterns
-      "loan payment",
-      "loan repayment",
-      "personal loan",
-      "student loan",
-      "auto loan",
-      "car payment",
-      "car loan",
-      "vehicle loan",
-      "vehicle payment",
-      "auto payment",
-      "mortgage payment",
-      "home loan",
-      "heloc",
-      // Credit card payments
-      "credit card payment",
-      "credit card pymt",
-      "transfer to credit card",
-      "payment to credit card",
-      "card payment",
-      // Payment to specific lenders
-      "payment to loan",
-      "payment to auto",
-      "payment to mortgage",
-      "transfer to loan",
-      "transfer to auto",
-      "transfer to mortgage",
-      // Student loan servicers
-      "sallie mae",
-      "navient",
-      "great lakes",
-      "fedloan",
-      "mohela",
-      "nelnet",
-      "aidvantage",
-      "edfinancial",
-      "discover student",
-      // Personal loan providers
-      "sofi loan",
-      "earnest loan",
-      "upstart",
-      "upstloantr",
-      // Credit card issuers (payments)
-      "payment to chase",
-      "payment to comenity",
-      "payment to citibank",
-      "payment to capital one",
-      "payment to american express",
-      "payment to discover",
-      "payment to synchrony",
-      "payment to barclays",
-      "payment to ally",
-      "payment to bank of america",
-      "payment to wells fargo",
+      "loan payment", "loan repayment", "personal loan", "student loan", "auto loan",
+      "car payment", "car loan", "vehicle loan", "vehicle payment", "auto payment",
+      "mortgage payment", "home loan", "heloc",
+      "credit card payment", "credit card pymt", "transfer to credit card",
+      "payment to credit card", "card payment",
+      "payment to loan", "payment to auto", "payment to mortgage",
+      "transfer to loan", "transfer to auto", "transfer to mortgage",
     ],
     confidence: 0.92,
   },
 
-  // True bank fees — ATM cash, NSF, account maintenance
+  // Bank fees — ATM, NSF, account maintenance (specific markers before the broad "fee" rule)
   {
     category: "fees",
     transactionClass: "expense",
     keywords: [
-      "atm withdrawal",
-      "cash withdrawal",
-      "atm/cash",
-      "nsf fee",
-      "overdraft fee",
-      "monthly fee",
-      "service charge",
-      "maintenance fee",
+      "atm withdrawal", "cash withdrawal", "atm/cash",
+      "nsf fee", "overdraft fee", "monthly fee", "service charge", "maintenance fee",
     ],
     confidence: 0.88,
   },
 
-  // Insurance (before housing — hoa could match "insurance")
-  {
-    category: "insurance",
-    keywords: [
-      "insurance",
-      "geico",
-      "state farm",
-      "allstate",
-      "progressive",
-      "liberty mutual",
-      "usaa",
-      "nationwide",
-      "farmers",
-      "metlife",
-      "aetna",
-      "cigna",
-      "blue cross",
-      "bluecross",
-      "anthem",
-      "united health",
-      "unitedhealthcare",
-      "humana",
-      "oscar health",
-      "kaiser permanente",
-      "hartford insurance",
-      "travelers insurance",
-      "chubb",
-      "erie insurance",
-      "lemonade insurance",
-      "root insurance",
-      "hippo insurance",
-      "esurance",
-      "21st century insurance",
-      "safeco",
-    ],
-    confidence: 0.9,
-  },
+  // Insurance — generic keyword only; named carriers are in rule-seed
+  { category: "insurance", keywords: ["insurance"], confidence: 0.9 },
 
-  // Entertainment subscriptions & streaming (before software so media wins)
-  {
-    category: "entertainment",
-    recurrenceType: "recurring",
-    keywords: [
-      "netflix",
-      "hulu",
-      "disney+",
-      "disney plus",
-      "disneyplus",
-      "hbo max",
-      "max.com",
-      "paramount+",
-      "paramount plus",
-      "peacock",
-      "peacocktv",
-      "crunchyroll",
-      "funimation",
-      "mubi",
-      "criterion",
-      "discovery+",
-      "espn+",
-      "fubo",
-      "philo",
-      "sling tv",
-      "directv stream",
-      "xbox game pass",
-      "playstation plus",
-      "nintendo switch online",
-      "twitch",
-      "substack",
-      "patreon",
-      "onlyfans",
-    ],
-    confidence: 0.9,
-  },
-
-  // Software / cloud / productivity subscriptions
-  {
-    category: "software",
-    recurrenceType: "recurring",
-    keywords: [
-      "spotify",
-      "apple music",
-      "apple tv",
-      "apple one",
-      "youtube premium",
-      "youtube music",
-      "amazon music",
-      "siriusxm",
-      "pandora",
-      "tidal",
-      "deezer",
-      "audible",
-      "kindle unlimited",
-      "amazon prime",
-      "icloud",
-      "google one",
-      "google storage",
-      "microsoft 365",
-      "office 365",
-      "masterclass",
-      "subscription",
-      // AI tools & modern SaaS
-      "chatgpt",
-      "openai",
-      "claude ai",
-      "claude.ai",
-      "anthropic",
-      "elevenlabs",
-      "midjourney",
-      "runway ml",
-      "adobe",
-      "figma",
-      "notion",
-      "airtable",
-      "monday.com",
-      "asana",
-      "slack",
-      "zoom.us",
-      "dropbox",
-      "box.com",
-      "1password",
-      "lastpass",
-      "nordvpn",
-      "expressvpn",
-      "malwarebytes",
-      "mcafee",
-      "norton",
-      "grammarly",
-      "canva",
-      "replit",
-      "paddle net",
-      "paddle.com",
-      "2cocom",
-      "2checkout",
-      "cerebrum",
-      "smartp",
-    ],
-    confidence: 0.9,
-  },
-
-  // Business software / SaaS
-  {
-    category: "software",
-    keywords: [
-      "github",
-      "gitlab",
-      "heroku",
-      "aws ",
-      "amazon web services",
-      "google cloud",
-      "gcp ",
-      "azure ",
-      "digitalocean",
-      "vercel",
-      "netlify",
-      "render.com",
-      "railway",
-      "fly.io",
-      "supabase",
-      "planetscale",
-      "neon.tech",
-      "slack",
-      "zoom",
-      "notion",
-      "figma",
-      "jira",
-      "atlassian",
-      "confluence",
-      "trello",
-      "asana",
-      "monday.com",
-      "clickup",
-      "linear.app",
-      "basecamp",
-      "airtable",
-      "quickbooks",
-      "freshbooks",
-      "xero",
-      "wave accounting",
-      "bench accounting",
-      "mailchimp",
-      "sendgrid",
-      "hubspot",
-      "salesforce",
-      "zendesk",
-      "intercom",
-      "squarespace",
-      "shopify",
-      "wix",
-      "webflow",
-      "godaddy",
-      "namecheap",
-      "cloudflare",
-      "twilio",
-      "stripe",
-      "plaid",
-      "docusign",
-      "hellosign",
-      "adobe acrobat",
-      "adobe creative",
-      "adobe sign",
-      "canva",
-      "loom",
-      "calendly",
-      "doodle",
-      "1password",
-      "lastpass",
-      "dashlane",
-      "gusto",
-      "rippling",
-      "deel",
-      "remote.com",
-      "bamboohr",
-      "workday",
-      "greenhouse",
-      "lever.co",
-      "dropbox business",
-      "box.com",
-      // Microsoft & Apple (standalone, not just specific products)
-      "microsoft",
-      "apple.com",
-      "apple store",
-      // Social/communication platforms
-      "discord",
-      "x corp",
-      "twitter paid",
-      "twitter subscription",
-      "linkedin premium",
-      // Google business tools
-      "google workspace",
-      "google ads",
-      // Other SaaS
-      "cults3d",
-      "flashforge",
-      "sp tesbros",
-      "tesbros",
-      // Advertising platforms
-      "pinterest",
-      "twitter online ads",
-      "twitter*",
-      // Online education
-      "boot.dev",
-      "founderscard",
-    ],
-    confidence: 0.85,
-  },
-
-  // Housing
+  // Housing — structural terms; named servicers/retailers are in rule-seed
   {
     category: "housing",
     keywords: [
-      "rent",
-      "mortgage",
-      "hoa",
-      "homeowner",
-      "property tax",
-      "landlord",
-      "apartment",
-      "realty",
-      "real estate",
-      "property management",
-      "airbnb",
-      "vrbo",
-      "homeaway",
-      "maintenance",
-      "pest control",
-      "lawn",
-      "landscaping",
-      "cleaning service",
-      "maid",
-      "home depot",
-      "lowe's",
-      "lowes",
-      "ace hardware",
-      "true value",
-      // Mortgage servicers & payment abbreviations
-      "loan servicing",
-      "mtg pymt",
-      "mortgage pymt",
-      "lakeview loan",
-      "lakeview ln",
-      "mr. cooper",
-      "mrcooper",
-      "pennymac",
-      "loancare",
-      "freedom mortgage",
-      "newrez",
-      "phh mortgage",
-      "shellpoint",
-      "flagstar",
-      "nationstar",
-      "ocwen",
-      "caliber home",
-      "homepoint",
-      "roundpoint",
-      "servicemac",
+      "rent", "mortgage", "hoa", "homeowner", "property tax", "landlord", "apartment",
+      "realty", "real estate", "property management",
+      "maintenance", "pest control", "lawn", "landscaping", "cleaning service", "maid",
+      "loan servicing", "mtg pymt", "mortgage pymt",
     ],
     confidence: 0.8,
   },
 
-  // Utilities
+  // Utilities — structural terms; named providers are in rule-seed
   {
     category: "utilities",
     keywords: [
-      "electric",
-      "electricity",
-      "water bill",
-      "water dept",
-      "water utility",
-      "gas co",
-      "gas company",
-      "natural gas",
-      "sewer",
-      "utility",
-      "utilities",
-      "power",
-      "energy",
-      "pge",
-      "pg&e",
-      "con ed",
-      "coned",
-      "duke energy",
-      "dominion energy",
-      "southern company",
-      "eversource",
-      "national grid",
-      "dte energy",
-      "consumers energy",
-      "we energies",
-      "xcel energy",
-      "entergy",
-      "ameren",
-      "peco",
-      "pseg",
-      "comcast",
-      "xfinity",
-      "spectrum",
-      "cox ",
-      "cox cable",
-      "at&t",
-      "att.com",
-      "verizon",
-      "t-mobile",
-      "tmobile",
-      "sprint",
-      "boost mobile",
-      "cricket wireless",
-      "metro by t-mobile",
-      "mint mobile",
-      "visible wireless",
-      "google fi",
-      "internet",
-      "broadband",
-      "phone bill",
-      "cell phone",
-      "wireless bill",
-      "dish network",
-      "directv",
-      "waste management",
-      "republic services",
-      "trash",
-      "recycling",
-      // Water utilities not covered by "water bill/dept/utility" above
-      "california american water",
-      "american water",
-      "san jose water",
-      "california water",
-      "golden state water",
-      "bay area water",
-      "east bay mud",
-      "mwd ",
-      "sdcwa",
-      "water authority",
-      "irrigation district",
-      "public works",
-      // Propane / solar utilities
-      "amerigas",
-      "ferrellgas",
-      "suburban propane",
-      "propane",
-      "mosaic solar",
-      "sunrun",
-      "solarenergy",
-      "vivint solar",
-      "tesla energy",
-      // City / municipal services
-      "city of san diego",
-      "city water",
-      "municipal water",
-      // SDGE and other CA utilities
-      "sdge",
-      "san diego gas",
-      // AT&T variants without special characters
-      "at t ",
-      "att mobility",
-      "att wireless",
-      // Goettl and similar HVAC/home services sometimes on utility bill
-      "goettl",
-      "mosaic solar",
+      "electric", "electricity", "water bill", "water dept", "water utility",
+      "gas co", "gas company", "natural gas", "sewer",
+      "utility", "utilities", "power", "energy",
+      "internet", "broadband", "phone bill", "cell phone", "wireless bill",
+      "trash", "recycling", "propane",
     ],
     confidence: 0.85,
   },
 
-  // Travel — flights, hotels, rental cars, booking platforms
-  {
-    category: "travel",
-    keywords: [
-      "airline",
-      "airways",
-      "united airlines",
-      "delta airlines",
-      "american airlines",
-      "southwest airlines",
-      "jetblue",
-      "alaska airlines",
-      "spirit airlines",
-      "frontier airlines",
-      "lufthansa",
-      "british airways",
-      "air france",
-      "emirates",
-      "ryanair",
-      "easyjet",
-      "air canada",
-      "westjet",
-      "hotel",
-      "marriott",
-      "hilton",
-      "hyatt",
-      "ihg",
-      "sheraton",
-      "westin",
-      "holiday inn",
-      "best western",
-      "radisson",
-      "wyndham",
-      "fairfield",
-      "hampton inn",
-      "doubletree",
-      "motel 6",
-      "extended stay",
-      "travelodge",
-      "days inn",
-      "super 8",
-      "comfort inn",
-      "quality inn",
-      "la quinta",
-      "expedia",
-      "booking.com",
-      "hotels.com",
-      "priceline",
-      "kayak",
-      "travelocity",
-      "hotwire",
-      "trivago",
-      "orbitz",
-      "airbnb",
-      "vrbo",
-      "amtrak",
-      "greyhound",
-      "megabus",
-      "flixbus",
-      "enterprise rent",
-      "hertz",
-      "avis",
-      "budget car",
-      "national car",
-      "alamo",
-      "thrifty car",
-      "dollar rental",
-      "zipcar",
-      "turo",
-    ],
-    confidence: 0.85,
-  },
+  // Travel — generic terms; named airlines/hotels/booking sites are in rule-seed
+  { category: "travel", keywords: ["airline", "airways", "hotel"], confidence: 0.85 },
 
-  // Gas stations
-  {
-    category: "gas",
-    keywords: [
-      "gas station",
-      "shell ",
-      "exxon",
-      "chevron",
-      "bp ",
-      "mobil ",
-      "mobil gas",
-      "exxonmobil",
-      "citgo",
-      "sunoco",
-      "speedway",
-      "marathon gas",
-      "racetrac",
-      "pilot flying j",
-      "loves travel",
-      "flying j",
-      "fuel",
-      "gasoline",
-      "petrol",
-    ],
-    confidence: 0.85,
-  },
+  // Gas — structural terms; named stations are in rule-seed
+  { category: "gas", keywords: ["gas station", "fuel", "gasoline", "petrol"], confidence: 0.85 },
 
-  // Parking
-  {
-    category: "parking",
-    keywords: [
-      "parking",
-      "park & ride",
-      "parkwhiz",
-      "spothero",
-      "parkmobile",
-      "bestparking",
-      "laparking",
-      "impark",
-      "indigo park",
-    ],
-    confidence: 0.85,
-  },
+  // Parking — structural term; named apps are in rule-seed
+  { category: "parking", keywords: ["parking", "park & ride"], confidence: 0.85 },
 
-  // Auto — rideshare, car maintenance, tolls, transit
+  // Auto — structural terms + major rideshare (Uber/Lyft are generic rideshare proxies)
   {
     category: "auto",
     keywords: [
-      "uber",
-      "lyft",
-      "taxi",
-      "cab ",
-      "rideshare",
-      "toll",
-      "e-zpass",
-      "ezpass",
-      "fastrak",
-      "sunpass",
-      "metro",
-      "subway train",
-      "bart ",
-      "mta ",
-      "transit",
-      "bus pass",
-      "train ticket",
-      "car wash",
-      "auto parts",
-      "autozone",
-      "o'reilly auto",
-      "advance auto",
-      "napa auto",
-      "pep boys",
-      "jiffy lube",
-      "jiffy",
-      "oil change",
-      "valvoline",
-      "tire",
-      "firestone",
-      "goodyear tire",
-      "discount tire",
-      "americas tire",
-      "mavis discount",
-      "midas",
-      "meineke",
-      "big o tire",
-      "ntb tire",
-      "christian brothers auto",
-      "aamco",
-      "auto repair",
-      "brake",
-      "mechanic",
-      "dealership",
-      "dmv",
-      "motor vehicle",
-      "vehicle registration",
-      "luv car wa",
-      "towing",
-      "roadside assistance",
-      "aaa ",
-      "hansshow",
+      "uber", "lyft", "taxi", "cab ", "rideshare",
+      "toll", "e-zpass", "ezpass", "fastrak", "sunpass",
+      "metro", "subway train", "bart ", "mta ", "transit", "bus pass", "train ticket",
+      "car wash", "auto parts", "oil change", "tire", "auto repair",
+      "brake", "mechanic", "dealership", "dmv", "motor vehicle", "vehicle registration",
+      "towing", "roadside assistance", "aaa ",
     ],
     confidence: 0.8,
   },
 
-  // Groceries
-  {
-    category: "groceries",
-    keywords: [
-      "whole foods",
-      "wholefoods",
-      "wholefoodsmarket",
-      "trader joe",
-      "trader joes",
-      "traderjoes",
-      "kroger",
-      "ralphs",
-      "fry's food",
-      "smith's food",
-      "king soopers",
-      "fred meyer",
-      "qfc ",
-      "harris teeter",
-      "safeway",
-      "publix",
-      "aldi",
-      "lidl",
-      "costco",
-      "sam's club",
-      "sams club",
-      "bj's wholesale",
-      "bjs wholesale",
-      "walmart supercenter",
-      "walmart grocery",
-      "walmart neighborhood",
-      "grocery",
-      "supermarket",
-      "market basket",
-      "food lion",
-      "wegmans",
-      "sprouts",
-      "fresh market",
-      "fresh thyme",
-      "natural grocers",
-      "h-e-b",
-      "heb",
-      "meijer",
-      "giant food",
-      "stop & shop",
-      "stop and shop",
-      "shop rite",
-      "shoprite",
-      "acme markets",
-      "winn-dixie",
-      "winndixie",
-      "food 4 less",
-      "food max",
-      "smart & final",
-      "stater bros",
-      "price chopper",
-      "hannaford",
-      "iga supermarket",
-      "piggly wiggly",
-      "hy-vee",
-      "jewel-osco",
-      "dominick's",
-      "randalls",
-      "tom thumb",
-      "vons",
-      "pavilions",
-      "albertsons",
-      "lucky supermarket",
-      "save mart",
-      "raley's",
-      "winco foods",
-      "dillons",
-      // Asian grocery chains common in CA/TX
-      "99 ranch",
-      "h mart",
-      "hmart",
-      "mitsuwa",
-      "nijiya",
-      "zion market",
-      "marukai",
-      "hong kong market",
-      "ranch 99",
-      "el super",
-      "northgate market",
-      "cardenas",
-      "vallarta supermarket",
-    ],
-    confidence: 0.85,
-  },
+  // Groceries — generic terms; named chains are in rule-seed
+  { category: "groceries", keywords: ["grocery", "supermarket"], confidence: 0.85 },
 
-  // Coffee shops (before dining so Starbucks/Dunkin win here)
-  {
-    category: "coffee",
-    keywords: [
-      "starbucks",
-      "sbux",
-      "dunkin",
-      "dunkin donuts",
-      "dunkin'",
-      "dutch bros",
-      "peet's coffee",
-      "peets coffee",
-      "caribou coffee",
-      "tim hortons",
-      "coffee bean",
-      "biggby",
-      "scooter's coffee",
-      "human bean",
-      "black rock coffee",
-      "portafilter",
-      "coffee shop",
-      "cafe ",
-      "espresso",
-    ],
-    confidence: 0.85,
-  },
+  // Coffee — structural terms; named chains are in rule-seed
+  { category: "coffee", keywords: ["coffee shop", "cafe ", "espresso"], confidence: 0.85 },
 
-  // Food delivery apps (before dining so DoorDash/UberEats win here)
-  {
-    category: "delivery",
-    keywords: [
-      "doordash",
-      "ubereats",
-      "uber eats",
-      "grubhub",
-      "postmates",
-      "seamless",
-      "caviar food",
-      "drizly",
-      "gopuff",
-      "instacart",
-      "shipt",
-      "factor 75",
-      "factor75",
-      "hello fresh",
-      "hellofresh",
-      "home chef",
-      "green chef",
-      "everyplate",
-      "marley spoon",
-      "gobble",
-      "freshly",
-    ],
-    confidence: 0.9,
-  },
-
-  // Convenience stores (before dining so 7-Eleven wins here)
-  {
-    category: "convenience",
-    keywords: [
-      "7-eleven",
-      "7 eleven",
-      "7-11",
-      "circle k",
-      "wawa",
-      "kwik trip",
-      "kwik star",
-      "casey's general",
-      "casey's",
-      "sheetz",
-      "holiday station",
-      "cumberland farms",
-      "thorntons",
-      "united dairy farmers",
-      "sunoco",
-      "bp convenience",
-      "exxon convenience",
-    ],
-    confidence: 0.85,
-  },
-
-  // Dining — sit-down restaurants, fast food, cafes, bars
+  // Dining — structural food/venue terms; named chains are in rule-seed
   {
     category: "dining",
     keywords: [
-      "restaurant",
-      "chipotle",
-      "mcdonald",
-      "mcdonalds",
-      "mcd ",
-      "subway sandwich",
-      "domino",
-      "pizza hut",
-      "papa john",
-      "little caesar",
-      "pizza",
-      "burger king",
-      "burger",
-      "taco bell",
-      "wendy",
-      "chick-fil-a",
-      "chickfila",
-      "panera",
-      "diner",
-      "grill ",
-      "kitchen",
-      "bakery",
-      "sushi",
-      "thai food",
-      "chinese food",
-      "indian food",
-      "pho",
-      "ramen",
-      "chili's",
-      "olive garden",
-      "outback steakhouse",
-      "applebees",
-      "tgi friday",
-      "ihop",
-      "waffle house",
-      "denny's",
-      "red lobster",
-      "longhorn steakhouse",
-      "texas roadhouse",
-      "five guys",
-      "shake shack",
-      "in-n-out",
-      "in n out",
-      "whataburger",
-      "sonic drive",
-      "jack in the box",
-      "del taco",
-      "qdoba",
-      "popeyes",
-      "church's chicken",
-      "kfc ",
-      "kentucky fried",
-      "raising cane",
-      "zaxby",
-      "wingstop",
-      "buffalo wild",
-      "jersey mike",
-      "jimmy john",
-      "firehouse sub",
-      "potbelly",
-      "jason's deli",
-      "which wich",
-      "moe's southwest",
-      "habit burger",
-      "toast tab",
-      "toasttab",
-      "olo.com",
-      "eat ",
-      "snack",
-      "bar & grill",
-      "pub ",
-      "tavern",
-      "bistro",
-      "brasserie",
-      "trattoria",
-      "cantina",
-      "taproom",
-      "brew pub",
-      "bbq",
-      "barbeque",
-      "steakhouse",
-      "seafood",
-      "wings",
-      "noodle",
-      "taqueria",
-      "burrito",
-      "wrap",
-      "smoothie",
-      "juice bar",
-      "boba",
-      "donut",
-      "bagel",
-      "deli",
-      "sandwich",
-      "sub shop",
-      "catering",
-      "coffee",
+      "restaurant", "pizza", "burger", "grill ", "kitchen", "bakery",
+      "sushi", "thai food", "chinese food", "indian food", "pho", "ramen",
+      "diner", "bar & grill", "pub ", "tavern", "bistro", "brasserie",
+      "trattoria", "cantina", "taproom", "brew pub", "bbq", "barbeque",
+      "steakhouse", "seafood", "wings", "noodle", "taqueria", "burrito", "wrap",
+      "smoothie", "juice bar", "boba", "donut", "bagel", "deli", "sandwich",
+      "sub shop", "catering", "eat ", "snack",
+      "toast tab", "toasttab", "olo.com",
     ],
     confidence: 0.8,
   },
 
-  // Medical — pharmacies, doctors, hospitals, dental, vision, mental health
+  // Medical — structural terms; named pharmacies/labs/clinics are in rule-seed
   {
     category: "medical",
     keywords: [
-      "pharmacy",
-      "cvs",
-      "walgreens",
-      "rite aid",
-      "riteaid",
-      "duane reade",
-      "health mart",
-      "medicine shoppe",
-      "doctor",
-      "physician",
-      "medical",
-      "hospital",
-      "dental",
-      "dentist",
-      "orthodont",
-      "optometry",
-      "optometrist",
-      "vision care",
-      "lenscrafters",
-      "america's best",
-      "visionworks",
-      "urgent care",
-      "clinic",
-      "labcorp",
-      "lab corp",
-      "quest diagnostics",
-      "questdiagnostics",
-      "planned parenthood",
-      "therapy",
-      "therapist",
-      "counseling",
-      "psychiatry",
-      "psychology",
-      "mental health",
-      "talkspace",
-      "betterhelp",
-      "cerebral health",
-      "lab work",
-      "blood test",
-      "x-ray",
-      "radiology",
-      "surgery",
-      "anesthesia",
-      "copay",
-      "co-pay",
-      "prescription",
-      "rx",
-      "vitamin",
-      "supplement",
-      "gnc",
-      "vitamin shoppe",
-      "healthcare",
-      "23andme",
-      "drogueria",
-      "farmacia",
+      "pharmacy", "doctor", "physician", "medical", "hospital",
+      "dental", "dentist", "orthodont", "optometry", "optometrist", "vision care",
+      "urgent care", "clinic", "therapy", "therapist", "counseling",
+      "psychiatry", "psychology", "mental health",
+      "lab work", "blood test", "x-ray", "radiology", "surgery", "anesthesia",
+      "copay", "co-pay", "prescription", "rx", "vitamin", "supplement", "healthcare",
     ],
     confidence: 0.8,
   },
 
-  // Fitness — gyms, wellness studios, fitness apps
+  // Fitness — structural terms; named chains are in rule-seed
   {
     category: "fitness",
     recurrenceType: "recurring",
     keywords: [
-      "gym",
-      "fitness",
-      "planet fitness",
-      "la fitness",
-      "24 hour fitness",
-      "lifetime fitness",
-      "anytime fitness",
-      "equinox",
-      "crunch fitness",
-      "blink fitness",
-      "blink gym",
-      "blink",
-      "ymca",
-      "crossfit",
-      "orangetheory",
-      "pure barre",
-      "soulcycle",
-      "peloton",
-      "pilates",
-      "yoga",
-      "massage",
-      "chiropractor",
-      "physical therapy",
-      "rehabilitation",
-      "noom",
-      "weight watcher",
-      "nutrisystem",
+      "gym", "fitness", "pilates", "yoga", "massage", "chiropractor",
+      "physical therapy", "rehabilitation",
     ],
     confidence: 0.82,
   },
 
-  // Online education & learning tools → software
-  {
-    category: "software",
-    recurrenceType: "recurring",
-    keywords: [
-      "coursera",
-      "udemy",
-      "skillshare",
-      "linkedin learning",
-      "pluralsight",
-      "datacamp",
-      "codecademy",
-      "treehouse",
-      "udacity",
-      "khan academy",
-      "chegg",
-      "course hero",
-      "quizlet",
-      "brilliant.org",
-      "duolingo",
-    ],
-    confidence: 0.82,
-  },
-  // Physical education / institution expenses
+  // Software — "subscription" is structural; named services are in rule-seed
+  { category: "software", recurrenceType: "recurring", keywords: ["subscription"], confidence: 0.9 },
+
+  // Education — institution expenses
   {
     category: "shopping",
     keywords: [
-      "tuition",
-      "university",
-      "college",
-      "school fees",
-      "textbook",
-      "bookstore",
-      "student fee",
-      "enrollment fee",
-      "campus",
+      "tuition", "university", "college", "school fees", "textbook",
+      "bookstore", "student fee", "enrollment fee", "campus",
     ],
     confidence: 0.72,
   },
 
-  // Childcare / family services
+  // Childcare — structural terms; named providers are in rule-seed
   {
     category: "shopping",
     keywords: [
-      "daycare",
-      "day care",
-      "childcare",
-      "child care",
-      "babysitter",
-      "nanny",
-      "au pair",
-      "preschool",
-      "nursery school",
-      "after school",
-      "summer camp",
-      "bright horizons",
-      "kindercare",
-      "learning care",
+      "daycare", "day care", "childcare", "child care", "babysitter",
+      "nanny", "au pair", "preschool", "nursery school", "after school", "summer camp",
     ],
     confidence: 0.78,
   },
 
-  // Charity / donations
+  // Charity — generic terms; named organizations are in rule-seed
   {
     category: "shopping",
-    keywords: [
-      "donation",
-      "donate",
-      "charity",
-      "charitable",
-      "nonprofit",
-      "non-profit",
-      "gofundme",
-      "patreon",
-      "united way",
-      "red cross",
-      "salvation army",
-      "goodwill",
-      "habitat for humanity",
-      "oxfam",
-      "doctors without borders",
-      "msf usa",
-      "unicef",
-      "planned parenthood",
-      "aclu",
-    ],
+    keywords: ["donation", "donate", "charity", "charitable", "nonprofit", "non-profit"],
     confidence: 0.68,
   },
 
-  // Fees
+  // Fees — broad markers (after the specific bank-fee rule above)
   {
     category: "fees",
     keywords: [
-      "fee",
-      "overdraft",
-      "nsf",
-      "non-sufficient",
-      "insufficient fund",
-      "late charge",
-      "late fee",
-      "service charge",
-      "annual fee",
-      "maintenance fee",
-      "monthly fee",
-      "account fee",
-      "atm fee",
-      "wire fee",
-      "foreign transaction",
-      "currency conversion",
-      "cash advance fee",
-      "returned check",
-      "stop payment",
-      "penalty",
-      "fine ",
-      "bank charge",
+      "fee", "overdraft", "nsf", "non-sufficient", "insufficient fund",
+      "late charge", "late fee", "service charge", "annual fee", "maintenance fee",
+      "monthly fee", "account fee", "atm fee", "wire fee",
+      "foreign transaction", "currency conversion", "cash advance fee",
+      "returned check", "stop payment", "penalty", "fine ", "bank charge",
     ],
     confidence: 0.9,
   },
 
-  // Entertainment
+  // Entertainment — structural venue/activity terms; named venues/platforms are in rule-seed
   {
     category: "entertainment",
     keywords: [
-      "theatre",
-      "theater",
-      "amc ",
-      "regal cinema",
-      "cinemark",
-      "concert",
-      "ticketmaster",
-      "stubhub",
-      "seatgeek",
-      "vivid seats",
-      "eventbrite",
-      "bowling",
-      "arcade",
-      "museum",
-      "zoo ",
-      "aquarium",
-      "amusement park",
-      "six flags",
-      "cedar point",
-      "universal studios",
-      "disney world",
-      "disneyland",
-      "seaworld",
-      "steam game",
-      "steam purchase",
-      "playstation store",
-      "psn ",
-      "xbox store",
-      "nintendo eshop",
-      "epic games",
-      "riot games",
-      "blizzard",
-      "activision",
-      "ea sports",
-      "ubisoft",
-      "2k games",
-      "humble bundle",
-      "twitch ",
-      "golf",
-      "mini golf",
-      "go-kart",
-      "escape room",
-      "laser tag",
-      "trampoline",
-      "paintball",
-      "rock climbing",
-      "comedy club",
-      "improv",
-      "nightclub",
-      "club cover",
-      "bar tab",
-      "karaoke",
-      "billiards",
-      "pool hall",
+      "theatre", "theater", "concert", "bowling", "arcade", "museum",
+      "zoo ", "aquarium", "amusement park",
+      "golf", "mini golf", "go-kart", "escape room", "laser tag",
+      "trampoline", "paintball", "rock climbing",
+      "comedy club", "improv", "nightclub", "club cover", "bar tab",
+      "karaoke", "billiards", "pool hall",
     ],
     confidence: 0.75,
   },
-
-  // Shopping (broad — keep near end so specific merchants match first)
-  {
-    category: "shopping",
-    keywords: [
-      "amazon",
-      "amzn",
-      "walmart",
-      "best buy",
-      "ikea",
-      "etsy",
-      "ebay",
-      "apple store",
-      "apple.com",
-      "nike",
-      "adidas",
-      "nordstrom",
-      "macy",
-      "tj maxx",
-      "tjmaxx",
-      "marshalls",
-      "ross stores",
-      "old navy",
-      "gap ",
-      "banana republic",
-      "zara",
-      "h&m",
-      "uniqlo",
-      "forever 21",
-      "express clothing",
-      "victoria's secret",
-      "bath & body",
-      "bed bath",
-      "williams sonoma",
-      "pottery barn",
-      "west elm",
-      "restoration hardware",
-      "pier 1",
-      "tuesday morning",
-      "five below",
-      "dollar tree",
-      "dollartree",
-      "dollar general",
-      "dollargeneral",
-      "family dollar",
-      "familydollar",
-      "big lots",
-      "kohls",
-      "jcpenney",
-      "sears",
-      "jcp",
-      "newegg",
-      "b&h photo",
-      "bhphotovideo",
-      "micro center",
-      "fry's electronics",
-      "staples",
-      "office depot",
-      "officemax",
-      "container store",
-      "world market",
-      "crate & barrel",
-      "target ",
-      "petco",
-      "petsmart",
-      "chewy",
-      "petco",
-      "tractor supply",
-      "cabela",
-      "bass pro",
-      "rei ",
-      "dick's sporting",
-      "academy sports",
-      "modell's",
-      "sport chalet",
-      "foot locker",
-      "finish line",
-      "journeys",
-      "dsw ",
-      "payless",
-      "shoe carnival",
-      "famous footwear",
-      "skechers",
-      "ugg ",
-      "lululemon",
-      "athleta",
-      "under armour",
-      "columbia sportswear",
-      "the north face",
-      "patagonia",
-      "michaels store",
-      "hobby lobby",
-      "joann fabric",
-      "craft",
-      "thrift",
-      "shop.com",
-      "overstock",
-      "wayfair",
-      "wish.com",
-      "temu",
-      "shein",
-      "aliexpress",
-      "alibaba",
-      "romwe",
-      "zaful",
-      "fashion nova",
-      "pretty little thing",
-      "boohoo",
-      "revolve",
-      "asos",
-      "urban outfitters",
-      "anthropologie",
-      "free people",
-      "depop",
-      "poshmark",
-      "mercari",
-      "thredup",
-      "costco.com",
-      "samsclub",
-      "sam's club",
-      "bjs wholesale",
-      "storenvy",
-    ],
-    confidence: 0.7,
-  },
 ];
 
-// ─── Word-boundary compiled rules ────────────────────────────────────────────
+// ─── Compiled rules ────────────────────────────────────────────────────────────
 
-/**
- * Escape special regex characters in a string so it can be embedded safely
- * inside a RegExp pattern.
- */
 function escapeRegex(str: string): string {
   return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-/**
- * Compile a keyword string into a word-boundary-aware RegExp.
- *
- * If the keyword starts with a word character (\w), we prepend \b so it does
- * not match mid-word (e.g. "bar" won't match "barnes").
- * If the keyword ends with a word character, we append \b.
- * Keywords that start/end with spaces or punctuation (e.g. "shell ", "7-eleven")
- * rely on the surrounding characters to provide natural separation — no \b needed
- * at those ends.
- *
- * Note: the match is performed against `lower` (already lowercased raw description),
- * so the RegExp is case-insensitive.
- */
 function compileKeyword(kw: string): RegExp {
   const trimmed = kw.trim();
   const prefix = /^\w/.test(trimmed) ? "\\b" : "";
@@ -1500,166 +264,35 @@ type CompiledCategoryRule = Omit<CategoryRule, "keywords"> & {
   compiledPatterns: RegExp[];
 };
 
-/** CATEGORY_RULES with each keyword pre-compiled into a word-boundary RegExp. */
 const COMPILED_RULES: CompiledCategoryRule[] = CATEGORY_RULES.map((rule) => ({
   ...rule,
   compiledPatterns: rule.keywords.map(compileKeyword),
 }));
 
-/** Merchants that strongly suggest a recurring charge. */
-const RECURRING_KEYWORDS = [
-  "netflix",
-  "spotify",
-  "hulu",
-  "disney",
-  "hbo",
-  "max.com",
-  "paramount",
-  "peacock",
-  "peacocktv",
-  "audible",
-  "apple music",
-  "apple tv",
-  "apple one",
-  "youtube premium",
-  "amazon prime",
-  "amazon music",
-  "siriusxm",
-  "pandora",
-  "tidal",
-  "adobe",
-  "microsoft 365",
-  "office 365",
-  "icloud",
-  "google one",
-  "google storage",
-  "dropbox",
-  "github",
-  "gitlab",
-  "slack",
-  "zoom",
-  "notion",
-  "figma",
-  "mailchimp",
-  "hubspot",
-  "quickbooks",
-  "freshbooks",
-  "shopify",
-  "squarespace",
-  "insurance",
-  "geico",
-  "state farm",
-  "allstate",
-  "progressive",
-  "rent",
-  "mortgage",
-  "gym",
-  "planet fitness",
-  "la fitness",
-  "24 hour fitness",
-  "anytime fitness",
-  "equinox",
-  "orangetheory",
-  "peloton",
-  "ymca",
-  "subscription",
-  "monthly",
-  "annual fee",
-  "patreon",
-  "substack",
-  "crunchyroll",
-  "discovery+",
-  "espn+",
-  "fubo",
-  "sling tv",
-  "masterclass",
-  "sallie mae",
-  "navient",
-  "navient",
-  "comcast",
-  "xfinity",
-  "spectrum",
-  "at&t",
-  "verizon",
-  "t-mobile",
-];
-
 const NON_EXPENSE_CATEGORIES: ReadonlySet<string> = new Set(["transfers", "income", "other"]);
-
 const EXPENSE_CATEGORIES: ReadonlySet<string> = new Set(
   CATEGORY_RULES.map((r) => r.category).filter((c) => !NON_EXPENSE_CATEGORIES.has(c)),
 );
 
-/**
- * Pass 2 — Refund detection keywords.
- * "return credit" is used rather than bare "return" to reduce false positives
- * from descriptions like "RETURN VONS 04/15" which are store returns not
- * account credits (those are caught by the refund keyword separately).
- */
 const REFUND_KEYWORDS = [
-  "refund",
-  "return credit",
-  "credit adj",
-  "reversal",
-  "chargeback",
-  "adjustment cr",
+  "refund", "return credit", "credit adj", "reversal", "chargeback", "adjustment cr",
 ];
 
-/**
- * Pass 3 — Income detection keywords.
- * Only applied when the amount is non-negative. Seeing these in a description
- * strongly implies the transaction is intentional income, not just a positive
- * balance adjustment.
- */
 const INCOME_KEYWORDS = [
-  "deposit",
-  "payment received",
-  "direct dep",
-  "ach credit",
-  "wire from",
-  "invoice",
+  "deposit", "payment received", "direct dep", "ach credit", "wire from", "invoice",
 ];
 
-/**
- * Pass 9 — Recurring income keywords.
- * These appear verbatim in bank descriptions and are definitively recurring.
- * Checked separately from INCOME_KEYWORDS because they also set recurrenceType.
- */
 const RECURRING_INCOME_KEYWORDS = [
-  "salary",
-  "payroll",
-  "direct deposit",
-  "regular income",
-  "benefit",
-  "benefits",
-  "pension",
-  "social security",
-  "veteran affairs",
-  "dept. of veterans",
-  "department of veteran",
-  "thrift savings",
+  "salary", "payroll", "direct deposit", "regular income",
+  "benefit", "benefits", "pension", "social security",
+  "veteran affairs", "dept. of veterans", "department of veteran", "thrift savings",
 ];
+
+// ─── Classifier ────────────────────────────────────────────────────────────────
 
 /**
  * Classify a single transaction using the v1 12-pass state machine.
- *
- * Takes the raw bank description and a signed amount (negative = outflow).
- * Internally derives flowType, merchant name, and all classification fields.
- * The caller no longer needs to pre-compute merchant or flowType.
- *
- * Pass order (from v1 spec):
- *  1  Transfer detection
- *  2  Refund detection
- *  3  Income detection (amount >= 0 only)
- *  4  Standalone "credit" keyword
- *  5  Transfer direction refinement
- *  6  Merchant rule matching (can override passes 1–5)
- *  7  Category keyword fallback (implicit — Pass 6 covers both)
- *  8  Recurring subscription heuristic
- *  9  Recurring income detection
- * 10  Transfer reclassification (residual transfers → income or expense)
- * 11  Income category lock
- * 12  aiAssisted flag assignment
+ * Takes raw bank description and signed amount (negative = outflow).
  */
 export function classifyTransaction(
   rawDescription: string,
@@ -1669,9 +302,6 @@ export function classifyTransaction(
   const directionHint = getDirectionHint(rawDescription);
   const cleanedMerchant = normalizeMerchant(rawDescription);
 
-  // ─── Initial defaults ──────────────────────────────────────────────────────
-  // Positive amounts default to income; negative to expense.
-  // Everything starts as one-time until a rule says otherwise.
   let transactionClass: ClassificationResult["transactionClass"] =
     amount >= 0 ? "income" : "expense";
   let flowType: "inflow" | "outflow" = amount >= 0 ? "inflow" : "outflow";
@@ -1683,58 +313,25 @@ export function classifyTransaction(
   let matchedKeyword = "";
   let labelConfidence = 0.92;
 
-  // ─── Pass 1: Transfer detection ───────────────────────────────────────────
-  // Runs first because misclassifying a transfer as income or expense skews
-  // every cashflow metric. The broader check here catches all transfer-like
-  // language; merchant rules (Pass 6) can then override where a specific
-  // expense category applies (e.g. "TRANSFER TO AUTO LOAN" → debt).
-  //
-  // Exception: P2P payment apps (CashApp, Venmo, Zelle) can appear in two
-  // distinct contexts:
-  //   a) Account-to-account transfer → true transfer (no debit card prefix)
-  //   b) Debit card payment to a person → outflow expense ("-dc NNNN Cash App*name")
-  // When the raw description has a card-swipe indicator (POS, checkcard, -dc…),
-  // the transfer label is skipped so that Pass 3b can correctly flip the row
-  // to expense. Wire / mobile-deposit / remittance keywords are NOT exempted —
-  // those flows are always bank-initiated regardless of direction signals.
-  // isDebitCardDescription() is intentionally narrower than directionHint === "outflow":
-  // it only fires on card-swipe markers (POS, checkcard, -dc, purchase) so that
-  // ACH-debit CashApp/Venmo/Zelle transactions ("ACH DEBIT CASHAPP") are NOT exempted.
+  // Pass 1: Transfer detection — catches Zelle/Venmo/wire/mobile deposit etc.
+  // P2P apps on debit cards are exempt so "-dc Cash App*name" stays expense.
   const isDebitCardOutflow = isDebitCardDescription(rawDescription);
   if (TRANSFER_KEYWORDS.some((kw) => lower.includes(kw))) {
-    // When a debit-card swipe marker is present, check whether ANY P2P-exempt
-    // keyword appears in the description — not just the first-matched transfer
-    // keyword. This prevents "transfer" (earlier in the list) from masking the
-    // exemption when the description also contains "cash app" or "venmo" (e.g.
-    // "-dc 4305 Cash App Transfer" or "POS PURCHASE Zelle*john TRANSFER").
     const isP2pCardPayment =
       isDebitCardOutflow &&
       [...P2P_DEBIT_EXEMPT].some((kw) => lower.includes(kw));
-
-    if (isP2pCardPayment) {
-      // Debit card payment via a P2P app → let Pass 3b classify as expense.
-    } else {
+    if (!isP2pCardPayment) {
       transactionClass = "transfer";
-      // Genuine bank transfers have no spending category — use "other".
-      // The debt rule in Pass 6 can override this for credit card / loan transfers.
       category = "other";
     }
   }
 
-  // ─── Pass 2: Refund detection ─────────────────────────────────────────────
-  // Only runs if not already classified as transfer.
-  // A transfer cannot also be a refund.
-  if (
-    transactionClass !== "transfer" &&
-    REFUND_KEYWORDS.some((kw) => lower.includes(kw))
-  ) {
+  // Pass 2: Refund detection (skipped if transfer)
+  if (transactionClass !== "transfer" && REFUND_KEYWORDS.some((kw) => lower.includes(kw))) {
     transactionClass = "refund";
   }
 
-  // ─── Pass 3: Income detection ─────────────────────────────────────────────
-  // Only runs for non-negative amounts that are not yet transfer/refund.
-  // The amount guard prevents "FEE REVERSAL DEPOSIT" with a negative amount
-  // from being incorrectly promoted to income.
+  // Pass 3: Income detection for non-negative amounts
   if (
     transactionClass !== "transfer" &&
     transactionClass !== "refund" &&
@@ -1745,31 +342,15 @@ export function classifyTransaction(
     category = "income";
   }
 
-  // ─── Pass 3b: Direction hint correction ───────────────────────────────────
-  // Some banks record all transactions as positive amounts (unsigned format).
-  // When the description contains a strong outflow signal such as "Debit-dc",
-  // "POS PURCHASE", or "ACH DEBIT", the default income classification (from the
-  // positive amount) is clearly wrong.  Flip to expense here so downstream
-  // passes start from the right baseline.  Only fires for the pure positive-
-  // amount-default case (income from initial heuristic, not a pass-1 transfer
-  // or pass-2/3 refund/income that was intentionally set by keyword).
-  if (
-    transactionClass === "income" &&
-    amount >= 0 &&
-    directionHint === "outflow"
-  ) {
+  // Pass 3b: Direction-hint correction for unsigned CSV formats
+  if (transactionClass === "income" && amount >= 0 && directionHint === "outflow") {
     transactionClass = "expense";
     flowType = "outflow";
     category = "other";
     labelReason = "Direction-hint correction (strong outflow keyword in description)";
   }
 
-  // ─── Pass 4: Standalone "credit" keyword ──────────────────────────────────
-  // Handles bank entries like "ANNUAL FEE CREDIT" or "CREDIT MEMO" that
-  // represent one-time account credits, not income. The word-boundary regex
-  // prevents "credit card" from triggering this — "credit" must stand alone.
-  // The !hasIncomeContext guard prevents "ACH CREDIT DIRECT DEPOSIT PAYROLL"
-  // from being downgraded from income to refund.
+  // Pass 4: Standalone "credit" keyword (e.g. "ANNUAL FEE CREDIT")
   const hasIncomeContext = INCOME_KEYWORDS.some((kw) => lower.includes(kw));
   if (
     /(^|\s)credit($|\s)/.test(lower) &&
@@ -1780,27 +361,12 @@ export function classifyTransaction(
     transactionClass = "refund";
   }
 
-  // ─── Pass 5: Transfer direction refinement ────────────────────────────────
-  // Transfers detected in Pass 1 need their flowType set for display purposes.
-  // "TRANSFER TO SAVINGS" should show as outflow, "TRANSFER FROM CHECKING" as inflow.
+  // Pass 5: Transfer direction refinement
   if (transactionClass === "transfer" && directionHint) {
     flowType = directionHint;
   }
 
-  // ─── Pass 6: Merchant rule matching ───────────────────────────────────────
-  // The largest and most important pass. Each matching rule can override:
-  //   • category (always)
-  //   • transactionClass (if rule.transactionClass is set, or if the category
-  //     is in EXPENSE_CATEGORIES — which auto-locks to "expense")
-  //   • recurrenceType (if rule.recurrenceType is set)
-  //
-  // This pass CAN override the transfer/refund set in passes 1–2, which is
-  // intentional: "TRANSFER TO AUTO LOAN" correctly becomes debt/expense here.
-  //
-  // Rules are ordered specific-to-general; first match wins.
-  // The "transfers" category rule is skipped — Pass 1 handles it.
-  // Uses COMPILED_RULES which apply word-boundary-aware regex matching so that
-  // short keywords like "bar" don't fire on "barnes", "energy" on "energy drink", etc.
+  // Pass 6: Merchant rule matching — first rule that matches wins
   for (const rule of COMPILED_RULES) {
     for (let ki = 0; ki < rule.compiledPatterns.length; ki++) {
       if (rule.compiledPatterns[ki]!.test(lower)) {
@@ -1811,50 +377,24 @@ export function classifyTransaction(
         labelConfidence = rule.confidence;
         labelReason = `Matched rule keyword "${kw}" → ${category}`;
 
-        // Determine transactionClass from the rule's explicit override.
-        // If the rule has no explicit transactionClass but the category is a
-        // known expense category AND the current class is still "income" (the
-        // amount-sign default for positive amounts), auto-lock to "expense".
-        // This corrects banks that show all amounts as positive.
-        //
-        // IMPORTANT: We do NOT auto-lock if transactionClass is already
-        // "refund" or "transfer" — those are set by earlier passes and must
-        // not be silently overridden by a merchant category match.
         if (rule.transactionClass) {
           transactionClass = rule.transactionClass;
-        } else if (
-          EXPENSE_CATEGORIES.has(rule.category) &&
-          transactionClass === "income"
-        ) {
+        } else if (EXPENSE_CATEGORIES.has(rule.category) && transactionClass === "income") {
           transactionClass = "expense";
         }
 
-        // Keep flowType consistent with the resolved class.
-        if (transactionClass === "expense") {
-          flowType = "outflow";
-        } else if (transactionClass === "income") {
-          flowType = "inflow";
-        }
-        // "refund" flowType stays as-is — it may be inflow (a credit) or
-        // outflow depending on the bank; we don't force it here.
+        if (transactionClass === "expense") flowType = "outflow";
+        else if (transactionClass === "income") flowType = "inflow";
 
-        if (rule.recurrenceType) {
-          recurrenceType = rule.recurrenceType;
-        }
+        if (rule.recurrenceType) recurrenceType = rule.recurrenceType;
         break;
       }
     }
     if (matchedRule) break;
   }
 
-  // ─── Pass 8: Recurring subscription heuristic ─────────────────────────────
-  // If the description literally says "subscription", "monthly", "recurring",
-  // or "membership" and no rule already set recurrenceType, flag it recurring.
-  if (
-    recurrenceType === "one-time" &&
-    transactionClass !== "transfer" &&
-    transactionClass !== "refund"
-  ) {
+  // Pass 8: Recurring subscription heuristic (description-level keywords)
+  if (recurrenceType === "one-time" && transactionClass !== "transfer" && transactionClass !== "refund") {
     if (
       lower.includes("subscription") ||
       lower.includes("monthly") ||
@@ -1866,8 +406,7 @@ export function classifyTransaction(
     }
   }
 
-  // ─── Pass 9: Recurring income detection ───────────────────────────────────
-  // Payroll and government benefits keywords → always recurring income.
+  // Pass 9: Recurring income keywords (payroll, pension, etc.)
   if (recurrenceType === "one-time" && transactionClass === "income") {
     if (RECURRING_INCOME_KEYWORDS.some((kw) => lower.includes(kw))) {
       recurrenceType = "recurring";
@@ -1875,45 +414,13 @@ export function classifyTransaction(
     }
   }
 
-  // ─── Pass 8b: Legacy RECURRING_KEYWORDS for known merchant patterns ────────
-  // Keeps backward-compatible recurrence detection for merchants not captured
-  // by the category-level recurrenceType or the description-keyword heuristic.
-  if (
-    recurrenceType === "one-time" &&
-    transactionClass !== "transfer" &&
-    transactionClass !== "refund"
-  ) {
-    if (RECURRING_KEYWORDS.some((kw) => lower.includes(kw))) {
-      recurrenceType = "recurring";
-      recurrenceSource = "hint";
-    }
-  }
-
-  // ─── Pass 10: Transfer reclassification — INTENTIONALLY SKIPPED ──────────
-  // The v1 spec reclassifies residual transfers to income/expense. We retain
-  // "transfer" as a first-class transactionClass because our UI exposes a
-  // transfers category filter in the ledger. Reclassifying would remove all
-  // transfers from that view and confuse users who upload both account sides.
-
-  // ─── Pass 11: Income category lock ────────────────────────────────────────
-  // After all passes, income must have category "income". Prevents edge cases
-  // where a merchant rule set a non-income category on a positive-amount row
-  // that was not overridden back to expense.
+  // Pass 11: Income category lock
   if (transactionClass === "income") {
     category = "income";
     flowType = "inflow";
   }
 
-  // ─── Pass 12: aiAssisted flag ─────────────────────────────────────────────
-  // All three conditions together mean "the rule system had nothing specific
-  // to say about this transaction". The LLM enrichment layer should review it.
-  //
-  // Condition 1: No merchant rule matched  (matchedRule)
-  // Condition 2: No recurring signal found (default stayed one-time)
-  // Condition 3: No strong directional language in the description
-  //
-  // Transfers and refunds caught by passes 1–2 are NOT flagged — the rule
-  // system DID make a specific determination for them.
+  // Pass 12: aiAssisted flag — true when no specific rule or recurring signal fired
   const aiAssisted =
     !matchedRule &&
     recurrenceType === "one-time" &&
@@ -1927,6 +434,9 @@ export function classifyTransaction(
       ? "No strong merchant or recurrence rule matched"
       : `Amount-sign heuristic → ${category}`;
   }
+
+  // Suppress unused-variable warning; matchedKeyword is used in labelReason above
+  void matchedKeyword;
 
   return {
     transactionClass,

@@ -21,6 +21,7 @@ import { normalizeEmail } from "./auth.js";
 import { db } from "./db.js";
 import { recurrenceKey } from "./recurrenceDetector.js";
 import { toPublicUser, type PublicUser } from "./public-user.js";
+import { RULE_SEED_ENTRIES } from "./classifierRuleMigration.js";
 
 export type { PublicUser } from "./public-user.js";
 export { toPublicUser } from "./public-user.js";
@@ -1172,6 +1173,38 @@ export async function recordCacheHits(userId: number, merchantKeys: string[]): P
   } catch {
     // Non-fatal
   }
+}
+
+/**
+ * Bulk-seed the merchant classification cache with rule-derived entries from
+ * RULE_SEED_ENTRIES. Runs once per user on first cache miss (see classifyPipeline).
+ * Uses onConflictDoNothing so manual and AI entries are never overwritten.
+ * Returns the number of new rows inserted.
+ */
+export async function seedRuleSeedForUser(userId: number): Promise<number> {
+  const now = new Date();
+  const CHUNK_SIZE = 500;
+  let inserted = 0;
+  for (let i = 0; i < RULE_SEED_ENTRIES.length; i += CHUNK_SIZE) {
+    const chunk = RULE_SEED_ENTRIES.slice(i, i + CHUNK_SIZE).map((entry) => ({
+      userId,
+      merchantKey: entry.merchantKeyPattern,
+      category: entry.category,
+      transactionClass: entry.transactionClass,
+      recurrenceType: entry.recurrenceType,
+      labelConfidence: entry.confidence.toFixed(2),
+      source: "rule-seed",
+      hitCount: 0,
+      updatedAt: now,
+    }));
+    const rows = await db
+      .insert(merchantClassifications)
+      .values(chunk)
+      .onConflictDoNothing()
+      .returning({ id: merchantClassifications.id });
+    inserted += rows.length;
+  }
+  return inserted;
 }
 
 /**

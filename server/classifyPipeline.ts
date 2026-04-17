@@ -26,6 +26,7 @@ import {
   getMerchantRules,
   getUserCorrectionExamples,
   recordCacheHits,
+  seedRuleSeedForUser,
 } from "./storage.js";
 import { recurrenceKey } from "./recurrenceDetector.js";
 
@@ -243,6 +244,50 @@ export async function classifyPipeline(
     }
   } catch {
     // Non-fatal — fall through to AI pass if cache check fails.
+  }
+
+  // ── Phase 1.8: rule-seed warmup + cache re-query ──────────────────────────
+  // Called at most once per pipeline invocation when cache misses remain.
+  // seedRuleSeedForUser uses onConflictDoNothing so it is safe to call
+  // repeatedly; existing manual / AI entries are never overwritten.
+  const stillNeedingCache = internal.filter((r) => r.needsAi);
+  if (stillNeedingCache.length > 0) {
+    try {
+      await seedRuleSeedForUser(opts.userId);
+      const seedKeys = stillNeedingCache
+        .map((r) => recurrenceKey(r.merchant))
+        .filter(Boolean) as string[];
+
+      if (seedKeys.length > 0) {
+        const seedHits = await getMerchantClassifications(opts.userId, seedKeys);
+        const seedHitKeys: string[] = [];
+
+        for (const row of stillNeedingCache) {
+          const key = recurrenceKey(row.merchant);
+          if (!key) continue;
+          const hit = seedHits.get(key);
+          if (!hit) continue;
+
+          row.category = hit.category;
+          row.transactionClass = hit.transactionClass;
+          row.recurrenceType = hit.recurrenceType;
+          row.recurrenceSource = "none";
+          row.labelConfidence = hit.labelConfidence;
+          row.labelReason = `cache hit: ${key} (${hit.source})`;
+          row.labelSource = "cache";
+          row.aiAssisted = false;
+          row.fromCache = true;
+          row.needsAi = false;
+          seedHitKeys.push(key);
+        }
+
+        if (seedHitKeys.length > 0) {
+          recordCacheHits(opts.userId, seedHitKeys).catch(() => undefined);
+        }
+      }
+    } catch {
+      // Non-fatal — continue to AI pass.
+    }
   }
 
   // ── Phase 2: AI fallback for low-confidence / uncertain rows ──────────────
