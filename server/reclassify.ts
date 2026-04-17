@@ -280,6 +280,8 @@ export async function reclassifyTransactions(
       effectiveFlowType !== txn.flowType ||
       transactionClass !== txn.transactionClass ||
       category !== txn.category ||
+      recurrenceType !== txn.recurrenceType ||
+      recurrenceSource !== txn.recurrenceSource ||
       (aiAssisted && !txn.aiAssisted) ||
       finalLabelSource !== txn.labelSource;
 
