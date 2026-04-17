@@ -767,6 +767,7 @@ export function createApp(options?: CreateAppOptions) {
             flowType: string;
             transactionClass: string;
             recurrenceType: string;
+            recurrenceSource: string;
             category: string;
             labelSource: string;
             labelConfidence: string;
@@ -801,6 +802,7 @@ export function createApp(options?: CreateAppOptions) {
               flowType: classification.flowType,
               transactionClass: classification.transactionClass,
               recurrenceType: classification.recurrenceType,
+              recurrenceSource: classification.recurrenceSource,
               category: classification.category,
               labelSource: classification.labelSource,
               labelConfidence: classification.labelConfidence.toFixed(2),
@@ -823,6 +825,7 @@ export function createApp(options?: CreateAppOptions) {
                 if (rule.category) t.category = rule.category;
                 if (rule.transactionClass) t.transactionClass = rule.transactionClass;
                 if (rule.recurrenceType) t.recurrenceType = rule.recurrenceType;
+                t.recurrenceSource = "none";
                 t.labelSource = "user-rule";
                 t.labelConfidence = "1.00";
                 t.labelReason = `user rule: ${key}`;
@@ -858,6 +861,7 @@ export function createApp(options?: CreateAppOptions) {
                 t.category = hit.category;
                 t.transactionClass = hit.transactionClass;
                 t.recurrenceType = hit.recurrenceType;
+                t.recurrenceSource = "none";
                 t.labelConfidence = hit.labelConfidence.toFixed(2);
                 t.labelReason = `cache hit: ${key} (${hit.source})`;
                 t.labelSource = "cache";
@@ -912,6 +916,7 @@ export function createApp(options?: CreateAppOptions) {
                 t.category = aiResult.category;
                 t.transactionClass = aiResult.transactionClass;
                 t.recurrenceType = aiResult.recurrenceType;
+                t.recurrenceSource = "none";
                 t.labelConfidence = aiResult.labelConfidence.toFixed(2);
                 t.labelReason = aiResult.labelReason;
                 t.labelSource = "ai";

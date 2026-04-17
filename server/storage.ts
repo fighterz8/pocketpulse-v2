@@ -257,6 +257,7 @@ export type CreateTransactionInput = {
   flowType: string;
   transactionClass: string;
   recurrenceType?: string;
+  recurrenceSource?: string;
   category?: string;
   labelSource?: string;
   labelConfidence?: string | null;
@@ -390,6 +391,7 @@ export async function createTransactionBatch(
     flowType: t.flowType,
     transactionClass: t.transactionClass,
     recurrenceType: t.recurrenceType ?? "one-time",
+    recurrenceSource: t.recurrenceSource ?? "none",
     category: t.category ?? "other",
     labelSource: t.labelSource ?? "rule",
     labelConfidence: t.labelConfidence ?? null,

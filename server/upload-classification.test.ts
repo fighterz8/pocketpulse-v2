@@ -18,6 +18,8 @@ function buildTransaction(row: { date: string; description: string; amount: numb
     flowType: classification.flowType,
     transactionClass: classification.transactionClass,
     category: classification.category,
+    recurrenceType: classification.recurrenceType,
+    recurrenceSource: classification.recurrenceSource,
     aiAssisted: classification.aiAssisted || row.ambiguous,
   };
 }
@@ -80,5 +82,18 @@ describe("unsigned CSV → classification integration", () => {
       flowType: "inflow",
       amount: 25.00,
     });
+  });
+});
+
+describe("upload path: recurrenceSource persistence before detector sync", () => {
+  it("payroll deposit gets recurrenceSource='hint' and recurrenceType='recurring' at insert time", () => {
+    const txn = buildTransaction({ date: "2026-01-17", description: "PAYROLL DEPOSIT", amount: 3500, ambiguous: false });
+    expect(txn.recurrenceType).toBe("recurring");
+    expect(txn.recurrenceSource).toBe("hint");
+  });
+
+  it("non-recurring merchant gets recurrenceSource='none' at insert time", () => {
+    const txn = buildTransaction({ date: "2026-01-18", description: "STARBUCKS COFFEE", amount: 5.50, ambiguous: false });
+    expect(txn.recurrenceSource).toBe("none");
   });
 });
