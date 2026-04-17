@@ -95,6 +95,13 @@ const CONFIDENCE_COLORS: Record<string, string> = {
   Low:    "bg-slate-100 text-slate-500",
 };
 
+// Dot colors derived from the CONFIDENCE_COLORS palette (saturated variant).
+const CONFIDENCE_DOT: Record<string, string> = {
+  High:   "bg-emerald-600",
+  Medium: "bg-amber-500",
+  Low:    "bg-slate-400",
+};
+
 const fadeUp = {
   hidden: { opacity: 0, y: 14 },
   visible: (i: number = 0) => ({
@@ -382,13 +389,31 @@ export function Leaks() {
       {" "}·{" "}
       <span className="text-red-500">{fmt(totals.all.flagged)} flagged</span>
       {totals.high.count > 0 && (
-        <span className="text-emerald-600 font-normal"> · {totals.high.count} high</span>
+        <span className="font-normal" data-testid="leaks-summary-high">
+          {" "}·{" "}
+          <span className={`inline-block w-2 h-2 rounded-full align-middle mr-0.5 ${CONFIDENCE_DOT.High}`} />
+          <span className="text-emerald-700 dark:text-emerald-400">
+            High: {totals.high.count} ({fmt(totals.high.flagged)})
+          </span>
+        </span>
       )}
       {totals.medium.count > 0 && (
-        <span className="text-amber-600 font-normal"> · {totals.medium.count} medium</span>
+        <span className="font-normal" data-testid="leaks-summary-medium">
+          {" "}·{" "}
+          <span className={`inline-block w-2 h-2 rounded-full align-middle mr-0.5 ${CONFIDENCE_DOT.Medium}`} />
+          <span className="text-amber-700 dark:text-amber-400">
+            Medium: {totals.medium.count} ({fmt(totals.medium.flagged)})
+          </span>
+        </span>
       )}
       {totals.low.count > 0 && (
-        <span className="text-slate-400 font-normal"> · {totals.low.count} low</span>
+        <span className="font-normal" data-testid="leaks-summary-low">
+          {" "}·{" "}
+          <span className={`inline-block w-2 h-2 rounded-full align-middle mr-0.5 ${CONFIDENCE_DOT.Low}`} />
+          <span className="text-slate-500 dark:text-slate-400">
+            Low: {totals.low.count} ({fmt(totals.low.flagged)})
+          </span>
+        </span>
       )}
     </motion.p>
   );
