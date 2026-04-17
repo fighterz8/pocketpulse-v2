@@ -89,13 +89,6 @@ function categoryColor(cat: string): string {
   return CATEGORY_COLORS[cat] ?? "bg-slate-100 text-slate-600";
 }
 
-const CONFIDENCE_COLORS: Record<string, string> = {
-  High:   "bg-emerald-100 text-emerald-700",
-  Medium: "bg-amber-100 text-amber-700",
-  Low:    "bg-slate-100 text-slate-500",
-};
-
-// Dot colors derived from the CONFIDENCE_COLORS palette (saturated variant).
 const CONFIDENCE_DOT: Record<string, string> = {
   High:   "bg-emerald-600",
   Medium: "bg-amber-500",
@@ -203,22 +196,6 @@ function LeakCard({
             <span className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium ${categoryColor(l.dominantCategory)}`}>
               {capitalize(l.dominantCategory)}
             </span>
-            <span className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium ${CONFIDENCE_COLORS[l.confidence] ?? "bg-slate-100 text-slate-500"}`}>
-              {l.confidence} confidence
-            </span>
-            {l.isSubscriptionLike && (
-              <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-violet-100 text-violet-700">
-                Subscription-like
-              </span>
-            )}
-            {typeof l.firstDate === "string" && l.firstDate >= startDate && (
-              <span
-                className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-blue-100 text-blue-700"
-                data-testid={`leak-new-${slug}`}
-              >
-                New this period
-              </span>
-            )}
           </div>
 
           {/* Bucket label */}
@@ -252,20 +229,10 @@ function LeakCard({
         {/* Right column: amounts + link */}
         <div className="flex flex-row sm:flex-col items-center sm:items-end justify-between sm:justify-center gap-2 sm:min-w-[120px] sm:text-right">
           <div>
-            <p className="text-lg font-bold leading-none text-red-500" data-testid={`leak-monthly-${slug}`}>
-              {fmt(l.monthlyAmount)}<span className="text-xs font-normal text-slate-400 dark:text-slate-500">/mo</span>
+            <p className="text-lg font-bold leading-none text-red-500" data-testid={`leak-spend-${slug}`}>
+              {fmt(l.recentSpend)}
             </p>
-            <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">
-              {fmt(l.recentSpend)} total
-            </p>
-            {l.dailyAverage !== undefined && (
-              <p
-                className="text-xs text-amber-600 dark:text-amber-400 mt-0.5"
-                data-testid={`leak-daily-avg-${slug}`}
-              >
-                ~{fmt(l.dailyAverage)}/day
-              </p>
-            )}
+            <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">this month</p>
           </div>
           <a
             href={ledgerHref}

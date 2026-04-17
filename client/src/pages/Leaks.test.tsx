@@ -24,14 +24,6 @@ const MOCK_LEAK = {
   isSubscriptionLike: false,
 };
 
-const MOCK_LEAK_NEW = {
-  ...MOCK_LEAK,
-  merchant: "New Coffee Spot",
-  merchantKey: "new coffee spot",
-  merchantFilter: "new coffee spot",
-  firstDate: "2026-01-15",
-};
-
 function makeMockFetch(leaks: unknown[] = [MOCK_LEAK]) {
   return vi.fn((url: string) => {
     if (url === "/api/dashboard/months") {
@@ -74,13 +66,6 @@ describe("Leaks page", () => {
     });
   });
 
-  it("shows confidence badge on leak card", async () => {
-    renderLeaks();
-    await waitFor(() => {
-      expect(screen.getByText("High confidence")).toBeInTheDocument();
-    });
-  });
-
   it("shows summary line with count and flagged total", async () => {
     renderLeaks();
     await waitFor(() => {
@@ -112,22 +97,6 @@ describe("Leaks page", () => {
         document.querySelector("[data-testid='leaks-summary-low']"),
       ).not.toBeInTheDocument();
     });
-  });
-
-  it("shows 'New this period' badge when firstDate is within the period", async () => {
-    vi.stubGlobal("fetch", makeMockFetch([MOCK_LEAK_NEW]));
-    renderLeaks();
-    await waitFor(() => {
-      expect(screen.getByText("New this period")).toBeInTheDocument();
-    });
-  });
-
-  it("does not show 'New this period' badge when firstDate is before the period", async () => {
-    renderLeaks();
-    await waitFor(() => {
-      expect(screen.getByText("Starbucks")).toBeInTheDocument();
-    });
-    expect(screen.queryByText("New this period")).not.toBeInTheDocument();
   });
 
   it("shows empty state when no leaks returned", async () => {
