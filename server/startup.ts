@@ -1,9 +1,21 @@
 import { db } from "./db.js";
 import { users } from "../shared/schema.js";
-import { seedMerchantClassificationsForUser } from "./storage.js";
+import {
+  seedGlobalMerchantClassifications,
+  seedMerchantClassificationsForUser,
+} from "./storage.js";
 
 /**
- * Seed the merchant_classifications table from userCorrected rows.
+ * Populate the global merchant seed table from RULE_SEED_ENTRIES (once per boot).
+ * Uses onConflictDoNothing so repeat calls are safe and fast after the first run.
+ */
+export async function seedGlobalMerchantSeed(): Promise<void> {
+  const inserted = await seedGlobalMerchantClassifications();
+  console.log(`[startup] global merchant seed: ${inserted} new entries`);
+}
+
+/**
+ * Seed the per-user merchant_classifications table from userCorrected rows.
  * Seeds only from rows where userCorrected=true or labelSource="manual".
  * Uses onConflictDoNothing so it is idempotent and safe on every startup.
  *

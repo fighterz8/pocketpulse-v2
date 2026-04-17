@@ -5,6 +5,7 @@ import {
   accounts,
   csvFormatSpecs,
   merchantClassifications,
+  merchantClassificationsGlobal,
   merchantRules,
   recurringReviews,
   transactions,
@@ -1033,6 +1034,73 @@ export async function getMerchantClassifications(
     });
   }
   return map;
+}
+
+/**
+ * Query the global merchant classification seed table for a list of keys.
+ * Returns a Map<merchantKey, MerchantClassification> for all keys found.
+ */
+export async function getGlobalMerchantClassifications(
+  merchantKeys: string[],
+): Promise<Map<string, MerchantClassification>> {
+  if (merchantKeys.length === 0) return new Map();
+  const unique = [...new Set(merchantKeys.filter(Boolean))];
+  if (unique.length === 0) return new Map();
+
+  const rows = await db
+    .select({
+      merchantKey: merchantClassificationsGlobal.merchantKey,
+      category: merchantClassificationsGlobal.category,
+      transactionClass: merchantClassificationsGlobal.transactionClass,
+      recurrenceType: merchantClassificationsGlobal.recurrenceType,
+      labelConfidence: merchantClassificationsGlobal.labelConfidence,
+      source: merchantClassificationsGlobal.source,
+    })
+    .from(merchantClassificationsGlobal)
+    .where(inArray(merchantClassificationsGlobal.merchantKey, unique));
+
+  const map = new Map<string, MerchantClassification>();
+  for (const row of rows) {
+    map.set(row.merchantKey, {
+      merchantKey: row.merchantKey,
+      category: row.category,
+      transactionClass: row.transactionClass,
+      recurrenceType: row.recurrenceType,
+      labelConfidence: parseFloat(row.labelConfidence ?? "0"),
+      source: row.source as MerchantClassificationSource,
+    });
+  }
+  return map;
+}
+
+/**
+ * Populate the global seed table from RULE_SEED_ENTRIES (once at boot).
+ * Uses onConflictDoNothing — safe to call on every restart.
+ * Returns the number of new rows inserted.
+ */
+export async function seedGlobalMerchantClassifications(): Promise<number> {
+  const now = new Date();
+  const CHUNK_SIZE = 500;
+  let inserted = 0;
+  for (let i = 0; i < RULE_SEED_ENTRIES.length; i += CHUNK_SIZE) {
+    const chunk = RULE_SEED_ENTRIES.slice(i, i + CHUNK_SIZE).map((entry) => ({
+      merchantKey: entry.merchantKeyPattern,
+      category: entry.category,
+      transactionClass: entry.transactionClass,
+      recurrenceType: entry.recurrenceType,
+      labelConfidence: entry.confidence.toFixed(2),
+      source: "rule-seed",
+      hitCount: 0,
+      updatedAt: now,
+    }));
+    const rows = await db
+      .insert(merchantClassificationsGlobal)
+      .values(chunk)
+      .onConflictDoNothing()
+      .returning({ id: merchantClassificationsGlobal.id });
+    inserted += rows.length;
+  }
+  return inserted;
 }
 
 /**

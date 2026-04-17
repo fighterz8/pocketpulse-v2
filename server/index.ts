@@ -2,14 +2,22 @@ import http from "node:http";
 
 import { createApp } from "./routes.js";
 import { runMigrations } from "./migrations.js";
-import { seedMerchantClassifications } from "./startup.js";
+import { seedGlobalMerchantSeed, seedMerchantClassifications } from "./startup.js";
 
 // Apply any pending Drizzle migrations before the server accepts traffic.
 // Idempotent — already-applied migrations are skipped automatically.
 await runMigrations();
 console.log("[startup] migrations applied");
 
-// Seed the merchant classification cache from user-corrected rows.
+// Populate the global merchant seed table (RULE_SEED_ENTRIES → DB).
+// onConflictDoNothing makes this idempotent on every restart.
+try {
+  await seedGlobalMerchantSeed();
+} catch (err) {
+  console.warn("[startup] global merchant seed skipped:", err);
+}
+
+// Seed the per-user merchant classification cache from user-corrected rows.
 // Runs every boot to pick up corrections made since the last restart.
 try {
   await seedMerchantClassifications();

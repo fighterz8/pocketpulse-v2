@@ -22,11 +22,11 @@ import {
 } from "./ai-classifier.js";
 import {
   batchUpsertMerchantClassifications,
+  getGlobalMerchantClassifications,
   getMerchantClassifications,
   getMerchantRules,
   getUserCorrectionExamples,
   recordCacheHits,
-  seedRuleSeedForUser,
 } from "./storage.js";
 import { recurrenceKey } from "./recurrenceDetector.js";
 
@@ -246,26 +246,25 @@ export async function classifyPipeline(
     // Non-fatal — fall through to AI pass if cache check fails.
   }
 
-  // ── Phase 1.8: rule-seed warmup + cache re-query ──────────────────────────
-  // Called at most once per pipeline invocation when cache misses remain.
-  // seedRuleSeedForUser uses onConflictDoNothing so it is safe to call
-  // repeatedly; existing manual / AI entries are never overwritten.
-  const stillNeedingCache = internal.filter((r) => r.needsAi);
-  if (stillNeedingCache.length > 0) {
+  // ── Phase 1.8: global seed lookup ─────────────────────────────────────────
+  // Resolution order: per-user cache (1.7) → global seed (1.8) → AI (2).
+  // Queries merchant_classifications_global which is populated at boot from
+  // RULE_SEED_ENTRIES and is shared across all users. Non-fatal on error.
+  const stillNeedingGlobal = internal.filter((r) => r.needsAi);
+  if (stillNeedingGlobal.length > 0) {
     try {
-      await seedRuleSeedForUser(opts.userId);
-      const seedKeys = stillNeedingCache
+      const globalKeys = stillNeedingGlobal
         .map((r) => recurrenceKey(r.merchant))
         .filter(Boolean) as string[];
 
-      if (seedKeys.length > 0) {
-        const seedHits = await getMerchantClassifications(opts.userId, seedKeys);
-        const seedHitKeys: string[] = [];
+      if (globalKeys.length > 0) {
+        const globalHits = await getGlobalMerchantClassifications(globalKeys);
+        const hitKeys: string[] = [];
 
-        for (const row of stillNeedingCache) {
+        for (const row of stillNeedingGlobal) {
           const key = recurrenceKey(row.merchant);
           if (!key) continue;
-          const hit = seedHits.get(key);
+          const hit = globalHits.get(key);
           if (!hit) continue;
 
           row.category = hit.category;
@@ -273,16 +272,20 @@ export async function classifyPipeline(
           row.recurrenceType = hit.recurrenceType;
           row.recurrenceSource = "none";
           row.labelConfidence = hit.labelConfidence;
-          row.labelReason = `cache hit: ${key} (${hit.source})`;
+          row.labelReason = `global seed hit: ${key}`;
           row.labelSource = "cache";
           row.aiAssisted = false;
           row.fromCache = true;
           row.needsAi = false;
-          seedHitKeys.push(key);
+          hitKeys.push(key);
         }
 
-        if (seedHitKeys.length > 0) {
-          recordCacheHits(opts.userId, seedHitKeys).catch(() => undefined);
+        // Promote global seed hits into the per-user cache for future fast lookups.
+        if (hitKeys.length > 0) {
+          const toCache = hitKeys
+            .map((k) => globalHits.get(k))
+            .filter(Boolean) as import("../shared/schema.js").MerchantClassification[];
+          batchUpsertMerchantClassifications(opts.userId, toCache).catch(() => undefined);
         }
       }
     } catch {

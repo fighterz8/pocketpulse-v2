@@ -369,6 +369,33 @@ export const merchantClassifications = pgTable(
   ],
 );
 
+/**
+ * Global read-only seed table for merchant classifications.
+ * Populated at boot from RULE_SEED_ENTRIES in classifierRuleMigration.ts.
+ * Resolution order in classifyPipeline: per-user cache → global seed → structural rules → AI.
+ * No userId — applies to all users equally.
+ */
+export const merchantClassificationsGlobal = pgTable(
+  "merchant_classifications_global",
+  {
+    id: serial("id").primaryKey(),
+    merchantKey: text("merchant_key").notNull(),
+    category: text("category").notNull(),
+    transactionClass: text("transaction_class").notNull(),
+    recurrenceType: text("recurrence_type").notNull(),
+    labelConfidence: numeric("label_confidence", { precision: 5, scale: 2 }).notNull(),
+    source: text("source").notNull().default("rule-seed"),
+    hitCount: integer("hit_count").notNull().default(0),
+    createdAt: timestamp("created_at", { mode: "date", withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { mode: "date", withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [uniqueIndex("merchant_classifications_global_key_idx").on(t.merchantKey)],
+);
+
 export type MerchantClassificationSource = "manual" | "ai" | "rule-seed";
 
 export type MerchantClassification = {
