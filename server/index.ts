@@ -89,6 +89,28 @@ await pool.query(`
 `);
 console.log("[startup] transactions dedup index migration complete");
 
+// ── Startup migration: recurrenceSource check constraint ─────────────────────
+// Enforces the allowed values for recurrence_source at the DB level so that
+// any future write path that passes an unexpected string is rejected immediately.
+// Uses IF NOT EXISTS / DO NOTHING patterns so it is idempotent on every restart.
+try {
+  // PostgreSQL does not support ADD CONSTRAINT IF NOT EXISTS; check pg_constraint first.
+  const { rows: existing } = await pool.query<{ conname: string }>(`
+    SELECT conname FROM pg_constraint
+    WHERE conname = 'chk_recurrence_source' AND conrelid = 'transactions'::regclass
+  `);
+  if (existing.length === 0) {
+    await pool.query(`
+      ALTER TABLE transactions
+        ADD CONSTRAINT chk_recurrence_source
+          CHECK (recurrence_source IN ('none', 'hint', 'detected'))
+    `);
+  }
+  console.log("[startup] recurrenceSource check constraint migration complete");
+} catch (err) {
+  console.warn("[startup] recurrenceSource check constraint migration skipped:", err);
+}
+
 // ── Day-one seed: populate merchant_classifications from userCorrected rows ──
 // Seeds only from rows where userCorrected=true or labelSource="manual".
 // Uses onConflictDoNothing so it is idempotent and safe on every startup.
