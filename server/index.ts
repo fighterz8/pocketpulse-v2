@@ -2,6 +2,9 @@ import http from "node:http";
 
 import { createApp } from "./routes.js";
 import { pool } from "./db.js";
+import { db } from "./db.js";
+import { users } from "../shared/schema.js";
+import { seedMerchantClassificationsForUser } from "./storage.js";
 
 // ── One-time startup migration: strip old "|amount.toFixed(2)" suffix ──────
 // Old candidateKey format: "merchantKey|15.99"
@@ -85,6 +88,21 @@ await pool.query(`
                      lower(trim(raw_description)))
 `);
 console.log("[startup] transactions dedup index migration complete");
+
+// ── Day-one seed: populate merchant_classifications from userCorrected rows ──
+// Seeds only from rows where userCorrected=true or labelSource="manual".
+// Uses onConflictDoNothing so it is idempotent and safe on every startup.
+try {
+  const allUsers = await db.select({ id: users.id }).from(users);
+  let totalSeeded = 0;
+  for (const u of allUsers) {
+    const n = await seedMerchantClassificationsForUser(u.id);
+    totalSeeded += n;
+  }
+  console.log(`[startup] merchant classification seed complete (${totalSeeded} entries)`);
+} catch (err) {
+  console.warn("[startup] merchant classification seed skipped:", err);
+}
 
 const app = createApp();
 const isProduction = process.env.NODE_ENV === "production";

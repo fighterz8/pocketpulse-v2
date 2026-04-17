@@ -4,6 +4,7 @@ import { DatabaseError } from "pg";
 import {
   accounts,
   csvFormatSpecs,
+  merchantClassifications,
   merchantRules,
   recurringReviews,
   transactions,
@@ -12,6 +13,8 @@ import {
   userPreferences,
   users,
   type CsvFormatSpec,
+  type MerchantClassification,
+  type MerchantClassificationSource,
 } from "../shared/schema.js";
 
 import { normalizeEmail } from "./auth.js";
@@ -977,4 +980,238 @@ export async function saveFormatSpec(
       target: [csvFormatSpecs.userId, csvFormatSpecs.headerFingerprint],
       set: { spec, source },
     });
+}
+
+// ---------------------------------------------------------------------------
+// Merchant classification cache
+// ---------------------------------------------------------------------------
+
+/**
+ * Batch-fetch merchant classification cache entries for a user.
+ * Only returns entries whose merchantKey is in the provided set.
+ * Returns a Map<merchantKey, MerchantClassification>.
+ */
+export async function getMerchantClassifications(
+  userId: number,
+  merchantKeys: string[],
+): Promise<Map<string, MerchantClassification>> {
+  if (merchantKeys.length === 0) return new Map();
+  const unique = [...new Set(merchantKeys.filter(Boolean))];
+  if (unique.length === 0) return new Map();
+
+  const rows = await db
+    .select({
+      merchantKey: merchantClassifications.merchantKey,
+      category: merchantClassifications.category,
+      transactionClass: merchantClassifications.transactionClass,
+      recurrenceType: merchantClassifications.recurrenceType,
+      labelConfidence: merchantClassifications.labelConfidence,
+      source: merchantClassifications.source,
+    })
+    .from(merchantClassifications)
+    .where(
+      and(
+        eq(merchantClassifications.userId, userId),
+        inArray(merchantClassifications.merchantKey, unique),
+      ),
+    );
+
+  const map = new Map<string, MerchantClassification>();
+  for (const row of rows) {
+    map.set(row.merchantKey, {
+      merchantKey: row.merchantKey,
+      category: row.category,
+      transactionClass: row.transactionClass,
+      recurrenceType: row.recurrenceType,
+      labelConfidence: parseFloat(row.labelConfidence ?? "0"),
+      source: row.source as MerchantClassificationSource,
+    });
+  }
+  return map;
+}
+
+/**
+ * Upsert a single merchant classification cache entry.
+ *
+ * Priority rules on conflict:
+ *   - "manual" always wins (never overwritten by ai or rule-seed).
+ *   - "ai" overwrites "ai" or "rule-seed".
+ *   - "rule-seed" is a no-op when a row already exists.
+ *
+ * hitCount and lastUsedAt are only updated on actual cache hits — this
+ * function handles writes only; hit tracking is separate.
+ */
+export async function upsertMerchantClassification(
+  userId: number,
+  entry: MerchantClassification,
+): Promise<void> {
+  const now = new Date();
+  const confidenceStr = entry.labelConfidence.toFixed(2);
+
+  if (entry.source === "rule-seed") {
+    await db
+      .insert(merchantClassifications)
+      .values({
+        userId,
+        merchantKey: entry.merchantKey,
+        category: entry.category,
+        transactionClass: entry.transactionClass,
+        recurrenceType: entry.recurrenceType,
+        labelConfidence: confidenceStr,
+        source: entry.source,
+        updatedAt: now,
+      })
+      .onConflictDoNothing();
+    return;
+  }
+
+  if (entry.source === "manual") {
+    await db
+      .insert(merchantClassifications)
+      .values({
+        userId,
+        merchantKey: entry.merchantKey,
+        category: entry.category,
+        transactionClass: entry.transactionClass,
+        recurrenceType: entry.recurrenceType,
+        labelConfidence: confidenceStr,
+        source: "manual",
+        updatedAt: now,
+      })
+      .onConflictDoUpdate({
+        target: [merchantClassifications.userId, merchantClassifications.merchantKey],
+        set: {
+          category: entry.category,
+          transactionClass: entry.transactionClass,
+          recurrenceType: entry.recurrenceType,
+          labelConfidence: confidenceStr,
+          source: "manual",
+          updatedAt: now,
+        },
+      });
+    return;
+  }
+
+  // source === "ai": overwrite any row except manual
+  await db
+    .insert(merchantClassifications)
+    .values({
+      userId,
+      merchantKey: entry.merchantKey,
+      category: entry.category,
+      transactionClass: entry.transactionClass,
+      recurrenceType: entry.recurrenceType,
+      labelConfidence: confidenceStr,
+      source: "ai",
+      updatedAt: now,
+    })
+    .onConflictDoUpdate({
+      target: [merchantClassifications.userId, merchantClassifications.merchantKey],
+      set: {
+        category: entry.category,
+        transactionClass: entry.transactionClass,
+        recurrenceType: entry.recurrenceType,
+        labelConfidence: confidenceStr,
+        source: "ai",
+        updatedAt: now,
+      },
+      setWhere: sql`${merchantClassifications.source} <> 'manual'`,
+    });
+}
+
+/**
+ * Bulk-upsert merchant classification cache entries (AI write-back path).
+ * Only entries with confidence ≥ minConfidence are persisted.
+ * Skips merchantKeys that already have a "manual" entry.
+ */
+export async function batchUpsertMerchantClassifications(
+  userId: number,
+  entries: MerchantClassification[],
+  minConfidence = 0.7,
+): Promise<void> {
+  const qualified = entries.filter((e) => e.labelConfidence >= minConfidence);
+  for (const e of qualified) {
+    try {
+      await upsertMerchantClassification(userId, e);
+    } catch {
+      // Non-fatal — cache write failure must never break the upload/reclassify
+    }
+  }
+}
+
+/**
+ * Record a cache hit: increment hitCount and set lastUsedAt for the given keys.
+ * Non-fatal — a failure here never breaks classification.
+ */
+export async function recordCacheHits(userId: number, merchantKeys: string[]): Promise<void> {
+  if (merchantKeys.length === 0) return;
+  const unique = [...new Set(merchantKeys.filter(Boolean))];
+  if (unique.length === 0) return;
+  try {
+    await db
+      .update(merchantClassifications)
+      .set({
+        hitCount: sql`${merchantClassifications.hitCount} + 1`,
+        lastUsedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(merchantClassifications.userId, userId),
+          inArray(merchantClassifications.merchantKey, unique),
+        ),
+      );
+  } catch {
+    // Non-fatal
+  }
+}
+
+/**
+ * Day-one seed: populate the cache from existing transactions where
+ * userCorrected = true OR labelSource = "manual".
+ *
+ * Uses source = "rule-seed" and onConflictDoNothing so it never overwrites
+ * an existing entry. Safe to call on every startup.
+ *
+ * Returns the number of new rows inserted.
+ */
+export async function seedMerchantClassificationsForUser(userId: number): Promise<number> {
+  const corrected = await db
+    .select({
+      merchant: transactions.merchant,
+      category: transactions.category,
+      transactionClass: transactions.transactionClass,
+      recurrenceType: transactions.recurrenceType,
+    })
+    .from(transactions)
+    .where(
+      and(
+        eq(transactions.userId, userId),
+        or(
+          eq(transactions.userCorrected, true),
+          eq(transactions.labelSource, "manual"),
+        ),
+      ),
+    );
+
+  const seen = new Set<string>();
+  let inserted = 0;
+  for (const row of corrected) {
+    const key = recurrenceKey(row.merchant ?? "");
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    try {
+      await upsertMerchantClassification(userId, {
+        merchantKey: key,
+        category: row.category,
+        transactionClass: row.transactionClass,
+        recurrenceType: row.recurrenceType,
+        labelConfidence: 1.0,
+        source: "rule-seed",
+      });
+      inserted++;
+    } catch {
+      // Non-fatal
+    }
+  }
+  return inserted;
 }

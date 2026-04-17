@@ -328,6 +328,58 @@ export const csvFormatSpecs = pgTable(
 );
 
 /**
+ * Per-user merchant classification cache.
+ *
+ * Keyed by normalized merchant key (recurrenceKey()). Written by:
+ *   - AI results with labelConfidence ≥ 0.70  (source = "ai")
+ *   - Manual user corrections                 (source = "manual", confidence 1.0)
+ *   - Day-one seed from userCorrected rows    (source = "rule-seed")
+ *
+ * Applied at upload time and during reclassify between the user-rule pass and
+ * the AI fallback, so the same merchant never triggers a redundant AI call.
+ * On conflict: "manual" source always wins; "ai" overwrites "ai" or "rule-seed";
+ * "rule-seed" never overwrites an existing row.
+ */
+export const merchantClassifications = pgTable(
+  "merchant_classifications",
+  {
+    id: serial("id").primaryKey(),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    merchantKey: text("merchant_key").notNull(),
+    category: text("category").notNull(),
+    transactionClass: text("transaction_class").notNull(),
+    recurrenceType: text("recurrence_type").notNull(),
+    labelConfidence: numeric("label_confidence", { precision: 5, scale: 2 }).notNull(),
+    source: text("source").notNull(),
+    hitCount: integer("hit_count").notNull().default(0),
+    lastUsedAt: timestamp("last_used_at", { mode: "date", withTimezone: true }),
+    createdAt: timestamp("created_at", { mode: "date", withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { mode: "date", withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    index("merchant_classifications_user_id_idx").on(t.userId),
+    uniqueIndex("merchant_classifications_user_key_idx").on(t.userId, t.merchantKey),
+  ],
+);
+
+export type MerchantClassificationSource = "manual" | "ai" | "rule-seed";
+
+export type MerchantClassification = {
+  merchantKey: string;
+  category: string;
+  transactionClass: string;
+  recurrenceType: string;
+  labelConfidence: number;
+  source: MerchantClassificationSource;
+};
+
+/**
  * Matches `connect-pg-simple` expected shape (`table.sql` in that package).
  * Default store table name is `session`; keep this name for drop-in use later.
  */

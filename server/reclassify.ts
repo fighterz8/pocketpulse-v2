@@ -1,10 +1,13 @@
 import { classifyTransaction } from "./classifier.js";
 import { aiClassifyBatch, type AiClassificationInput, type AiClassificationResult } from "./ai-classifier.js";
 import {
+  batchUpsertMerchantClassifications,
   bulkUpdateTransactions,
+  getMerchantClassifications,
   getMerchantRules,
   getUserCorrectionExamples,
   listAllTransactionsForExport,
+  recordCacheHits,
   type BulkTransactionUpdate,
 } from "./storage.js";
 import { recurrenceKey } from "./recurrenceDetector.js";
@@ -125,6 +128,41 @@ export async function reclassifyTransactions(
     // Non-fatal — reclassify continues without user rules if load fails
   }
 
+  // Phase 1.7: merchant classification cache — short-circuits AI for known merchants
+  try {
+    const keysNeedingAi = intermediate
+      .filter((r) => r.needsAi && !r.userRule)
+      .map((r) => recurrenceKey(r.merchant))
+      .filter(Boolean) as string[];
+
+    if (keysNeedingAi.length > 0) {
+      const cacheHits = await getMerchantClassifications(userId, keysNeedingAi);
+      const hitKeys: string[] = [];
+
+      for (const row of intermediate) {
+        if (!row.needsAi || row.userRule) continue;
+        const key = recurrenceKey(row.merchant);
+        if (!key) continue;
+        const hit = cacheHits.get(key);
+        if (!hit) continue;
+
+        row.category = hit.category;
+        row.transactionClass = hit.transactionClass;
+        row.recurrenceType = hit.recurrenceType;
+        row.labelConfidence = hit.labelConfidence;
+        row.labelReason = `cache hit: ${key} (${hit.source})`;
+        row.needsAi = false;
+        hitKeys.push(key);
+      }
+
+      if (hitKeys.length > 0) {
+        recordCacheHits(userId, hitKeys).catch(() => undefined);
+      }
+    }
+  } catch {
+    // Non-fatal — fall through to AI pass if cache check fails
+  }
+
   // Phase 2: AI fallback for low-confidence rows
   const aiCandidates: AiClassificationInput[] = [];
   const intermediateToAiIdx = new Map<number, number>(); // intermediate index → aiCandidates index
@@ -161,6 +199,35 @@ export async function reclassifyTransactions(
     aiResults = await Promise.race([aiClassifyBatch(aiCandidates, userExamples), timeout]);
   } catch {
     // AI unavailable — fall through with rules results
+  }
+
+  // Write AI results with confidence ≥ 0.70 back to the merchant cache.
+  // Non-fatal; a write failure must never break the reclassify pass.
+  if (aiResults.size > 0) {
+    try {
+      const cacheEntries = [];
+      for (const [intermediateIdx, aiIdx] of intermediateToAiIdx) {
+        const aiResult = aiResults.get(aiIdx);
+        if (!aiResult || aiResult.labelConfidence < 0.7) continue;
+        const row = intermediate[intermediateIdx];
+        if (!row) continue;
+        const key = recurrenceKey(row.merchant);
+        if (!key) continue;
+        cacheEntries.push({
+          merchantKey: key,
+          category: aiResult.category,
+          transactionClass: aiResult.transactionClass,
+          recurrenceType: aiResult.recurrenceType,
+          labelConfidence: aiResult.labelConfidence,
+          source: "ai" as const,
+        });
+      }
+      if (cacheEntries.length > 0) {
+        batchUpsertMerchantClassifications(userId, cacheEntries, 0.7).catch(() => undefined);
+      }
+    } catch {
+      // Non-fatal
+    }
   }
 
   // Phase 3: build final update list, merging AI results where available

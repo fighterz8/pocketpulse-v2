@@ -22,9 +22,11 @@ import {
   createUpload,
   createUser,
   deleteAllTransactionsForUser,
+  batchUpsertMerchantClassifications,
   deleteWorkspaceDataForUser,
   DuplicateEmailError,
   getFormatSpec,
+  getMerchantClassifications,
   getMerchantRules,
   getTransactionById,
   getUserByEmailForAuth,
@@ -35,9 +37,11 @@ import {
   listTransactionsForUser,
   listUploadsForUser,
   propagateUserCorrection,
+  recordCacheHits,
   saveFormatSpec,
   updateTransaction,
   updateUploadStatus,
+  upsertMerchantClassification,
   upsertMerchantRule,
   upsertRecurringReview,
   type UpdateTransactionInput,
@@ -819,6 +823,48 @@ export function createApp(options?: CreateAppOptions) {
             }
           }
 
+          // Phase 1.7: merchant classification cache — short-circuits AI for known merchants.
+          // Batch-fetch cache for rows still needing AI, apply hits before the AI call.
+          const txnIndexToKey = new Map<number, string>();
+          const cacheKeyNeeded: string[] = [];
+          for (let i = 0; i < txnInputs.length; i++) {
+            const t = txnInputs[i]!;
+            const conf = parseFloat(t.labelConfidence);
+            if ((conf < AI_THRESHOLD || t.category === "other") && t.labelSource !== "user-rule") {
+              const key = recurrenceKey(t.merchant);
+              if (key) {
+                txnIndexToKey.set(i, key);
+                cacheKeyNeeded.push(key);
+              }
+            }
+          }
+
+          if (cacheKeyNeeded.length > 0) {
+            try {
+              const cacheHits = await getMerchantClassifications(userId, cacheKeyNeeded);
+              const hitKeys: string[] = [];
+              for (const [i, key] of txnIndexToKey) {
+                const hit = cacheHits.get(key);
+                if (!hit) continue;
+                const t = txnInputs[i]!;
+                t.category = hit.category;
+                t.transactionClass = hit.transactionClass;
+                t.recurrenceType = hit.recurrenceType;
+                t.labelConfidence = hit.labelConfidence.toFixed(2);
+                t.labelReason = `cache hit: ${key} (${hit.source})`;
+                t.labelSource = "cache";
+                t.aiAssisted = false;
+                txnIndexToKey.delete(i);
+                hitKeys.push(key);
+              }
+              if (hitKeys.length > 0) {
+                recordCacheHits(userId, hitKeys).catch(() => undefined);
+              }
+            } catch {
+              // Non-fatal — fall through to AI pass
+            }
+          }
+
           // Phase 2: AI fallback for low-confidence rows — runs inline before
           // insert, but races against a 6-second timeout so the upload cannot
           // be blocked by a slow or unavailable OpenAI response.
@@ -828,7 +874,7 @@ export function createApp(options?: CreateAppOptions) {
           for (let i = 0; i < txnInputs.length; i++) {
             const t = txnInputs[i]!;
             const conf = parseFloat(t.labelConfidence);
-            if ((conf < AI_THRESHOLD || t.category === "other") && t.labelSource !== "user-rule") {
+            if ((conf < AI_THRESHOLD || t.category === "other") && t.labelSource !== "user-rule" && t.labelSource !== "cache") {
               const aiIdx = aiCandidates.length;
               txnIndexToAiIdx.set(i, aiIdx);
               aiCandidates.push({
@@ -862,6 +908,26 @@ export function createApp(options?: CreateAppOptions) {
                 t.labelReason = aiResult.labelReason;
                 t.labelSource = "ai";
                 t.aiAssisted = true;
+              }
+              // Write qualifying AI results back to the merchant cache (fire-and-forget).
+              const cacheEntries = [];
+              for (const [txnIdx, aiIdx] of txnIndexToAiIdx) {
+                const aiResult = aiResults.get(aiIdx);
+                if (!aiResult || aiResult.labelConfidence < 0.7) continue;
+                const t = txnInputs[txnIdx]!;
+                const key = recurrenceKey(t.merchant);
+                if (!key) continue;
+                cacheEntries.push({
+                  merchantKey: key,
+                  category: aiResult.category,
+                  transactionClass: aiResult.transactionClass,
+                  recurrenceType: aiResult.recurrenceType,
+                  labelConfidence: aiResult.labelConfidence,
+                  source: "ai" as const,
+                });
+              }
+              if (cacheEntries.length > 0) {
+                batchUpsertMerchantClassifications(userId, cacheEntries, 0.7).catch(() => undefined);
               }
             } catch {
               // AI unavailable — keep rules results, upload succeeds regardless
@@ -1105,6 +1171,16 @@ export function createApp(options?: CreateAppOptions) {
           } catch {
             // Non-fatal — rule persistence is best-effort
           }
+          // Also write to merchant_classifications cache with source="manual".
+          // Manual wins on conflict and is never overwritten by AI or rule-seed.
+          upsertMerchantClassification(userId, {
+            merchantKey,
+            category: updated.category,
+            transactionClass: updated.transactionClass,
+            recurrenceType: updated.recurrenceType,
+            labelConfidence: 1.0,
+            source: "manual",
+          }).catch(() => undefined);
         }
       }
 
