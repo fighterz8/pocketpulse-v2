@@ -1,25 +1,26 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { reclassifyTransactions } from "./reclassify.js";
 
+// Mock classifyPipeline at the boundary — reclassify.ts owns the diff/update
+// logic; the pipeline itself is tested separately in classifyPipeline.test.ts.
+vi.mock("./classifyPipeline.js", () => ({
+  classifyPipeline: vi.fn(),
+}));
+
 vi.mock("./storage.js", () => ({
   listAllTransactionsForExport: vi.fn(),
   bulkUpdateTransactions: vi.fn().mockResolvedValue(undefined),
-  getMerchantRules: vi.fn().mockResolvedValue(new Map()),
-  getUserCorrectionExamples: vi.fn().mockResolvedValue([]),
-  getMerchantClassifications: vi.fn().mockResolvedValue(new Map()),
-  batchUpsertMerchantClassifications: vi.fn().mockResolvedValue(undefined),
-  recordCacheHits: vi.fn().mockResolvedValue(undefined),
 }));
 
+import { classifyPipeline } from "./classifyPipeline.js";
 import {
   listAllTransactionsForExport,
   bulkUpdateTransactions,
-  getMerchantClassifications,
 } from "./storage.js";
 
+const mockPipeline = vi.mocked(classifyPipeline);
 const mockList = vi.mocked(listAllTransactionsForExport);
 const mockBulkUpdate = vi.mocked(bulkUpdateTransactions);
-const mockGetMerchantClassifications = vi.mocked(getMerchantClassifications);
 
 function makeTxn(overrides: Record<string, unknown>) {
   return {
@@ -49,14 +50,33 @@ function makeTxn(overrides: Record<string, unknown>) {
   };
 }
 
+function makePipelineOut(overrides: Record<string, unknown> = {}) {
+  return {
+    merchant: "Netflix Inc",
+    amount: -15.99,
+    flowType: "outflow",
+    transactionClass: "expense",
+    category: "entertainment",
+    recurrenceType: "recurring",
+    recurrenceSource: "hint",
+    labelSource: "rule",
+    labelConfidence: 0.90,
+    labelReason: "classifier match",
+    aiAssisted: false,
+    fromCache: false,
+    ...overrides,
+  };
+}
+
 describe("reclassifyTransactions", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockBulkUpdate.mockResolvedValue(undefined);
   });
 
-  it("reclassifies unsigned Netflix from income to entertainment", async () => {
+  it("reclassifies a transaction when the pipeline returns different values", async () => {
     mockList.mockResolvedValue([makeTxn({})]);
-    mockBulkUpdate.mockResolvedValue(undefined);
+    mockPipeline.mockResolvedValue([makePipelineOut()]);
 
     const result = await reclassifyTransactions(1);
 
@@ -86,17 +106,34 @@ describe("reclassifyTransactions", () => {
     expect(result.updated).toBe(0);
     expect(result.skippedUserCorrected).toBe(1);
     expect(mockBulkUpdate).not.toHaveBeenCalled();
+    expect(mockPipeline).not.toHaveBeenCalled();
   });
 
   it("skips transactions with no changes needed", async () => {
-    mockList.mockResolvedValue([
-      makeTxn({
-        id: 1,
-        amount: "-15.99",
+    const txn = makeTxn({
+      id: 1,
+      amount: "-15.99",
+      flowType: "outflow",
+      transactionClass: "expense",
+      category: "entertainment",
+      recurrenceType: "recurring",
+      recurrenceSource: "hint",
+      labelSource: "rule",
+      labelConfidence: "0.90",
+      aiAssisted: false,
+    });
+    mockList.mockResolvedValue([txn]);
+    mockPipeline.mockResolvedValue([
+      makePipelineOut({
+        amount: -15.99,
         flowType: "outflow",
         transactionClass: "expense",
         category: "entertainment",
         recurrenceType: "recurring",
+        recurrenceSource: "hint",
+        labelSource: "rule",
+        labelConfidence: 0.90,
+        aiAssisted: false,
       }),
     ]);
 
@@ -105,6 +142,7 @@ describe("reclassifyTransactions", () => {
     expect(result.total).toBe(1);
     expect(result.unchanged).toBe(1);
     expect(result.updated).toBe(0);
+    expect(mockBulkUpdate).not.toHaveBeenCalled();
   });
 
   it("returns zero counts for empty transaction list", async () => {
@@ -114,12 +152,10 @@ describe("reclassifyTransactions", () => {
 
     expect(result.total).toBe(0);
     expect(result.updated).toBe(0);
+    expect(mockPipeline).not.toHaveBeenCalled();
   });
 
   it("applies cache hit and persists labelSource='cache' without calling AI", async () => {
-    // Use a description the rules classifier cannot resolve (produces category="other").
-    // classifyTransaction("ACME CONSULTING SERVICES 8473", -99) → merchant="Acme Consulting Services",
-    // category="other", needsAi=true, recurrenceKey → "acme consulting services".
     mockList.mockResolvedValue([
       makeTxn({
         id: 42,
@@ -129,26 +165,25 @@ describe("reclassifyTransactions", () => {
         transactionClass: "income",
         flowType: "inflow",
         amount: "99.00",
-        labelConfidence: "0.80",
         labelSource: "rule",
       }),
     ]);
-    // Cache hit for the normalized key the classifier produces.
-    mockGetMerchantClassifications.mockResolvedValue(
-      new Map([
-        [
-          "acme consulting services",
-          {
-            merchantKey: "acme consulting services",
-            category: "fees",
-            transactionClass: "expense",
-            recurrenceType: "one-time",
-            labelConfidence: 0.92,
-            source: "ai" as const,
-          },
-        ],
-      ]),
-    );
+    mockPipeline.mockResolvedValue([
+      makePipelineOut({
+        merchant: "Acme Consulting Services",
+        amount: -99.00,
+        flowType: "outflow",
+        transactionClass: "expense",
+        category: "fees",
+        recurrenceType: "one-time",
+        recurrenceSource: "none",
+        labelSource: "cache",
+        labelConfidence: 0.92,
+        labelReason: "cache hit: acme consulting services (ai)",
+        aiAssisted: false,
+        fromCache: true,
+      }),
+    ]);
 
     const result = await reclassifyTransactions(1);
 

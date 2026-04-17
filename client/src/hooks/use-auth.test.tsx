@@ -60,6 +60,7 @@ describe("useAuth", () => {
           ],
         }),
       )
+      .mockResolvedValueOnce(jsonResponse({ token: "test-csrf-token" }))
       .mockResolvedValueOnce(new Response(null, { status: 204 }))
       .mockResolvedValueOnce(jsonResponse({ authenticated: false }));
 

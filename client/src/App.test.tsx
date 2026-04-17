@@ -125,7 +125,15 @@ describe("app shell", () => {
     vi.stubGlobal(
       "fetch",
       vi.fn((url: string) => {
-        if (url === "/api/dashboard-summary") {
+        // /api/dashboard/months and /api/leaks must return arrays so the
+        // Dashboard's useAvailableMonths hook and leak query don't crash.
+        if ((url as string).startsWith("/api/dashboard/months")) {
+          return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
+        }
+        if ((url as string).startsWith("/api/leaks")) {
+          return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
+        }
+        if ((url as string).startsWith("/api/dashboard-summary")) {
           return Promise.resolve({
             ok: true,
             json: () =>
@@ -134,8 +142,15 @@ describe("app shell", () => {
                   totalInflow: 0,
                   totalOutflow: 0,
                   netCashflow: 0,
+                  safeToSpend: 0,
                   transactionCount: 0,
+                  recurringIncome: 0,
+                  recurringExpenses: 0,
+                  oneTimeIncome: 0,
+                  oneTimeExpenses: 0,
+                  discretionarySpend: 0,
                 },
+                isAllTime: true,
                 categoryBreakdown: [],
                 monthlyTrend: [],
                 recentTransactions: [],
@@ -173,7 +188,7 @@ describe("app shell", () => {
       "/transactions",
     );
     expect(
-      screen.getByRole("link", { name: /recurring leak review/i }),
+      screen.getByRole("link", { name: /leak detection/i }),
     ).toHaveAttribute("href", "/leaks");
     expect(
       screen.getByRole("button", { name: /^logout$/i }),
@@ -181,8 +196,10 @@ describe("app shell", () => {
     expect(
       screen.getByRole("heading", { name: /^dashboard$/i }),
     ).toBeInTheDocument();
+    // Dashboard empty state shows "No transactions in All Time." when
+    // selectedMonth is null and transactionCount is 0.
     expect(
-      await screen.findByText(/no transaction data yet/i),
+      await screen.findByText(/no transactions in all time/i),
     ).toBeInTheDocument();
     expect(
       screen.queryByRole("heading", { name: /set up your first account/i }),

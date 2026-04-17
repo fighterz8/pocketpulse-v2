@@ -15,13 +15,24 @@ function renderDashboard() {
   );
 }
 
+// fullSummary matches the DashboardSummary type from server/dashboardQueries.ts.
+// Required totals fields: totalInflow, totalOutflow, netCashflow, safeToSpend,
+// transactionCount, recurringIncome, recurringExpenses, oneTimeIncome,
+// oneTimeExpenses, discretionarySpend.
 const fullSummary = {
   totals: {
     totalInflow: 5000,
     totalOutflow: 1200.5,
     netCashflow: 3799.5,
+    safeToSpend: 3799.5,
     transactionCount: 42,
+    recurringIncome: 1000,
+    recurringExpenses: 500,
+    oneTimeIncome: 4000,
+    oneTimeExpenses: 700.5,
+    discretionarySpend: 300,
   },
+  isAllTime: true,
   categoryBreakdown: [
     { category: "groceries", total: 450, count: 8 },
     { category: "subscriptions", total: 200, count: 3 },
@@ -51,6 +62,24 @@ const fullSummary = {
   accountCount: 1,
 };
 
+/**
+ * URL-aware fetch mock:
+ * - /api/leaks            → empty array (avoids .reduce-on-object crash)
+ * - /api/dashboard/months → empty array (MonthSelector expects an array)
+ * - everything else       → summaryData
+ */
+function makeSuccessFetch(summaryData: unknown) {
+  return vi.fn((url: string) => {
+    if ((url as string).startsWith("/api/leaks")) {
+      return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
+    }
+    if ((url as string).startsWith("/api/dashboard/months")) {
+      return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
+    }
+    return Promise.resolve({ ok: true, json: () => Promise.resolve(summaryData) });
+  });
+}
+
 beforeEach(() => {
   vi.unstubAllGlobals();
 });
@@ -68,28 +97,30 @@ describe("Dashboard", () => {
   it("renders empty state when there are no transactions", async () => {
     vi.stubGlobal(
       "fetch",
-      vi.fn(() =>
-        Promise.resolve({
-          ok: true,
-          json: () =>
-            Promise.resolve({
-              totals: {
-                totalInflow: 0,
-                totalOutflow: 0,
-                netCashflow: 0,
-                transactionCount: 0,
-              },
-              categoryBreakdown: [],
-              monthlyTrend: [],
-              recentTransactions: [],
-              accountCount: 0,
-            }),
-        }),
-      ),
+      makeSuccessFetch({
+        totals: {
+          totalInflow: 0,
+          totalOutflow: 0,
+          netCashflow: 0,
+          safeToSpend: 0,
+          transactionCount: 0,
+          recurringIncome: 0,
+          recurringExpenses: 0,
+          oneTimeIncome: 0,
+          oneTimeExpenses: 0,
+          discretionarySpend: 0,
+        },
+        isAllTime: true,
+        categoryBreakdown: [],
+        monthlyTrend: [],
+        recentTransactions: [],
+        accountCount: 0,
+      }),
     );
     renderDashboard();
+    // When selectedMonth is null (no available months) the period label is "All Time".
     expect(
-      await screen.findByText(/no transaction data yet/i),
+      await screen.findByText(/no transactions in all time/i),
     ).toBeInTheDocument();
     const uploadLink = screen.getByRole("link", { name: /upload your first csv/i });
     expect(uploadLink).toHaveAttribute("href", "/upload");
@@ -98,7 +129,15 @@ describe("Dashboard", () => {
   it("renders error state when fetch fails", async () => {
     vi.stubGlobal(
       "fetch",
-      vi.fn(() => Promise.resolve({ ok: false, json: () => Promise.resolve({}) })),
+      vi.fn((url: string) => {
+        if ((url as string).startsWith("/api/leaks")) {
+          return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
+        }
+        if ((url as string).startsWith("/api/dashboard/months")) {
+          return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
+        }
+        return Promise.resolve({ ok: false, json: () => Promise.resolve({}) });
+      }),
     );
     renderDashboard();
     expect(
@@ -107,56 +146,36 @@ describe("Dashboard", () => {
   });
 
   it("renders KPI cards with formatted values", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(() =>
-        Promise.resolve({
-          ok: true,
-          json: () => Promise.resolve(fullSummary),
-        }),
-      ),
-    );
+    vi.stubGlobal("fetch", makeSuccessFetch(fullSummary));
     renderDashboard();
+    // "Total Income" and "Total Spending" come from KpiCard labels (Row 2).
     expect(await screen.findByText("Total Income")).toBeInTheDocument();
+    expect(screen.getByText("Total Spending")).toBeInTheDocument();
+    // $5,000.00 and $1,200.50 appear in the Safe-to-Spend bar (full currency format).
     expect(screen.getByText("$5,000.00")).toBeInTheDocument();
     expect(screen.getByText("$1,200.50")).toBeInTheDocument();
+    // $3,799.50 is the safeToSpend hero value.
     expect(screen.getByText("$3,799.50")).toBeInTheDocument();
-    expect(screen.getByText("42")).toBeInTheDocument();
   });
 
-  it("renders category breakdown, monthly trend, and recent transactions", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(() =>
-        Promise.resolve({
-          ok: true,
-          json: () => Promise.resolve(fullSummary),
-        }),
-      ),
-    );
+  it("renders category breakdown after data loads", async () => {
+    vi.stubGlobal("fetch", makeSuccessFetch(fullSummary));
     renderDashboard();
+    // "Spending by Category" section is the only remaining data section in Dashboard.
     expect(await screen.findByText("Spending by Category")).toBeInTheDocument();
-    expect(screen.getByText("groceries")).toBeInTheDocument();
-    expect(screen.getByText("subscriptions")).toBeInTheDocument();
-    expect(screen.getByText("Monthly Trend")).toBeInTheDocument();
-    expect(screen.getByText("2026-01")).toBeInTheDocument();
-    expect(screen.getByText("Recent Transactions")).toBeInTheDocument();
-    expect(screen.getByText("Coffee Shop")).toBeInTheDocument();
-    expect(screen.getByText("Employer Pay")).toBeInTheDocument();
+    // Dashboard capitalizes category names via capitalize().
+    expect(screen.getByText("Groceries")).toBeInTheDocument();
+    expect(screen.getByText("Subscriptions")).toBeInTheDocument();
   });
 
   it("View all links to ledger route", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(() =>
-        Promise.resolve({
-          ok: true,
-          json: () => Promise.resolve(fullSummary),
-        }),
-      ),
-    );
+    vi.stubGlobal("fetch", makeSuccessFetch(fullSummary));
     renderDashboard();
-    const viewAll = await screen.findByRole("link", { name: /view all/i });
-    expect(viewAll).toHaveAttribute("href", "/transactions");
+    // The "View all transactions →" text is inside the Net Cashflow GlassCard.
+    // GlassCard renders as a div[role=link] (no href attribute); verify the
+    // navigation text is rendered once data loads.
+    expect(
+      await screen.findByText(/view all transactions/i),
+    ).toBeInTheDocument();
   });
 });

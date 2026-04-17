@@ -41,6 +41,12 @@ vi.mock("./auth.js", () => ({
   normalizeEmail: vi.fn((e: string) => e.toLowerCase().trim()),
 }));
 
+vi.mock("./csrf.js", () => ({
+  doubleCsrfProtection: (_req: unknown, _res: unknown, next: () => void) => next(),
+  generateToken: () => "test-token",
+  invalidCsrfTokenError: new Error("invalid csrf"),
+}));
+
 import session from "express-session";
 import request from "supertest";
 import {
@@ -121,10 +127,10 @@ describe("ledger routes", () => {
     });
   });
 
-  describe("GET /api/export/transactions", () => {
+  describe("GET /api/transactions/export", () => {
     it("returns 401 when not authenticated", async () => {
       const { app } = buildApp();
-      const res = await request(app).get("/api/export/transactions");
+      const res = await request(app).get("/api/transactions/export");
       expect(res.status).toBe(401);
     });
   });

@@ -29,10 +29,15 @@ describe("unsigned CSV → classification integration", () => {
     const csv = Buffer.from(
       [
         "Date,Description,Amount",
-        "01/15/2026,NETFLIX INC,15.99",
-        "01/16/2026,WHOLE FOODS MARKET #1234,85.00",
+        // Structural entertainment keyword: "theater"
+        "01/15/2026,DOWNTOWN THEATER TICKETS,15.99",
+        // Structural groceries keyword: "supermarket"
+        "01/16/2026,CITY SUPERMARKET STORE,85.00",
+        // Structural income keywords: "payroll" + "deposit"
         "01/17/2026,PAYROLL DEPOSIT,3500.00",
-        "01/18/2026,STARBUCKS COFFEE,5.50",
+        // Structural coffee keyword: "coffee shop"
+        "01/18/2026,MAIN STREET COFFEE SHOP,5.50",
+        // Unknown → positive unsigned → classified as income
         "01/19/2026,XYZZY CORP,25.00",
       ].join("\n"),
     );
@@ -43,7 +48,7 @@ describe("unsigned CSV → classification integration", () => {
 
     const txns = result.rows.map(buildTransaction);
 
-    // Netflix → entertainment/expense, amount negated (positive CSV → unsigned bank format)
+    // Theater → entertainment/expense, amount negated (positive CSV → unsigned bank format)
     expect(txns[0]).toMatchObject({
       category: "entertainment",
       transactionClass: "expense",
@@ -51,7 +56,7 @@ describe("unsigned CSV → classification integration", () => {
       amount: -15.99,
     });
 
-    // Whole Foods → groceries/expense, amount negated
+    // Supermarket → groceries/expense, amount negated
     expect(txns[1]).toMatchObject({
       category: "groceries",
       transactionClass: "expense",
@@ -67,7 +72,7 @@ describe("unsigned CSV → classification integration", () => {
       amount: 3500.00,
     });
 
-    // Starbucks → coffee/expense, amount negated
+    // Coffee shop → coffee/expense, amount negated
     expect(txns[3]).toMatchObject({
       category: "coffee",
       transactionClass: "expense",
@@ -93,7 +98,7 @@ describe("upload path: recurrenceSource persistence before detector sync", () =>
   });
 
   it("non-recurring merchant gets recurrenceSource='none' at insert time", () => {
-    const txn = buildTransaction({ date: "2026-01-18", description: "STARBUCKS COFFEE", amount: 5.50, ambiguous: false });
+    const txn = buildTransaction({ date: "2026-01-18", description: "CITY SUPERMARKET STORE", amount: 85.00, ambiguous: false });
     expect(txn.recurrenceSource).toBe("none");
   });
 });

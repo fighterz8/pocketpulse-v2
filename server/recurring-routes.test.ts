@@ -38,6 +38,12 @@ vi.mock("./auth.js", () => ({
   normalizeEmail: vi.fn((e: string) => e.toLowerCase().trim()),
 }));
 
+vi.mock("./csrf.js", () => ({
+  doubleCsrfProtection: (_req: unknown, _res: unknown, next: () => void) => next(),
+  generateToken: () => "test-token",
+  invalidCsrfTokenError: new Error("invalid csrf"),
+}));
+
 vi.mock("./csvParser.js", () => ({
   parseCSV: vi.fn(),
 }));

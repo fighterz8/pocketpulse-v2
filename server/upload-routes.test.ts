@@ -40,6 +40,13 @@ vi.mock("./auth.js", () => ({
   normalizeEmail: vi.fn((e: string) => e.toLowerCase().trim()),
 }));
 
+// Disable CSRF protection so route tests can send mutations without tokens
+vi.mock("./csrf.js", () => ({
+  doubleCsrfProtection: (_req: unknown, _res: unknown, next: () => void) => next(),
+  generateToken: () => "test-token",
+  invalidCsrfTokenError: new Error("invalid csrf"),
+}));
+
 import session from "express-session";
 import request from "supertest";
 import {
