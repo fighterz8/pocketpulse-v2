@@ -1,15 +1,14 @@
 /**
  * Integration tests for classifyPipeline — exercises all four resolution steps:
  *   1. Per-user rule match  (merchant_rules)
- *   2. Per-user cache hit   (merchant_classifications)
+ *   2. Per-user cache hit   (merchant_classifications) — overrides structural matches
  *   3. Global seed hit      (merchant_classifications_global)
  *   4. Structural keyword   (classifier.ts CATEGORY_RULES)
+ *   5. AI fallback          (graceful timeout / error handling)
  *
- * These tests use the real DB. Run with:
- *   npx tsx --test server/classifyPipeline.test.ts
+ * These tests use the real DB.
  */
-import { test, before, after, describe } from "node:test";
-import assert from "node:assert/strict";
+import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { db } from "./db.js";
 import {
   merchantClassifications,
@@ -31,29 +30,37 @@ const TEST_EMAIL = `pipeline-test-${Date.now()}@test.internal`;
 let testUserId: number;
 
 /**
- * Compute the merchantKey the pipeline will actually look up for a given raw description.
- * Must match exactly what classifyPipeline does internally (Phase 1.7 / 1.8 lookups).
+ * Compute the merchantKey the pipeline will actually look up.
+ * Must match exactly what classifyPipeline does internally (Phase 1.7 / 1.8).
  */
 function toMerchantKey(rawDescription: string): string {
   return recurrenceKey(normalizeMerchant(rawDescription));
 }
 
-const BASE_OPTS: PipelineOptions = {
-  userId: 0,                // filled in before()
-  aiTimeoutMs: 100,         // short — tests must not rely on AI
-  aiConfidenceThreshold: 1.5, // impossibly high — no row reaches AI step
-  cacheWriteMinConfidence: 0.7,
-};
+/** Options that skip AI (threshold impossibly high = 1.5 so no row reaches AI). */
+function noAiOpts(): PipelineOptions {
+  return {
+    userId: testUserId,
+    aiTimeoutMs: 100,
+    aiConfidenceThreshold: 1.5,
+    cacheWriteMinConfidence: 0.7,
+  };
+}
+
+/** Production-like options that allow AI but with a very short timeout (1 ms). */
+function aiOpts(): PipelineOptions {
+  return {
+    userId: testUserId,
+    aiTimeoutMs: 1,
+    aiConfidenceThreshold: 0.5,
+    cacheWriteMinConfidence: 0.7,
+  };
+}
 
 function row(rawDescription: string, amount: number): PipelineRow {
   return { rawDescription, amount };
 }
 
-function opts(): PipelineOptions {
-  return { ...BASE_OPTS, userId: testUserId };
-}
-
-// Track global keys seeded in this run so we can clean them up
 const seededGlobalKeys: string[] = [];
 
 async function seedPerUser(merchantKey: string, category: string) {
@@ -86,7 +93,7 @@ async function seedGlobal(merchantKey: string, category: string) {
 
 // ─── Setup / teardown ─────────────────────────────────────────────────────────
 
-before(async () => {
+beforeAll(async () => {
   const [user] = await db.insert(users).values({
     email: TEST_EMAIL,
     password: "test-hash-not-real",
@@ -96,147 +103,177 @@ before(async () => {
   testUserId = user!.id;
 });
 
-after(async () => {
+afterAll(async () => {
   await db.delete(merchantClassifications).where(eq(merchantClassifications.userId, testUserId));
   if (seededGlobalKeys.length > 0) {
     await db.delete(merchantClassificationsGlobal)
       .where(inArray(merchantClassificationsGlobal.merchantKey, seededGlobalKeys));
   }
   await db.delete(users).where(eq(users.id, testUserId));
-  process.exit(0);
 });
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
 describe("Resolution step 2 — per-user merchant_classifications cache", () => {
-  test("merchant existing only in per-user cache resolves via cache", async () => {
-    // Use a description that the pipeline actually normalizes to a predictable key
+  it("merchant existing only in per-user cache resolves via cache", async () => {
     const desc = "POCKETPULSE TEST UTILITIES VENDOR";
     const key = toMerchantKey(desc);
     await seedPerUser(key, "utilities");
 
-    const [out] = await classifyPipeline([row(desc, -50)], opts());
-    assert.ok(out, "should produce output");
-    assert.equal(out!.category, "utilities", `expected utilities but got ${out!.category}`);
-    assert.equal(out!.labelSource, "cache");
-    assert.ok(out!.fromCache);
+    const [out] = await classifyPipeline([row(desc, -50)], noAiOpts());
+    expect(out).toBeTruthy();
+    expect(out!.category).toBe("utilities");
+    expect(out!.labelSource).toBe("cache");
+    expect(out!.fromCache).toBe(true);
+  });
+
+  it("per-user cache overrides a high-confidence structural keyword match", async () => {
+    // "restaurant" is a structural keyword (dining, 0.80 confidence).
+    // A per-user cache entry for this merchant should override it.
+    const desc = "POCKETPULSE RESTAURANT BUSINESS EXPENSE";
+    const key = toMerchantKey(desc);
+    await seedPerUser(key, "business");  // user categorized it as business
+
+    const [out] = await classifyPipeline([row(desc, -75)], noAiOpts());
+    expect(out).toBeTruthy();
+    // Structural rules would say "dining" but per-user cache wins
+    expect(out!.category).toBe("business");
+    expect(out!.labelSource).toBe("cache");
+    expect(out!.fromCache).toBe(true);
   });
 });
 
 describe("Resolution step 3 — global merchant_classifications_global seed", () => {
-  test("merchant existing only in global seed resolves via global seed", async () => {
-    // Use a description with no trailing numbers so normalization is predictable
+  it("merchant existing only in global seed resolves via global seed", async () => {
     const desc = "POCKETPULSE GLOBAL SEED VENDOR ALPHA";
     const key = toMerchantKey(desc);
     await seedGlobal(key, "software");
 
-    const [out] = await classifyPipeline([row(desc, -25)], opts());
-    assert.ok(out, "should produce output");
-    assert.equal(out!.category, "software", `expected software but got ${out!.category} (key: ${key})`);
-    assert.equal(out!.labelSource, "cache");
-    assert.ok(out!.fromCache);
-    assert.match(out!.labelReason, /global seed hit/);
+    const [out] = await classifyPipeline([row(desc, -25)], noAiOpts());
+    expect(out).toBeTruthy();
+    expect(out!.category).toBe("software");
+    expect(out!.labelSource).toBe("cache");
+    expect(out!.fromCache).toBe(true);
+    expect(out!.labelReason).toMatch(/global seed hit/);
   });
 
-  test("per-user cache wins over global seed for the same merchant key", async () => {
+  it("per-user cache wins over global seed for the same merchant key", async () => {
     const desc = "POCKETPULSE SHARED OVERRIDE VENDOR";
     const key = toMerchantKey(desc);
     await seedPerUser(key, "medical");  // per-user: medical
     await seedGlobal(key, "software");  // global: software — should be ignored
 
-    const [out] = await classifyPipeline([row(desc, -10)], opts());
-    assert.equal(out!.category, "medical", "per-user cache should beat global seed");
+    const [out] = await classifyPipeline([row(desc, -10)], noAiOpts());
+    expect(out!.category).toBe("medical");
+    expect(out!.labelSource).toBe("cache");
   });
 });
 
 describe("Resolution step 4 — structural keyword rules (classifier.ts)", () => {
-  test("'ZELLE PAYMENT TO FRIEND' → transfer (no category assigned)", async () => {
-    const [out] = await classifyPipeline([row("ZELLE PAYMENT TO FRIEND", -100)], opts());
-    assert.equal(out!.transactionClass, "transfer");
+  it("'ZELLE PAYMENT TO FRIEND' → transfer", async () => {
+    const [out] = await classifyPipeline([row("ZELLE PAYMENT TO FRIEND", -100)], noAiOpts());
+    expect(out!.transactionClass).toBe("transfer");
   });
 
-  test("'LOCAL RESTAURANT CHARGE' → dining/expense", async () => {
-    const [out] = await classifyPipeline([row("LOCAL RESTAURANT CHARGE", -42)], opts());
-    assert.equal(out!.category, "dining");
-    assert.equal(out!.transactionClass, "expense");
+  it("'LOCAL RESTAURANT KITCHEN DINER' → dining/expense", async () => {
+    const [out] = await classifyPipeline([row("LOCAL RESTAURANT KITCHEN DINER", -42)], noAiOpts());
+    expect(out!.category).toBe("dining");
+    expect(out!.transactionClass).toBe("expense");
   });
 
-  test("'PHARMACY PRESCRIPTION' → medical/expense", async () => {
-    const [out] = await classifyPipeline([row("PHARMACY PRESCRIPTION CHARGE", -18)], opts());
-    assert.equal(out!.category, "medical");
+  it("'PHARMACY PRESCRIPTION CHARGE' → medical/expense", async () => {
+    const [out] = await classifyPipeline([row("PHARMACY PRESCRIPTION CHARGE", -18)], noAiOpts());
+    expect(out!.category).toBe("medical");
   });
 
-  test("'MONTHLY SUBSCRIPTION RENEWAL' → software/recurring (recurrenceType set by rule)", async () => {
-    // "subscription" keyword matches CATEGORY_RULE which sets recurrenceType="recurring" directly.
-    // Pass 8 only fires when recurrenceType is still "one-time", so recurrenceSource stays "none".
-    const [out] = await classifyPipeline([row("MONTHLY SUBSCRIPTION RENEWAL", -9.99)], opts());
-    assert.equal(out!.transactionClass, "expense");
-    assert.equal(out!.recurrenceType, "recurring");
+  it("'MONTHLY SUBSCRIPTION RENEWAL' → software/recurring (via CATEGORY_RULE)", async () => {
+    const [out] = await classifyPipeline([row("MONTHLY SUBSCRIPTION RENEWAL", -9.99)], noAiOpts());
+    expect(out!.transactionClass).toBe("expense");
+    expect(out!.recurrenceType).toBe("recurring");
   });
 
-  test("'ACH CREDIT PAYROLL DEPOSIT' → income/recurring", async () => {
-    const [out] = await classifyPipeline([row("ACH CREDIT PAYROLL DEPOSIT", 3500)], opts());
-    assert.equal(out!.transactionClass, "income");
-    assert.equal(out!.category, "income");
-    assert.equal(out!.recurrenceType, "recurring");
+  it("'ACH CREDIT PAYROLL DEPOSIT' → income/recurring", async () => {
+    const [out] = await classifyPipeline([row("ACH CREDIT PAYROLL DEPOSIT", 3500)], noAiOpts());
+    expect(out!.transactionClass).toBe("income");
+    expect(out!.category).toBe("income");
+    expect(out!.recurrenceType).toBe("recurring");
+  });
+});
+
+describe("Resolution step 5 — AI fallback", () => {
+  it("completely unknown merchant (no cache/global/structural match) reaches AI and falls back gracefully on timeout", async () => {
+    // Gibberish description: no structural keyword, no cache entry, not in global seed.
+    const desc = "ZXQW9 CORP UNKNOWN VENDOR XK7Q";
+
+    const [out] = await classifyPipeline(
+      [row(desc, -99)],
+      { ...aiOpts(), aiTimeoutMs: 1 }, // 1 ms → AI always times out
+    );
+
+    expect(out).toBeTruthy();
+    // AI timed out → pipeline falls back to structural result
+    expect(out!.transactionClass).toBe("expense");
+    expect(out!.category).toBe("other");
+    // Not resolved from cache or global seed
+    expect(out!.fromCache).toBe(false);
+    expect(out!.labelSource).not.toBe("cache");
+    expect(out!.labelSource).not.toBe("user-rule");
   });
 });
 
 describe("Mixed batch", () => {
-  test("multiple rows resolve independently via different steps", async () => {
+  it("multiple rows resolve independently via different steps", async () => {
     const results = await classifyPipeline(
       [
         row("ZELLE TRANSFER TO SAVINGS", -500),
         row("MONTHLY GYM FITNESS MEMBERSHIP FEE", -40),
         row("ACH CREDIT DIRECT DEPOSIT PAYROLL", 4000),
       ],
-      opts(),
+      noAiOpts(),
     );
 
-    assert.equal(results.length, 3);
-    assert.equal(results[0]!.transactionClass, "transfer");   // structural
-    assert.equal(results[1]!.category, "fitness");            // structural keyword
-    assert.equal(results[1]!.recurrenceType, "recurring");
-    assert.equal(results[2]!.transactionClass, "income");     // income keyword
+    expect(results.length).toBe(3);
+    expect(results[0]!.transactionClass).toBe("transfer");   // structural
+    expect(results[1]!.category).toBe("fitness");            // structural keyword
+    expect(results[1]!.recurrenceType).toBe("recurring");
+    expect(results[2]!.transactionClass).toBe("income");     // income keyword
   });
 });
 
 describe("classifier.ts unit (no DB)", () => {
-  test("'loan payment' → debt/expense", async () => {
+  it("'loan payment' → debt/expense", async () => {
     const { classifyTransaction } = await import("./classifier.js");
     const r = classifyTransaction("LOAN PAYMENT CHASE BANK", -350);
-    assert.equal(r.category, "debt");
-    assert.equal(r.transactionClass, "expense");
+    expect(r.category).toBe("debt");
+    expect(r.transactionClass).toBe("expense");
   });
 
-  test("'AMAZON REFUND RETURN' (positive) → refund", async () => {
+  it("'AMAZON REFUND RETURN' (positive) → refund", async () => {
     const { classifyTransaction } = await import("./classifier.js");
     const r = classifyTransaction("AMAZON REFUND RETURN", 29.99);
-    assert.equal(r.transactionClass, "refund");
+    expect(r.transactionClass).toBe("refund");
   });
 
-  test("'OVERDRAFT FEE' → fees/expense", async () => {
+  it("'OVERDRAFT FEE' → fees/expense", async () => {
     const { classifyTransaction } = await import("./classifier.js");
     const r = classifyTransaction("OVERDRAFT FEE CHARGED", -35);
-    assert.equal(r.category, "fees");
+    expect(r.category).toBe("fees");
   });
 
-  test("'MONTHLY SUBSCRIPTION FEE' → recurring (via CATEGORY_RULE, recurrenceSource='none')", async () => {
+  it("'MONTHLY SUBSCRIPTION FEE' → recurring (CATEGORY_RULE, recurrenceSource='none')", async () => {
     // CATEGORY_RULES has {keywords:["subscription"], recurrenceType:"recurring"}.
-    // That sets recurrenceType directly in Pass 2, so Pass 8 hint logic does not fire.
+    // Pass 6 sets recurrenceType directly → Pass 8 guard (recurrenceType==="one-time") fails
+    // → recurrenceSource stays "none".
     const { classifyTransaction } = await import("./classifier.js");
     const r = classifyTransaction("MONTHLY SUBSCRIPTION FEE", -15);
-    assert.equal(r.recurrenceType, "recurring");
-    assert.equal(r.recurrenceSource, "none");
+    expect(r.recurrenceType).toBe("recurring");
+    expect(r.recurrenceSource).toBe("none");
   });
 
-  test("hint-only keyword without a CATEGORY_RULE match sets recurrenceSource='hint'", async () => {
-    // Use a description containing "monthly" but NOT a strong CATEGORY_RULE category keyword.
-    // "monthly dues" may hit recurrenceType via Pass 8 if no rule claims it first.
+  it("hint-only 'monthly' keyword without a CATEGORY_RULE match → recurrenceSource='hint'", async () => {
     const { classifyTransaction } = await import("./classifier.js");
-    // "MONTHLY TRANSFER TO SAVINGS" → passes through as transfer; test a non-transfer hint
     const r = classifyTransaction("MONTHLY PAYMENT INVOICE XJ99-WIDGET", -80);
-    // Even if category is uncertain, recurrenceType should be recurring via hint
-    assert.equal(r.recurrenceType, "recurring");
+    expect(r.recurrenceType).toBe("recurring");
+    expect(r.recurrenceSource).toBe("hint");
   });
 });

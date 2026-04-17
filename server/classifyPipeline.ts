@@ -208,9 +208,12 @@ export async function classifyPipeline(
   }
 
   // ── Phase 1.7: merchant classification cache ───────────────────────────────
+  // Runs for ALL rows except those already resolved by per-user rules, so that
+  // cached user corrections can override even high-confidence structural matches.
+  // Resolution order: user-rules (1.5) → per-user cache (1.7) → global seed (1.8) → AI.
   try {
-    const keysNeedingCache = internal
-      .filter((r) => r.needsAi)
+    const cacheEligible = internal.filter((r) => r.labelSource !== "user-rule");
+    const keysNeedingCache = cacheEligible
       .map((r) => recurrenceKey(r.merchant))
       .filter(Boolean) as string[];
 
@@ -218,8 +221,8 @@ export async function classifyPipeline(
       const cacheHits = await getMerchantClassifications(opts.userId, keysNeedingCache);
       const hitKeys: string[] = [];
 
-      for (const row of internal) {
-        if (!row.needsAi) continue;
+      for (const row of cacheEligible) {
+        if (row.labelSource === "user-rule") continue;
         const key = recurrenceKey(row.merchant);
         if (!key) continue;
         const hit = cacheHits.get(key);

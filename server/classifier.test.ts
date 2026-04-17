@@ -4,21 +4,25 @@ import { classifyTransaction, type ClassificationResult } from "./classifier.js"
 
 describe("classifyTransaction", () => {
   it("classifies a subscription service", () => {
-    const result = classifyTransaction("NETFLIX INC", -15.99);
-    expect(result.category).toBe("entertainment");
+    // Merchant-specific brand names live in merchant_classifications_global (global seed).
+    // classifyTransaction() only handles structural keywords — use "subscription" keyword.
+    const result = classifyTransaction("MONTHLY STREAMING SUBSCRIPTION", -15.99);
+    expect(result.category).toBe("software");
     expect(result.transactionClass).toBe("expense");
     expect(result.labelSource).toBe("rule");
     expect(result.labelReason).toBeTruthy();
   });
 
   it("classifies grocery stores", () => {
-    const result = classifyTransaction("WHOLE FOODS MARKET", -85.20);
+    // "grocery"/"supermarket" are structural keywords retained in CATEGORY_RULES.
+    const result = classifyTransaction("LOCAL SUPERMARKET GROCERY STORE", -85.20);
     expect(result.category).toBe("groceries");
     expect(result.transactionClass).toBe("expense");
   });
 
   it("classifies dining/restaurants", () => {
-    const result = classifyTransaction("CHIPOTLE MEXICAN GRILL", -12.50);
+    // "restaurant" is a structural keyword retained in CATEGORY_RULES.
+    const result = classifyTransaction("LOCAL RESTAURANT KITCHEN DINER", -12.50);
     expect(result.category).toBe("dining");
   });
 
@@ -56,7 +60,8 @@ describe("classifyTransaction", () => {
   });
 
   it("classifies shopping", () => {
-    const result = classifyTransaction("AMAZON.COM", -49.99);
+    // "university"/"bookstore"/"tuition" are structural shopping keywords in CATEGORY_RULES.
+    const result = classifyTransaction("UNIVERSITY BOOKSTORE CAMPUS STORE", -49.99);
     expect(result.category).toBe("shopping");
   });
 
@@ -88,7 +93,7 @@ describe("classifyTransaction", () => {
   });
 
   it("returns confidence score between 0 and 1", () => {
-    const result = classifyTransaction("NETFLIX INC", -15.99);
+    const result = classifyTransaction("MONTHLY STREAMING SUBSCRIPTION", -15.99);
     expect(result.labelConfidence).toBeGreaterThanOrEqual(0);
     expect(result.labelConfidence).toBeLessThanOrEqual(1);
   });
@@ -98,18 +103,21 @@ describe("classifyTransaction", () => {
     expect(result.recurrenceType).toBe("one-time");
   });
 
-  it("hints recurring for known subscription merchants", () => {
-    const result = classifyTransaction("SPOTIFY PREMIUM", -9.99);
+  it("hints recurring for membership/subscription keyword transactions", () => {
+    // Brand names like Spotify are in global seed; "membership" is a structural hint keyword.
+    const result = classifyTransaction("ABC MEMBERSHIP FEE", -9.99);
     expect(result.recurrenceType).toBe("recurring");
   });
 
-  it("classifies software/SaaS (GitHub)", () => {
-    const result = classifyTransaction("GITHUB INC", -4.00);
+  it("classifies software/SaaS via subscription keyword", () => {
+    // Brand names like GitHub are in global seed; "subscription" is a structural keyword.
+    const result = classifyTransaction("MONTHLY SUBSCRIPTION SOFTWARE", -4.00);
     expect(result.category).toBe("software");
   });
 
-  it("classifies entertainment (AMC Theatres)", () => {
-    const result = classifyTransaction("AMC THEATRES", -18.00);
+  it("classifies entertainment via theater/theater keyword", () => {
+    // Brand names like AMC are in global seed; "theater" is a structural keyword.
+    const result = classifyTransaction("LOCAL MOVIE THEATER CONCERT", -18.00);
     expect(result.category).toBe("entertainment");
   });
 
@@ -119,29 +127,33 @@ describe("classifyTransaction", () => {
   });
 
   describe("positive-amount expense merchants (unsigned CSV format)", () => {
-    it("classifies Netflix as expense when amount is positive (unsigned CSV)", () => {
-      const result = classifyTransaction("NETFLIX INC", 15.99);
+    it("classifies entertainment merchant as expense when amount is positive (unsigned CSV)", () => {
+      // Structural keyword "theater" triggers Pass 6 → corrects positive-amount to expense/outflow.
+      const result = classifyTransaction("LOCAL MOVIE THEATER CONCERT", 15.99);
       expect(result.category).toBe("entertainment");
       expect(result.transactionClass).toBe("expense");
       expect(result.flowType).toBe("outflow");
     });
 
-    it("classifies Whole Foods as expense when amount is positive", () => {
-      const result = classifyTransaction("WHOLE FOODS MARKET", 85.00);
+    it("classifies grocery store as expense when amount is positive", () => {
+      // Structural keyword "grocery" triggers Pass 6 → corrects positive-amount to expense/outflow.
+      const result = classifyTransaction("LOCAL SUPERMARKET GROCERY STORE", 85.00);
       expect(result.category).toBe("groceries");
       expect(result.transactionClass).toBe("expense");
       expect(result.flowType).toBe("outflow");
     });
 
-    it("classifies Starbucks as expense when amount is positive (coffee category)", () => {
-      const result = classifyTransaction("STARBUCKS", 5.50);
+    it("classifies coffee shop as expense when amount is positive", () => {
+      // Structural keyword "coffee shop" triggers Pass 6 → corrects positive-amount to expense/outflow.
+      const result = classifyTransaction("COFFEE SHOP ESPRESSO CAFE BAR", 5.50);
       expect(result.category).toBe("coffee");
       expect(result.transactionClass).toBe("expense");
       expect(result.flowType).toBe("outflow");
     });
 
-    it("classifies Amazon as expense when amount is positive", () => {
-      const result = classifyTransaction("AMAZON.COM", 42.00);
+    it("classifies campus bookstore as expense when amount is positive", () => {
+      // Structural keyword "bookstore"/"university" triggers Pass 6 → corrects positive-amount to expense/outflow.
+      const result = classifyTransaction("UNIVERSITY BOOKSTORE CAMPUS STORE", 42.00);
       expect(result.category).toBe("shopping");
       expect(result.transactionClass).toBe("expense");
       expect(result.flowType).toBe("outflow");
@@ -184,8 +196,9 @@ describe("classifyTransaction", () => {
       expect(result.aiAssisted).toBe(true);
     });
 
-    it("sets aiAssisted=false for matched merchant rules", () => {
-      const result = classifyTransaction("NETFLIX INC", -15.99);
+    it("sets aiAssisted=false for matched structural keyword rules", () => {
+      // "subscription" hits a structural CATEGORY_RULE → matchedRule=true → aiAssisted=false.
+      const result = classifyTransaction("MONTHLY SUBSCRIPTION SERVICE", -15.99);
       expect(result.aiAssisted).toBe(false);
     });
   });
@@ -218,10 +231,10 @@ describe("classifyTransaction", () => {
     });
 
     it("returns recurrenceSource='none' when a CategoryRule sets recurrenceType (rule wins over keyword passes)", () => {
-      // Netflix is in the entertainment CategoryRule with recurrenceType:'recurring'.
-      // CategoryRule fires in Pass 7 → Pass 8b's guard (recurrenceType === 'one-time') fails
+      // "subscription" CATEGORY_RULE directly sets recurrenceType:"recurring" in Pass 6.
+      // Pass 8's guard (recurrenceType === 'one-time') then fails
       // → recurrenceSource stays 'none' (rule-based, not a keyword hint).
-      const result = classifyTransaction("NETFLIX INC", -15.99);
+      const result = classifyTransaction("MONTHLY SUBSCRIPTION SERVICE", -15.99);
       expect(result.recurrenceType).toBe("recurring");
       expect(result.recurrenceSource).toBe("none");
     });
@@ -230,7 +243,7 @@ describe("classifyTransaction", () => {
       const unknown = classifyTransaction("XYZZY CORP #99", -150.00);
       expect(unknown.recurrenceSource).not.toBe("detected");
 
-      const subscription = classifyTransaction("NETFLIX INC", -15.99);
+      const subscription = classifyTransaction("MONTHLY SUBSCRIPTION SERVICE", -15.99);
       expect(subscription.recurrenceSource).not.toBe("detected");
     });
   });
