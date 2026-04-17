@@ -41,9 +41,9 @@ describe("unsigned CSV → classification integration", () => {
 
     const txns = result.rows.map(buildTransaction);
 
-    // Netflix → subscriptions/expense, amount negated (positive CSV → unsigned bank format)
+    // Netflix → entertainment/expense, amount negated (positive CSV → unsigned bank format)
     expect(txns[0]).toMatchObject({
-      category: "subscriptions",
+      category: "entertainment",
       transactionClass: "expense",
       flowType: "outflow",
       amount: -15.99,
@@ -65,9 +65,9 @@ describe("unsigned CSV → classification integration", () => {
       amount: 3500.00,
     });
 
-    // Starbucks → dining/expense, amount negated
+    // Starbucks → coffee/expense, amount negated
     expect(txns[3]).toMatchObject({
-      category: "dining",
+      category: "coffee",
       transactionClass: "expense",
       flowType: "outflow",
       amount: -5.50,

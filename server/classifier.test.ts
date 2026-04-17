@@ -75,16 +75,15 @@ describe("classifyTransaction", () => {
     expect(result.transactionClass).toBe("refund");
   });
 
-  it("defaults unknown merchants to 'other' for amounts outside heuristic bands", () => {
-    // $150 is above all amount-range buckets — stays 'other'
+  it("defaults unknown merchants to 'other'", () => {
     const result = classifyTransaction("XYZZY CORP #99", -150.00);
     expect(result.category).toBe("other");
   });
 
-  it("amount-range heuristic: ~$10 unknown expense lands in dining", () => {
-    // $10 falls in the quick-service dining range ($8–$22.99); no merchant rule matches
+  it("defaults unknown merchants to 'other' regardless of amount", () => {
+    // Without amount-range heuristics, any unrecognized merchant lands as 'other'
     const result = classifyTransaction("XYZZY CORP #99", -10.00);
-    expect(result.category).toBe("dining");
+    expect(result.category).toBe("other");
     expect(result.transactionClass).toBe("expense");
   });
 
@@ -181,7 +180,6 @@ describe("classifyTransaction", () => {
     });
 
     it("sets aiAssisted=true for genuinely unknown transactions", () => {
-      // Use a large amount so Pass 9b amount-range heuristic does not fire
       const result = classifyTransaction("XYZZY CORP #99", -150.00);
       expect(result.aiAssisted).toBe(true);
     });

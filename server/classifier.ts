@@ -1876,46 +1876,6 @@ export function classifyTransaction(
     }
   }
 
-  // ─── Pass 9b: Amount-range signal ─────────────────────────────────────────
-  // Only fires when NO keyword rule matched AND the transaction is an expense
-  // classified as "other". Uses the absolute dollar amount to infer the most
-  // likely category. These are low-confidence heuristics (~0.40); any later
-  // Pass with a stronger match can still override.
-  //
-  // Rationale:
-  //   • $2–$7: classic beverage / coffee window (espresso, drip, energy drink)
-  //   • $8–$22: quick-service dining / fast food / casual lunch window
-  //   • $23–$60: sit-down dining or delivery order window
-  //   • $25–$80 with "annual" / "yearly" signal: likely annual subscription fee
-  //   • $0.99–$2.99 (round-cent amounts): likely digital micro-purchase / fee
-  if (
-    !matchedRule &&
-    transactionClass === "expense" &&
-    category === "other"
-  ) {
-    const absAmt = Math.abs(amount);
-    if (absAmt >= 2.0 && absAmt <= 7.99) {
-      category = "coffee";
-      labelConfidence = 0.42;
-      labelReason = `Amount in coffee/beverage range ($${absAmt.toFixed(2)})`;
-    } else if (absAmt >= 8.0 && absAmt <= 22.99) {
-      category = "dining";
-      labelConfidence = 0.40;
-      labelReason = `Amount in quick-service dining range ($${absAmt.toFixed(2)})`;
-    } else if (absAmt >= 23.0 && absAmt <= 60.0) {
-      category = "dining";
-      labelConfidence = 0.35;
-      labelReason = `Amount in sit-down dining range ($${absAmt.toFixed(2)})`;
-    } else if (
-      absAmt >= 0.99 && absAmt <= 2.99 &&
-      (lower.includes("fee") || lower.includes("charge"))
-    ) {
-      category = "fees";
-      labelConfidence = 0.45;
-      labelReason = `Small fee-range amount ($${absAmt.toFixed(2)}) with fee keyword`;
-    }
-  }
-
   // ─── Pass 10: Transfer reclassification — INTENTIONALLY SKIPPED ──────────
   // The v1 spec reclassifies residual transfers to income/expense. We retain
   // "transfer" as a first-class transactionClass because our UI exposes a
