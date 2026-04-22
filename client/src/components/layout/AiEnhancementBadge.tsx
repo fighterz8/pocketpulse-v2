@@ -23,16 +23,24 @@ export function AiEnhancementBadge({ compact = false }: { compact?: boolean }) {
   if (!anyActive && !lastJustCompleted && !lastJustFailed) return null;
 
   if (lastJustFailed && !anyActive) {
+    // Truncate to keep the header chip readable; the full error is on
+    // the title attribute for users who want the detail.
+    const MAX = 80;
+    const detail =
+      lastJustFailed.length > MAX
+        ? `${lastJustFailed.slice(0, MAX - 1)}…`
+        : lastJustFailed;
     return (
       <div
         className="ai-pulse-badge ai-pulse-badge--failed"
         data-testid="ai-pulse-badge"
         role="status"
         aria-live="polite"
+        title={lastJustFailed}
       >
         <span className="ai-pulse-dot ai-pulse-dot--failed" aria-hidden="true" />
         <span className="ai-pulse-text" data-testid="text-ai-pulse-status">
-          AI enhancement failed
+          AI enhancement failed: {detail}
         </span>
       </div>
     );

@@ -74,32 +74,41 @@ export function useAiEnhancementStatus() {
   // Edge-trigger detector: true on the single tick where the active set
   // flips from non-empty to empty. Powers the badge's "AI enhancement
   // complete" toast without callers needing to remember prior state.
-  const wasActiveRef = useRef(false);
+  //
+  // Cross-run safety: the backend aggregate endpoint surfaces ANY upload
+  // that finished in the last 24h, so naively scanning `uploads` for a
+  // failed entry would let a stale failure from yesterday hijack today's
+  // completion toast. We snapshot the IDs that were actively running on
+  // the previous tick and only consult terminal state for THOSE IDs at
+  // the moment the active set drains.
+  const previouslyActiveIdsRef = useRef<Set<number>>(new Set());
   const [lastJustCompleted, setLastJustCompleted] = useState(false);
   const [lastJustFailed, setLastJustFailed] = useState<string | null>(null);
 
   useEffect(() => {
     if (anyActive) {
-      wasActiveRef.current = true;
+      previouslyActiveIdsRef.current = new Set(activeUploads.map((u) => u.uploadId));
       if (lastJustCompleted) setLastJustCompleted(false);
       if (lastJustFailed) setLastJustFailed(null);
       return;
     }
-    if (wasActiveRef.current) {
-      wasActiveRef.current = false;
-      // Decide which transition we just witnessed by inspecting recent
-      // terminal entries. If anything in the recent window failed without
-      // a completed sibling for the same upload, surface the error.
-      const recentFail = uploads.find((u) => u.aiStatus === "failed" && u.aiError);
-      if (recentFail) {
-        setLastJustFailed(recentFail.aiError ?? "AI enhancement failed");
-        const t = setTimeout(() => setLastJustFailed(null), 4000);
-        return () => clearTimeout(t);
-      }
-      setLastJustCompleted(true);
-      const t = setTimeout(() => setLastJustCompleted(false), 2000);
+    const tracked = previouslyActiveIdsRef.current;
+    if (tracked.size === 0) return;
+    // We just witnessed active → inactive. Look only at the uploads we
+    // were tracking; their current terminal state determines the toast.
+    previouslyActiveIdsRef.current = new Set();
+    const trackedTerminal = uploads.filter((u) => tracked.has(u.uploadId));
+    const trackedFail = trackedTerminal.find(
+      (u) => u.aiStatus === "failed" && u.aiError,
+    );
+    if (trackedFail) {
+      setLastJustFailed(trackedFail.aiError ?? "AI enhancement failed");
+      const t = setTimeout(() => setLastJustFailed(null), 4000);
       return () => clearTimeout(t);
     }
+    setLastJustCompleted(true);
+    const t = setTimeout(() => setLastJustCompleted(false), 2000);
+    return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [anyActive]);
 
