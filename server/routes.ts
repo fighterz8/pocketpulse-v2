@@ -1465,26 +1465,6 @@ export function createApp(options?: CreateAppOptions) {
   // session auth + users.isDev. Failures return 404 (never reveal the feature).
   app.use("/api/dev", createDevTestSuiteRouter());
 
-  // ── Accuracy report (dev users only) ─────────────────────────────────────
-  app.get("/api/accuracy-report", requireAuth, async (req, res, next) => {
-    try {
-      if (!DEV_MODE_ENABLED) {
-        res.status(403).json({ error: "Not available" });
-        return;
-      }
-      const user = await getUserById(req.session.userId!);
-      if (!user?.isDev) {
-        res.status(403).json({ error: "Dev access required" });
-        return;
-      }
-      const { computeAccuracyReport } = await import("./accuracyReport.js");
-      const report = await computeAccuracyReport(req.session.userId!);
-      res.json(report);
-    } catch (e) {
-      next(e);
-    }
-  });
-
   app.use("/api", (_req, res) => {
     res.status(404).json({ error: "Not found" });
   });
