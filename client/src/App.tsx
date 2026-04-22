@@ -7,7 +7,6 @@ import { useInactivityLogout } from "./hooks/use-inactivity-logout";
 import { useTheme } from "./hooks/use-theme";
 import { AccountSetup } from "./pages/AccountSetup";
 import { Auth } from "./pages/Auth";
-import { AccuracyReport } from "./pages/AccuracyReport";
 import { Dashboard } from "./pages/Dashboard";
 import { Ledger } from "./pages/Ledger";
 import { Leaks } from "./pages/Leaks";
@@ -41,9 +40,6 @@ function AppAuthenticated() {
         </Route>
         <Route path="/leaks">
           <Leaks />
-        </Route>
-        <Route path="/accuracy">
-          {canAccessDev ? <AccuracyReport /> : <NotFoundPage />}
         </Route>
         <Route path="/dev/test-suite">
           {canAccessDev ? <TestSuiteIndex /> : <NotFoundPage />}

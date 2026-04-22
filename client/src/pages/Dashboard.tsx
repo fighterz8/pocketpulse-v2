@@ -9,7 +9,6 @@ import {
   useDashboardSummary,
 } from "../hooks/use-dashboard";
 import { useAuth } from "../hooks/use-auth";
-import { DEV_MODE_ENABLED } from "@shared/devConfig";
 
 interface LeakItem {
   monthlyAmount: number;
@@ -218,7 +217,6 @@ const HIDDEN_CATEGORIES = new Set(["income", "transfers"]);
 
 export function Dashboard() {
   const { user } = useAuth();
-  const showAccuracyLink = DEV_MODE_ENABLED && user?.isDev === true;
   const [selectedMonth, setSelectedMonth] = useState<string | null>(null);
 
   const handleExport = () => {
@@ -619,36 +617,6 @@ export function Dashboard() {
           </ul>
         )}
       </GlassCard>
-
-      {/* ── Dev-only: Accuracy Report CTA ──────────────────────────────── */}
-      {showAccuracyLink && (
-        <motion.div
-          variants={fadeUp}
-          initial="hidden"
-          animate="visible"
-          custom={13}
-          className="mb-4"
-        >
-          <Link
-            href="/accuracy"
-            className="flex items-center justify-between px-5 py-4 rounded-2xl border border-violet-200 bg-violet-50/60 hover:bg-violet-100/70 transition-colors group"
-            data-testid="link-accuracy-report"
-          >
-            <div>
-              <p className="text-sm font-semibold text-violet-800 group-hover:text-violet-900">
-                Accuracy Report
-                <span className="ml-2 text-[10px] font-bold uppercase tracking-wider bg-violet-200 text-violet-700 rounded px-1.5 py-0.5 align-middle">
-                  BETA
-                </span>
-              </p>
-              <p className="text-xs text-violet-500 mt-0.5">
-                See how well PocketPulse classified your transactions
-              </p>
-            </div>
-            <span className="text-violet-400 group-hover:text-violet-600 text-lg leading-none">→</span>
-          </Link>
-        </motion.div>
-      )}
 
       {/* ── Tech-stack footer ──────────────────────────────────────────── */}
       <motion.p

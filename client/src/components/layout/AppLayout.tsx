@@ -124,20 +124,6 @@ export function AppLayout({
       {showAccuracy && (
         <li>
           <Link
-            href="/accuracy"
-            data-testid="nav-link-accuracy"
-            className={cn("app-nav-link app-nav-link--dev", location === "/accuracy" && "app-nav-link--active")}
-            onClick={closeSidebar}
-          >
-            <IconAccuracy />
-            Accuracy Report
-            <span className="acc-nav-badge">BETA</span>
-          </Link>
-        </li>
-      )}
-      {showAccuracy && (
-        <li>
-          <Link
             href="/dev/test-suite"
             data-testid="nav-link-test-suite"
             className={cn(
