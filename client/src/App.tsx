@@ -14,7 +14,6 @@ import { Leaks } from "./pages/Leaks";
 import { NotFoundPage } from "./pages/not-found";
 import { Upload } from "./pages/Upload";
 import { ClassificationSampler } from "./pages/dev/ClassificationSampler";
-import { ParserSampler } from "./pages/dev/ParserSampler";
 import { TeamSummary } from "./pages/dev/TeamSummary";
 import { TestSuiteIndex } from "./pages/dev/TestSuiteIndex";
 import { createQueryClient } from "./lib/queryClient";
@@ -51,9 +50,6 @@ function AppAuthenticated() {
         </Route>
         <Route path="/dev/test-suite/classification/:sampleId?">
           {canAccessDev ? <ClassificationSampler /> : <NotFoundPage />}
-        </Route>
-        <Route path="/dev/test-suite/parser/:sampleId?">
-          {canAccessDev ? <ParserSampler /> : <NotFoundPage />}
         </Route>
         <Route path="/dev/test-suite/team">
           {canAccessDev ? <TeamSummary /> : <NotFoundPage />}

@@ -237,7 +237,11 @@ export async function classifyPipeline(
         row.labelSource = "cache";
         row.aiAssisted = false;
         row.fromCache = true;
-        row.needsAi = false;
+        // Cache hits resolve the row only when the cached category is
+        // confident; "other" is the classifier's fallback for "we don't
+        // know" — promote it to AI for a real answer instead of letting a
+        // stale low-signal cache entry suppress AI for the rest of time.
+        row.needsAi = hit.category === "other";
         hitKeys.push(key);
       }
 
@@ -281,7 +285,9 @@ export async function classifyPipeline(
           row.labelSource = "cache";
           row.aiAssisted = false;
           row.fromCache = true;
-          row.needsAi = false;
+          // Same logic as Phase 1.7: only suppress AI when the global seed
+          // produced a real category. "other" still needs AI.
+          row.needsAi = hit.category === "other";
           hitKeys.push(key);
         }
 

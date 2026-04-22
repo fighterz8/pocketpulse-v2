@@ -22,6 +22,13 @@
       "when": 1777100000000,
       "tag": "0007_dev_test_suite_parser",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1777200000000,
+      "tag": "0008_drop_parser_samples",
+      "breakpoints": true
     }
   ]
 }
