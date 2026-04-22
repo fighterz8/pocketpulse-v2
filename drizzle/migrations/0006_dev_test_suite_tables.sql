@@ -27,9 +27,20 @@ DO $$ BEGIN
   IF NOT EXISTS (
     SELECT 1 FROM pg_indexes
     WHERE tablename = 'classification_samples'
-      AND indexname  = 'classification_samples_user_created_idx'
+      AND indexname  = 'classification_samples_user_id_idx'
   ) THEN
-    CREATE INDEX classification_samples_user_created_idx
-      ON classification_samples (user_id, created_at DESC);
+    CREATE INDEX classification_samples_user_id_idx
+      ON classification_samples (user_id);
+  END IF;
+END $$;
+
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_indexes
+    WHERE tablename = 'classification_samples'
+      AND indexname  = 'classification_samples_completed_at_idx'
+  ) THEN
+    CREATE INDEX classification_samples_completed_at_idx
+      ON classification_samples (completed_at);
   END IF;
 END $$;
