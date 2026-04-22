@@ -485,11 +485,14 @@ export function ClassificationSampler() {
   const [error, setError] = useState<string | null>(null);
   const [starting, setStarting] = useState(false);
 
+  const [loadedTxns, setLoadedTxns] = useState<SampleTransaction[] | null>(null);
+
   // Load existing sample when an ID is in the URL.
   useEffect(() => {
     if (sampleIdParam == null || !Number.isFinite(sampleIdParam)) {
       setSample(null);
       setCreateState(null);
+      setLoadedTxns(null);
       return;
     }
     let cancelled = false;
@@ -499,8 +502,11 @@ export function ClassificationSampler() {
       try {
         const res = await apiFetch(`/api/dev/classification-samples/${sampleIdParam}`);
         if (!res.ok) throw new Error(`Could not load sample (${res.status})`);
-        const body = (await res.json()) as { sample: SampleRecord };
-        if (!cancelled) setSample(body.sample);
+        const body = (await res.json()) as { sample: SampleRecord; transactions?: SampleTransaction[] };
+        if (!cancelled) {
+          setSample(body.sample);
+          setLoadedTxns(body.transactions ?? null);
+        }
       } catch (e) {
         if (!cancelled) setError(e instanceof Error ? e.message : "Unknown error");
       } finally {
@@ -610,16 +616,20 @@ export function ClassificationSampler() {
     );
   }
 
-  // In-progress sample
-  // If we have createState (just created in this session), use those transactions.
-  // Otherwise we loaded an in-progress sample from URL — the verdicts snapshot
-  // contains everything we need to reconstruct the review screen.
+  // In-progress sample. Three sources for the transaction list, in order of
+  // preference:
+  //   1. createState — just created in this session (richest data)
+  //   2. loadedTxns — server re-hydrated Ledger context for an existing sample
+  //   3. fallback synthesized from verdict snapshots (only date/desc/amount
+  //      missing; should be unreachable now that the GET endpoint hydrates)
   const txns: SampleTransaction[] | null = createState
     ? createState.transactions
+    : loadedTxns
+    ? loadedTxns
     : sample
     ? sample.verdicts.map((v) => ({
         id: v.transactionId,
-        date: "",
+        date: "(unavailable)",
         rawDescription: `Transaction #${v.transactionId}`,
         amount: 0,
         category: v.classifierCategory,

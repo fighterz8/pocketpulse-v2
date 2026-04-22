@@ -28,6 +28,7 @@ import {
   createClassificationSample,
   getClassificationSampleById,
   getLatestCompletedClassificationByUsers,
+  getTransactionDisplayByIds,
   getUserById,
   getUsersByIds,
   listClassificationSamplesForUser,
@@ -287,9 +288,33 @@ export function createDevTestSuiteRouter(): Router {
     try {
       const id = Number.parseInt(req.params.id ?? "", 10);
       if (!Number.isFinite(id)) return notFound(res);
-      const row = await getClassificationSampleById(id, req.session.userId!);
+      const userId = req.session.userId!;
+      const row = await getClassificationSampleById(id, userId);
       if (!row) return notFound(res);
-      res.json({ sample: sampleToJson(row) });
+
+      // Re-hydrate Ledger context (date / description / amount) for each sampled
+      // transaction so an in-progress sample reopened from a URL has the same
+      // review-screen experience as one created in the current session.
+      const txnIds = row.verdicts.map((v) => v.transactionId);
+      const display = await getTransactionDisplayByIds(txnIds, userId);
+      const transactions = row.verdicts.map((v) => {
+        const d = display.get(v.transactionId);
+        return {
+          id: v.transactionId,
+          // If the underlying transaction was deleted (rare but possible),
+          // fall back to a placeholder so the UI still renders.
+          date: d?.date ?? "(unavailable)",
+          rawDescription: d?.rawDescription ?? `Transaction #${v.transactionId} (deleted)`,
+          amount: d ? parseFloat(String(d.amount)) : 0,
+          category: v.classifierCategory,
+          transactionClass: v.classifierClass,
+          recurrenceType: v.classifierRecurrence,
+          labelSource: v.classifierLabelSource,
+          labelConfidence: v.classifierLabelConfidence,
+        };
+      });
+
+      res.json({ sample: sampleToJson(row), transactions });
     } catch (e) {
       next(e);
     }
@@ -315,28 +340,49 @@ export function createDevTestSuiteRouter(): Router {
         return;
       }
 
-      // Spec §4: at least 80% of the original sample must have a real verdict
-      // before completion is allowed. Mirrors the frontend Submit gate so the
-      // results table can never be salted with a one-row submission.
-      const decided = validated.confirmed + validated.corrected + validated.skipped;
+      // Spec §4: at least 80% of the original sample must have an explicit
+      // verdict (confirmed / corrected / skipped) before completion. Mirrors
+      // the frontend Submit gate so the metrics table can never be salted
+      // with a one-row submission.
+      const decidedFromClient = validated.verdicts.length;
       const minDecided = Math.ceil(existing.sampleSize * 0.8);
-      if (decided < minDecided) {
+      if (decidedFromClient < minDecided) {
         res.status(400).json({
-          error: `Need at least ${minDecided} of ${existing.sampleSize} verdicts to submit (got ${decided}).`,
+          error: `Need at least ${minDecided} of ${existing.sampleSize} verdicts to submit (got ${decidedFromClient}).`,
         });
         return;
+      }
+
+      // Merge submitted verdicts into the original snapshot so omitted rows
+      // remain represented (with their original "skipped" default + classifier
+      // snapshot intact). This preserves the full sample for the metrics table
+      // and prevents a partial submission from rewriting the persisted row set.
+      const incomingById = new Map(validated.verdicts.map((v) => [v.transactionId, v]));
+      const merged: ClassificationVerdict[] = existing.verdicts.map((orig) =>
+        incomingById.get(orig.transactionId) ?? orig,
+      );
+
+      // Recount over the merged set so confirmed/corrected/skipped counts and
+      // the per-dimension accuracy denominators match what's actually stored.
+      let confirmed = 0;
+      let corrected = 0;
+      let skipped = 0;
+      for (const v of merged) {
+        if (v.verdict === "confirmed") confirmed++;
+        else if (v.verdict === "corrected") corrected++;
+        else skipped++;
       }
 
       const updated = await completeClassificationSample({
         id,
         userId,
-        verdicts: validated.verdicts,
-        categoryAccuracy:   dimensionAccuracy(validated.verdicts, "correctedCategory"),
-        classAccuracy:      dimensionAccuracy(validated.verdicts, "correctedClass"),
-        recurrenceAccuracy: dimensionAccuracy(validated.verdicts, "correctedRecurrence"),
-        confirmedCount: validated.confirmed,
-        correctedCount: validated.corrected,
-        skippedCount:   validated.skipped,
+        verdicts: merged,
+        categoryAccuracy:   dimensionAccuracy(merged, "correctedCategory"),
+        classAccuracy:      dimensionAccuracy(merged, "correctedClass"),
+        recurrenceAccuracy: dimensionAccuracy(merged, "correctedRecurrence"),
+        confirmedCount: confirmed,
+        correctedCount: corrected,
+        skippedCount:   skipped,
       });
 
       if (!updated) return notFound(res);

@@ -1506,6 +1506,29 @@ export async function getLatestCompletedClassificationByUsers(
   return out;
 }
 
+/**
+ * Fetch transaction display data (date / description / amount) by ID for a
+ * specific user. Used by the Dev Test Suite when reopening an in-progress
+ * sample so the review screen can show the original Ledger context, not just
+ * the classifier-snapshot fields stored on the verdict row.
+ */
+export async function getTransactionDisplayByIds(
+  ids: number[],
+  userId: number,
+): Promise<Map<number, { id: number; date: string; rawDescription: string; amount: string }>> {
+  if (ids.length === 0) return new Map();
+  const rows = await db
+    .select({
+      id: transactions.id,
+      date: transactions.date,
+      rawDescription: transactions.rawDescription,
+      amount: transactions.amount,
+    })
+    .from(transactions)
+    .where(and(inArray(transactions.id, ids), eq(transactions.userId, userId)));
+  return new Map(rows.map((r) => [r.id, r]));
+}
+
 export async function getUsersByIds(
   ids: number[],
 ): Promise<Array<{ id: number; email: string; displayName: string }>> {
