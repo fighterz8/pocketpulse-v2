@@ -1,0 +1,159 @@
+# Tool A AI rows — status report and evidence gathering
+
+## Your job this session
+
+Produce a structured report. No code changes. No fixes. No exploration beyond what is explicitly requested below. When you have produced the report, end the task.
+
+This session is entirely diagnostic. The user still sees zero `labelSource: "ai"` rows in Tool A samples despite previous attempts to fix the issue. We need a clear accounting of what has been changed and what the current state actually is before deciding the next step.
+
+---
+
+## Part 1 — What did you do in the previous session?
+
+List every code change made in the previous session investigating this issue. For each change:
+
+- File path
+- Function or block name
+- Brief (one sentence) description of what changed
+- Reason given for the change
+
+If you ran migrations, seed scripts, cache purges, or any other side-effect-producing commands, list those too with a one-line summary of what they did.
+
+If you added diagnostic `console.log` statements, list where they are and whether they are still in the code or have been removed.
+
+If you do not remember the previous session's changes, say so honestly. Do not reconstruct from guesses. Instead, run `git log --oneline -20` against the repository and paste the output — we'll read the commit history to reconstruct what happened.
+
+---
+
+## Part 2 — Current database state
+
+Run these four SQL queries against the production database. Paste each result verbatim. Identify the target user as the most recently active `is_dev = true` user.
+
+### Query A — labelSource distribution
+
+```sql
+SELECT label_source, COUNT(*) 
+FROM transactions 
+WHERE user_id = <dev user id>
+  AND user_corrected = false 
+  AND excluded_from_analysis = false
+GROUP BY label_source
+ORDER BY COUNT(*) DESC;
+```
+
+### Query B — confidence distribution within `rule` rows
+
+This reveals how many "rule" rows are actually fallback rows with confidence 0.55 (the no-match signature).
+
+```sql
+SELECT 
+  ROUND(label_confidence, 2) AS confidence_bucket,
+  COUNT(*) 
+FROM transactions 
+WHERE user_id = <dev user id>
+  AND user_corrected = false 
+  AND excluded_from_analysis = false
+  AND label_source = 'rule'
+GROUP BY ROUND(label_confidence, 2)
+ORDER BY confidence_bucket;
+```
+
+### Query C — the `aiAssisted` flag independently of labelSource
+
+A row can have `aiAssisted = true` (pipeline marked it as a candidate for AI) without having `labelSource = 'ai'` (AI didn't actually overwrite it). This query shows the discrepancy if one exists.
+
+```sql
+SELECT 
+  label_source,
+  ai_assisted,
+  COUNT(*)
+FROM transactions 
+WHERE user_id = <dev user id>
+  AND user_corrected = false 
+  AND excluded_from_analysis = false
+GROUP BY label_source, ai_assisted
+ORDER BY label_source, ai_assisted;
+```
+
+### Query D — recency check (is AI firing on recent uploads specifically?)
+
+```sql
+SELECT 
+  DATE(created_at) AS upload_date,
+  label_source,
+  COUNT(*)
+FROM transactions
+WHERE user_id = <dev user id>
+  AND user_corrected = false
+  AND excluded_from_analysis = false
+  AND created_at > NOW() - INTERVAL '7 days'
+GROUP BY DATE(created_at), label_source
+ORDER BY upload_date DESC, label_source;
+```
+
+---
+
+## Part 3 — OpenAI dashboard reconciliation
+
+The user confirmed 159 API requests and ~276K tokens consumed on the OpenAI dashboard. If the DB shows zero `label_source = 'ai'` rows, those API calls happened but their results didn't persist.
+
+Answer these two questions based on code inspection only (no code changes):
+
+1. **In `server/classifyPipeline.ts`, trace the AI path.** After `aiClassifyBatch()` returns results, show the exact lines where `labelSource` gets set to `"ai"` on a row. Paste the line numbers and code.
+2. **In the upload handler (`server/routes.ts` /api/upload) and `server/reclassify.ts`**, show the lines where `out.labelSource` or `row.labelSource` is persisted to the DB. Confirm nothing in between overwrites it.
+
+If you find that `labelSource: "ai"` is set in the pipeline but never reaches the DB, describe the specific line where it gets lost. Do not fix — just identify.
+
+---
+
+## Part 4 — Sampling query check
+
+In the handler for `POST /api/dev/classification-samples` (route file and line number, please), paste the exact SQL or query-builder code that selects the 50 random transactions. We need to see whether the filter excludes any `label_source` values.
+
+---
+
+## Output format
+
+```
+## Report
+
+### Part 1 — Previous session changes
+<bulleted list of changes, or git log --oneline output if memory is unreliable>
+
+### Part 2 — DB queries
+Query A result:
+<paste>
+
+Query B result:
+<paste>
+
+Query C result:
+<paste>
+
+Query D result:
+<paste>
+
+### Part 3 — Code inspection
+Line where labelSource="ai" is set in pipeline: <file:line, paste code>
+Line where labelSource is persisted on upload: <file:line, paste code>
+Line where labelSource is persisted on reclassify: <file:line, paste code>
+Any overwrite found between set and persist: <yes/no, describe>
+
+### Part 4 — Sampling query
+File:line of the sample-creation endpoint: <...>
+The SELECT query or query-builder code:
+<paste>
+Any filter on label_source: <yes, with value | no filter>
+
+### One-sentence diagnosis
+<what the evidence above points to as the most likely cause>
+```
+
+---
+
+## Rules
+
+- No code changes. No temporary console logs added. No migrations run. No cache purges.
+- If any part above cannot be completed (e.g., you can't access the DB), say so explicitly and move on to the next part.
+- Do not propose or implement a fix in this session. We will decide the fix in the next session based on this report.
+- **End the task after producing the report.** Do not start investigating the diagnosis further.
