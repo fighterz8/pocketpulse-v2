@@ -529,7 +529,7 @@ describe.skipIf(!runRouteIntegrationTests)("Dev Test Suite routes (/api/dev/*)",
     expect(res.body.error).toMatch(/upload/i);
   });
 
-  it("parser-samples PATCH merges partial verdicts: omitted rows keep defaults", async () => {
+  it("parser-samples PATCH merges partial verdicts: omitted rows are forced skipped (excluded from accuracy)", async () => {
     const app = testApp();
     const { agent, csrf, userId } = await registerUser(app, { isDev: true });
     await seedUploadAndTransactions(agent, csrf, userId, 25);
@@ -555,19 +555,43 @@ describe.skipIf(!runRouteIntegrationTests)("Dev Test Suite routes (/api/dev/*)",
       .send({ verdicts: partial });
     expect(submit.status).toBe(200);
 
-    const stored = submit.body.sample.verdicts as Array<{ transactionId: number; dateVerdict: string; amountVerdict: string }>;
-    // Persisted set must equal sampleSize — omitted rows weren't dropped.
+    const stored = submit.body.sample.verdicts as Array<{
+      transactionId: number; skipped: boolean; dateVerdict: string; amountVerdict: string;
+    }>;
+    // Persisted set must equal sampleSize — omitted rows aren't dropped.
     expect(stored.length).toBe(sampleSize);
-    // Omitted rows keep the default ("ok" / not-skipped) snapshot.
+
+    // Spec §5: omitted rows are forced `skipped=true` so they don't inflate
+    // accuracy. The default-"ok" snapshot must NOT count toward accuracy.
     const omittedIds = snapshot.slice(16).map((v) => v.transactionId);
     for (const id of omittedIds) {
       const row = stored.find((s) => s.transactionId === id);
-      expect(row?.dateVerdict).toBe("ok");
-      expect(row?.amountVerdict).toBe("ok");
+      expect(row?.skipped).toBe(true);
     }
-    // Counts reflect the full merged set: 1 flagged, sampleSize-1 confirmed.
+
+    // Counts reflect ONLY decided rows: 1 flagged + 15 confirmed = 16 decided,
+    // remaining 4 are skipped.
     expect(submit.body.sample.flaggedCount).toBe(1);
-    expect(submit.body.sample.confirmedCount).toBe(sampleSize - 1);
+    expect(submit.body.sample.confirmedCount).toBe(15);
+
+    // Accuracy denominators must equal decided rows (16), not sampleSize (20).
+    // amountAccuracy = 15/16, all others = 16/16 = 1.
+    expect(submit.body.sample.amountAccuracy).toBeCloseTo(15 / 16, 5);
+    expect(submit.body.sample.dateAccuracy).toBeCloseTo(1, 5);
+    expect(submit.body.sample.descriptionAccuracy).toBeCloseTo(1, 5);
+    expect(submit.body.sample.directionAccuracy).toBeCloseTo(1, 5);
+  });
+
+  it("parser-samples POST rejects non-numeric uploadId instead of falling back", async () => {
+    const app = testApp();
+    const { agent, csrf, userId } = await registerUser(app, { isDev: true });
+    await seedUploadAndTransactions(agent, csrf, userId, 20);
+    const res = await agent
+      .post("/api/dev/parser-samples")
+      .set("X-CSRF-Token", csrf)
+      .send({ sampleSize: 15, uploadId: "not-a-number" });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/uploadId must be a positive integer/);
   });
 
   it("parser-samples PATCH rejects unknown transactionId (anti-tamper)", async () => {

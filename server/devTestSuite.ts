@@ -558,15 +558,23 @@ export function createDevTestSuiteRouter(): Router {
     try {
       const userId = req.session.userId!;
       const sampleSize = clampSampleSize(req.body?.sampleSize);
-      const explicitUploadId =
-        req.body?.uploadId == null ? null :
-        (typeof req.body.uploadId === "number" ? req.body.uploadId :
-          Number.parseInt(String(req.body.uploadId), 10));
 
-      const upload = await resolveParserSampleUpload(
-        userId,
-        Number.isFinite(explicitUploadId) ? explicitUploadId as number : null,
-      );
+      // If `uploadId` is provided it must parse to a positive integer — we
+      // refuse to silently fall back to "latest upload" on a malformed value
+      // because that would mask client bugs (e.g. accidentally sampling from
+      // the wrong upload).
+      let explicitUploadId: number | null = null;
+      if (req.body?.uploadId != null) {
+        const raw = req.body.uploadId;
+        const parsed = typeof raw === "number" ? raw : Number.parseInt(String(raw), 10);
+        if (!Number.isInteger(parsed) || parsed <= 0) {
+          res.status(400).json({ error: "uploadId must be a positive integer." });
+          return;
+        }
+        explicitUploadId = parsed;
+      }
+
+      const upload = await resolveParserSampleUpload(userId, explicitUploadId);
       if (!upload) {
         res.status(400).json({
           error: explicitUploadId != null
@@ -697,12 +705,17 @@ export function createDevTestSuiteRouter(): Router {
         return;
       }
 
-      // Merge into the original snapshot so omitted rows keep their default
-      // (skipped=false, all "ok") and the persisted set always equals sampleSize.
+      // Merge into the original snapshot so the persisted set always equals
+      // sampleSize. Rows the reviewer omitted are forced to `skipped=true` so
+      // they are *excluded* from accuracy denominators — otherwise unreviewed
+      // rows would silently inflate every metric (per spec §5: only decided
+      // verdicts count toward accuracy).
       const incomingById = new Map(validated.verdicts.map((v) => [v.transactionId, v]));
-      const merged: ParserVerdict[] = existing.verdicts.map((orig) =>
-        incomingById.get(orig.transactionId) ?? orig,
-      );
+      const merged: ParserVerdict[] = existing.verdicts.map((orig) => {
+        const incoming = incomingById.get(orig.transactionId);
+        if (incoming) return incoming;
+        return { ...orig, skipped: true };
+      });
 
       // Recount over the merged set so confirmed/flagged match what's stored.
       let confirmed = 0;
