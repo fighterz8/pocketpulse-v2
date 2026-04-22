@@ -75,6 +75,23 @@ describe("useInactivityLogout", () => {
     expect(onTimeout).not.toHaveBeenCalled();
   });
 
+  it("respects a custom timeoutMs argument for fast feedback", () => {
+    const onTimeout = vi.fn();
+    renderHook(() =>
+      useInactivityLogout({ enabled: true, onTimeout, timeoutMs: 50 }),
+    );
+
+    act(() => {
+      vi.advanceTimersByTime(49);
+    });
+    expect(onTimeout).not.toHaveBeenCalled();
+
+    act(() => {
+      vi.advanceTimersByTime(1);
+    });
+    expect(onTimeout).toHaveBeenCalledTimes(1);
+  });
+
   it("uses the latest onTimeout callback without re-attaching listeners", () => {
     const first = vi.fn();
     const second = vi.fn();

@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 
-const INACTIVITY_MS = 30 * 60 * 1000;
+export const DEFAULT_INACTIVITY_MS = 30 * 60 * 1000;
 
 const ACTIVITY_EVENTS = [
   "mousemove",
@@ -11,17 +11,19 @@ const ACTIVITY_EVENTS = [
 ] as const;
 
 /**
- * Fires `onTimeout` after 30 minutes of no user activity.
- * Any mouse move, click, keypress, touch, or scroll resets the timer.
- * Pass `enabled: false` (e.g. when the user is not authenticated) to skip
- * attaching listeners entirely.
+ * Fires `onTimeout` after `timeoutMs` of no user activity (defaults to 30
+ * minutes). Any mouse move, click, keypress, touch, or scroll resets the
+ * timer. Pass `enabled: false` (e.g. when the user is not authenticated) to
+ * skip attaching listeners entirely.
  */
 export function useInactivityLogout({
   enabled,
   onTimeout,
+  timeoutMs = DEFAULT_INACTIVITY_MS,
 }: {
   enabled: boolean;
   onTimeout: () => void;
+  timeoutMs?: number;
 }) {
   const onTimeoutRef = useRef(onTimeout);
   onTimeoutRef.current = onTimeout;
@@ -35,7 +37,7 @@ export function useInactivityLogout({
       clearTimeout(timerId);
       timerId = setTimeout(() => {
         onTimeoutRef.current();
-      }, INACTIVITY_MS);
+      }, timeoutMs);
     }
 
     reset();
@@ -50,5 +52,5 @@ export function useInactivityLogout({
         window.removeEventListener(event, reset);
       }
     };
-  }, [enabled]);
+  }, [enabled, timeoutMs]);
 }
