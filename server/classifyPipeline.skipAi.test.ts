@@ -19,6 +19,22 @@ vi.mock("./ai-classifier.js", () => ({
   aiClassifyBatch: (items: unknown[], examples: unknown[]) => aiSpy(items, examples),
 }));
 
+// Spy on the two cache-write side effects that Phase 1.7 / 1.8 normally
+// fire so we can assert they never run when skipAi=true. The non-write
+// storage functions (rule lookups, cache reads, seed reads) keep their
+// real implementations.
+const recordCacheHitsSpy = vi.fn(async () => {});
+const batchUpsertSpy = vi.fn(async () => {});
+
+vi.mock("./storage.js", async () => {
+  const actual = await vi.importActual<typeof import("./storage.js")>("./storage.js");
+  return {
+    ...actual,
+    recordCacheHits: (...args: unknown[]) => recordCacheHitsSpy(...args),
+    batchUpsertMerchantClassifications: (...args: unknown[]) => batchUpsertSpy(...args),
+  };
+});
+
 import { db } from "./db.js";
 import {
   merchantClassifications,
@@ -101,6 +117,8 @@ afterAll(async () => {
 
 beforeEach(() => {
   aiSpy.mockClear();
+  recordCacheHitsSpy.mockClear();
+  batchUpsertSpy.mockClear();
 });
 
 describe("classifyPipeline — skipAi option", () => {
@@ -213,6 +231,46 @@ describe("classifyPipeline — skipAi option", () => {
     expect(results[0]!.needsAi).toBe(false);
     expect(results[1]!.needsAi).toBe(true);
     expect(results[2]!.needsAi).toBe(false);
+    expect(aiSpy).not.toHaveBeenCalled();
+  });
+
+  it("does not bump per-user cache hit counts when skipAi=true (Phase 1.7 side effect)", async () => {
+    // Cached merchant — Phase 1.7 normally calls recordCacheHits(userId, [key]).
+    const desc = "PP SKIPAI NOWRITE USERCACHE";
+    const key = toMerchantKey(desc);
+    await seedPerUser(key, "food");
+
+    const [out] = await classifyPipeline(
+      [{ rawDescription: desc, amount: -10 }],
+      skipAiOpts(),
+    );
+
+    // Sanity: the cache hit still happens (read-only); we just don't write.
+    expect(out!.fromCache).toBe(true);
+    expect(out!.labelSource).toBe("cache");
+    expect(recordCacheHitsSpy).not.toHaveBeenCalled();
+    expect(batchUpsertSpy).not.toHaveBeenCalled();
+    expect(aiSpy).not.toHaveBeenCalled();
+  });
+
+  it("does not promote global-seed hits into the per-user cache when skipAi=true (Phase 1.8 side effect)", async () => {
+    // Global-only merchant — Phase 1.8 normally calls
+    // batchUpsertMerchantClassifications(userId, [seedHit]) to promote it.
+    const desc = "PP SKIPAI NOWRITE GLOBALSEED";
+    const key = toMerchantKey(desc);
+    await seedGlobal(key, "utilities");
+
+    const [out] = await classifyPipeline(
+      [{ rawDescription: desc, amount: -50 }],
+      skipAiOpts(),
+    );
+
+    expect(out!.fromCache).toBe(true);
+    expect(out!.labelSource).toBe("cache");
+    expect(out!.category).toBe("utilities");
+    // No promotion write, no hit bump, no AI call — fully read-only.
+    expect(batchUpsertSpy).not.toHaveBeenCalled();
+    expect(recordCacheHitsSpy).not.toHaveBeenCalled();
     expect(aiSpy).not.toHaveBeenCalled();
   });
 

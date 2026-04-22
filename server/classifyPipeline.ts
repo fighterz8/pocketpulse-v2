@@ -267,7 +267,10 @@ export async function classifyPipeline(
         hitKeys.push(key);
       }
 
-      if (hitKeys.length > 0) {
+      // Skip the hit-count bump in skipAi mode so the deferred-AI upload
+      // path is fully read-only on the merchant cache. The async worker
+      // will exercise the cache (and bump hit counts) when it runs.
+      if (hitKeys.length > 0 && !opts.skipAi) {
         recordCacheHits(opts.userId, hitKeys).catch(() => undefined);
       }
     }
@@ -314,7 +317,10 @@ export async function classifyPipeline(
         }
 
         // Promote global seed hits into the per-user cache for future fast lookups.
-        if (hitKeys.length > 0) {
+        // Suppressed in skipAi mode — the upload path stays fully read-only
+        // on merchant_classifications; the async AI worker will perform any
+        // cache writes (including this seed promotion) when it runs.
+        if (hitKeys.length > 0 && !opts.skipAi) {
           const toCache = hitKeys
             .map((k) => globalHits.get(k))
             .filter(Boolean) as import("../shared/schema.js").MerchantClassification[];
