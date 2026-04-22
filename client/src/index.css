@@ -3734,3 +3734,84 @@ html.dark .mobile-hamburger {
 html.dark .mobile-hamburger:hover {
   background: rgb(96 165 250 / 0.12);
 }
+
+/* ── Dev Test Suite — Parser sampler (PR2) ────────────────────────────── */
+
+.parser-pill {
+  display: inline-block;
+  padding: 1px 8px;
+  margin-left: 6px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: lowercase;
+  background: rgb(148 163 184 / 0.18);
+  color: #475569;
+}
+.parser-pill-inflow   { background: rgb(34 197 94 / 0.18);  color: #15803d; }
+.parser-pill-outflow  { background: rgb(244 114 182 / 0.18); color: #be185d; }
+.parser-pill-ambiguous {
+  background: rgb(251 191 36 / 0.20);
+  color: #92400e;
+}
+html.dark .parser-pill            { background: rgb(148 163 184 / 0.20); color: #e2e8f0; }
+html.dark .parser-pill-inflow     { background: rgb(34 197 94 / 0.20);  color: #86efac; }
+html.dark .parser-pill-outflow    { background: rgb(244 114 182 / 0.20); color: #f9a8d4; }
+html.dark .parser-pill-ambiguous  { background: rgb(251 191 36 / 0.22); color: #fde68a; }
+
+.parser-field-verdict {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 110px;
+}
+.parser-field-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.parser-field-toggle {
+  display: inline-flex;
+  border: 1px solid rgb(148 163 184 / 0.4);
+  border-radius: 6px;
+  overflow: hidden;
+}
+.parser-toggle {
+  padding: 3px 10px;
+  font-size: 12px;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  color: inherit;
+}
+.parser-toggle[disabled] { opacity: 0.5; cursor: not-allowed; }
+.parser-toggle-ok-on    { background: rgb(34 197 94 / 0.18);  color: #15803d; font-weight: 600; }
+.parser-toggle-wrong-on { background: rgb(239 68 68 / 0.18);  color: #b91c1c; font-weight: 600; }
+html.dark .parser-toggle-ok-on    { background: rgb(34 197 94 / 0.22);  color: #86efac; }
+html.dark .parser-toggle-wrong-on { background: rgb(239 68 68 / 0.22);  color: #fca5a5; }
+
+.parser-submit-bar {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.parser-disclaimer {
+  font-size: 13px;
+  color: #475569;
+  font-style: italic;
+  margin: 0;
+}
+html.dark .parser-disclaimer { color: #cbd5e1; }
+.parser-global-notes input {
+  width: 100%;
+  padding: 6px 8px;
+}
+.parser-submit-status {
+  font-size: 13px;
+  color: #475569;
+}
+html.dark .parser-submit-status { color: #cbd5e1; }

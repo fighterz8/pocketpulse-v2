@@ -322,11 +322,15 @@ function parserFieldAccuracy(
   return ok / nonSkipped.length;
 }
 
-function parserSampleToJson(row: Awaited<ReturnType<typeof getParserSampleById>>) {
+function parserSampleToJson(
+  row: Awaited<ReturnType<typeof getParserSampleById>>,
+  uploadDate: Date | string | null = null,
+) {
   if (!row) return null;
   return {
     id: row.id,
     uploadId: row.uploadId,
+    uploadDate: uploadDate instanceof Date ? uploadDate.toISOString() : uploadDate,
     createdAt: row.createdAt,
     completedAt: row.completedAt,
     sampleSize: row.sampleSize,
@@ -593,7 +597,10 @@ export function createDevTestSuiteRouter(): Router {
           parsedDescription: t.rawDescription,
           parsedAmount: parseFloat(String(t.amount)),
           parsedFlowType: t.flowType,
-          parsedAmbiguous: false,
+          // spec §6: ambiguous flag isn't persisted — derive from aiAssisted
+          // (the only signal we have that the parser/classifier reached for AI
+          // because rule-based extraction was uncertain).
+          parsedAmbiguous: !!t.aiAssisted,
           skipped: false,
           dateVerdict: "ok",
           descriptionVerdict: "ok",
@@ -615,6 +622,9 @@ export function createDevTestSuiteRouter(): Router {
       res.status(201).json({
         sampleId: sample.id,
         uploadId: upload.id,
+        uploadDate: upload.uploadedAt instanceof Date
+          ? upload.uploadedAt.toISOString()
+          : upload.uploadedAt,
         createdAt: sample.createdAt,
         sampleSize: sample.sampleSize,
         uploadRowCount: upload.rowCount,
@@ -644,7 +654,12 @@ export function createDevTestSuiteRouter(): Router {
       const userId = req.session.userId!;
       const row = await getParserSampleById(id, userId);
       if (!row) return notFound(res);
-      res.json({ sample: parserSampleToJson(row) });
+      // Snapshot uploadedAt at read time so the report can show "from upload
+      // X on <date>" with a stable per-user link to the existing warnings UI.
+      const upload = row.uploadId != null
+        ? await resolveParserSampleUpload(userId, row.uploadId)
+        : null;
+      res.json({ sample: parserSampleToJson(row, upload?.uploadedAt ?? null) });
     } catch (e) {
       next(e);
     }
@@ -712,7 +727,10 @@ export function createDevTestSuiteRouter(): Router {
       });
 
       if (!updated) return notFound(res);
-      res.json({ sample: parserSampleToJson(updated) });
+      const upload = updated.uploadId != null
+        ? await resolveParserSampleUpload(userId, updated.uploadId)
+        : null;
+      res.json({ sample: parserSampleToJson(updated, upload?.uploadedAt ?? null) });
     } catch (e) {
       next(e);
     }

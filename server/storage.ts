@@ -1580,13 +1580,16 @@ function parserRowToListItem(r: ParserSampleRow): ParserSampleListItem {
 export async function resolveParserSampleUpload(
   userId: number,
   uploadId: number | null,
-): Promise<{ id: number; rowCount: number; warningCount: number } | null> {
+): Promise<{ id: number; rowCount: number; warningCount: number; uploadedAt: Date } | null> {
   if (uploadId != null) {
     // Explicit ID must still match a *successful* upload — sampling from a
     // failed/in-flight upload yields nothing useful and would confuse the
     // parser-fidelity report (denominator from a partially-parsed batch).
     const [row] = await db
-      .select({ id: uploads.id, rowCount: uploads.rowCount, warningCount: uploads.warningCount })
+      .select({
+        id: uploads.id, rowCount: uploads.rowCount,
+        warningCount: uploads.warningCount, uploadedAt: uploads.uploadedAt,
+      })
       .from(uploads)
       .where(
         and(
@@ -1599,7 +1602,10 @@ export async function resolveParserSampleUpload(
     return row ?? null;
   }
   const [row] = await db
-    .select({ id: uploads.id, rowCount: uploads.rowCount, warningCount: uploads.warningCount })
+    .select({
+      id: uploads.id, rowCount: uploads.rowCount,
+      warningCount: uploads.warningCount, uploadedAt: uploads.uploadedAt,
+    })
     .from(uploads)
     .where(and(eq(uploads.userId, userId), eq(uploads.status, "complete")))
     .orderBy(desc(uploads.uploadedAt))
@@ -1624,6 +1630,10 @@ export async function pickParserSampleTransactions(
       rawDescription: transactions.rawDescription,
       amount: transactions.amount,
       flowType: transactions.flowType,
+      // The original csvParser `ambiguous` flag isn't persisted; spec §6
+      // reconstructs it from `aiAssisted` (= the parser/classifier wasn't
+      // confident enough to label without AI assistance).
+      aiAssisted: transactions.aiAssisted,
     })
     .from(transactions)
     .where(

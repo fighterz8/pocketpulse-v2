@@ -352,6 +352,38 @@ describe.skipIf(!runRouteIntegrationTests)("Dev Test Suite routes (/api/dev/*)",
     expect(res.body.error).toMatch(/upload/i);
   });
 
+  it("parser-samples GET :id returns uploadDate; verdicts reflect aiAssisted as ambiguous", async () => {
+    const app = testApp();
+    const { agent, csrf, userId } = await registerUser(app, { isDev: true });
+    const { uploadId } = await seedUploadAndTransactions(agent, csrf, userId, 10);
+    // Mark a couple of seeded transactions as ai-assisted so we can verify the
+    // ambiguous flag flows through to the snapshot.
+    const { db } = await import("./db.js");
+    const { transactions } = await import("../shared/schema.js");
+    const { eq } = await import("drizzle-orm");
+    await db.update(transactions)
+      .set({ aiAssisted: true })
+      .where(eq(transactions.uploadId, uploadId));
+
+    const create = await agent
+      .post("/api/dev/parser-samples")
+      .set("X-CSRF-Token", csrf)
+      .send({ sampleSize: 5 });
+    expect(create.status).toBe(201);
+    expect(create.body.uploadDate).toEqual(expect.any(String));
+    expect(Date.parse(create.body.uploadDate)).not.toBeNaN();
+    expect(
+      (create.body.verdicts as Array<{ parsedAmbiguous: boolean }>).every((v) => v.parsedAmbiguous),
+    ).toBe(true);
+
+    const fetched = await agent.get(`/api/dev/parser-samples/${create.body.sampleId}`);
+    expect(fetched.status).toBe(200);
+    expect(fetched.body.sample.uploadDate).toEqual(create.body.uploadDate);
+    expect(
+      (fetched.body.sample.verdicts as Array<{ parsedAmbiguous: boolean }>).some((v) => v.parsedAmbiguous),
+    ).toBe(true);
+  });
+
   it("supports the full parser create → list → fetch → submit flow", async () => {
     const app = testApp();
     const { agent, csrf, userId } = await registerUser(app, { isDev: true });

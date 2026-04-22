@@ -26,6 +26,7 @@ import {
 type SampleRecord = {
   id: number;
   uploadId: number | null;
+  uploadDate: string | null;
   createdAt: string;
   completedAt: string | null;
   sampleSize: number;
@@ -43,6 +44,7 @@ type SampleRecord = {
 type CreateResponse = {
   sampleId: number;
   uploadId: number;
+  uploadDate: string | null;
   createdAt: string;
   sampleSize: number;
   uploadRowCount: number;
@@ -52,17 +54,31 @@ type CreateResponse = {
 
 const MIN_REQUIRED_RATIO = 40 / 50; // ≥ 80% of rows must have a verdict (spec §4)
 
-// ─── Helpers ────────────────────────────────────────────────────────────────
+// Spec §5 disclaimer — surfaced on the submit screen and again on the report.
+const PARSER_DISCLAIMER =
+  "This tool validates the classifier's view of your data; for deeper " +
+  "CSV-layer debugging, re-upload the file and inspect warnings.";
 
-function pct(n: number | null, decimals = 0): string {
-  if (n == null) return "—";
-  return `${(n * 100).toFixed(decimals)}%`;
-}
+// Per-field "Wrong" dropdown options (the "ok" entry is the OK toggle itself,
+// so we filter it out of the dropdowns the user sees after picking Wrong).
+const DATE_WRONG_OPTIONS = PARSER_DATE_VERDICTS.filter((v) => v !== "ok");
+const DESC_WRONG_OPTIONS = PARSER_DESC_VERDICTS.filter((v) => v !== "ok");
+const AMOUNT_WRONG_OPTIONS = PARSER_AMOUNT_VERDICTS.filter((v) => v !== "ok");
+const DIRECTION_WRONG_OPTIONS = PARSER_DIRECTION_VERDICTS.filter((v) => v !== "ok");
+
+// ─── Helpers ────────────────────────────────────────────────────────────────
 
 function pctFrac(acc: number | null, denom: number): string {
   if (acc == null || denom <= 0) return "—";
   const num = Math.round(acc * denom);
   return `${(acc * 100).toFixed(0)}% (${num}/${denom})`;
+}
+
+function fmtUploadDate(iso: string | null): string {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleString();
 }
 
 // ─── Start screen ───────────────────────────────────────────────────────────
@@ -156,11 +172,11 @@ type RowState = {
   v: ParserVerdict;
   // Transient form state
   skipped: boolean;
-  dateV: ParserVerdict["dateVerdict"];
-  descV: ParserVerdict["descriptionVerdict"];
-  amtV: ParserVerdict["amountVerdict"];
-  dirV: ParserVerdict["directionVerdict"];
-  notes: string;
+  // null = OK toggle is selected; non-null = Wrong toggle + chosen error tag
+  dateWrong: ParserVerdict["dateVerdict"] | null;
+  descWrong: ParserVerdict["descriptionVerdict"] | null;
+  amtWrong:  ParserVerdict["amountVerdict"]   | null;
+  dirWrong:  ParserVerdict["directionVerdict"] | null;
   decided: boolean;
 };
 
@@ -177,13 +193,65 @@ function rowFromVerdict(v: ParserVerdict): RowState {
   return {
     v,
     skipped: v.skipped,
-    dateV: v.dateVerdict,
-    descV: v.descriptionVerdict,
-    amtV: v.amountVerdict,
-    dirV: v.directionVerdict,
-    notes: v.notes ?? "",
+    dateWrong: v.dateVerdict === "ok" ? null : v.dateVerdict,
+    descWrong: v.descriptionVerdict === "ok" ? null : v.descriptionVerdict,
+    amtWrong:  v.amountVerdict   === "ok" ? null : v.amountVerdict,
+    dirWrong:  v.directionVerdict === "ok" ? null : v.directionVerdict,
     decided: wasTouched,
   };
+}
+
+// ─── Per-field OK/Wrong toggle ──────────────────────────────────────────────
+
+function FieldVerdict<T extends string>({
+  label, value, options, disabled, onChange, testIdPrefix, txnId,
+}: {
+  label: string;
+  value: T | null;        // null → OK selected
+  options: readonly T[];  // wrong-only options
+  disabled: boolean;
+  onChange: (next: T | null) => void;
+  testIdPrefix: string;
+  txnId: number;
+}) {
+  const isWrong = value !== null;
+  return (
+    <div className="parser-field-verdict">
+      <div className="parser-field-label">{label}</div>
+      <div className="parser-field-toggle">
+        <button
+          type="button"
+          aria-pressed={!isWrong}
+          disabled={disabled}
+          className={!isWrong ? "parser-toggle parser-toggle-ok-on" : "parser-toggle"}
+          onClick={() => onChange(null)}
+          data-testid={`btn-${testIdPrefix}-ok-${txnId}`}
+        >
+          OK
+        </button>
+        <button
+          type="button"
+          aria-pressed={isWrong}
+          disabled={disabled}
+          className={isWrong ? "parser-toggle parser-toggle-wrong-on" : "parser-toggle"}
+          onClick={() => onChange(options[0] ?? null)}
+          data-testid={`btn-${testIdPrefix}-wrong-${txnId}`}
+        >
+          Wrong
+        </button>
+      </div>
+      {isWrong && (
+        <select
+          value={value ?? ""}
+          disabled={disabled}
+          onChange={(e) => onChange(e.target.value as T)}
+          data-testid={`select-${testIdPrefix}-${txnId}`}
+        >
+          {options.map((c) => <option key={c} value={c}>{c}</option>)}
+        </select>
+      )}
+    </div>
+  );
 }
 
 // ─── Review screen ──────────────────────────────────────────────────────────
@@ -198,6 +266,7 @@ function ReviewScreen({
   onSubmitted: (s: SampleRecord) => void;
 }) {
   const [rows, setRows] = useState<RowState[]>(() => initialVerdicts.map(rowFromVerdict));
+  const [globalNotes, setGlobalNotes] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -206,17 +275,11 @@ function ReviewScreen({
   }
 
   function confirmRow(i: number) {
-    update(i, {
-      skipped: false,
-      dateV: "ok", descV: "ok", amtV: "ok", dirV: "ok",
-    });
+    update(i, { skipped: false, dateWrong: null, descWrong: null, amtWrong: null, dirWrong: null });
   }
 
   function skipRow(i: number) {
-    update(i, {
-      skipped: true,
-      dateV: "ok", descV: "ok", amtV: "ok", dirV: "ok",
-    });
+    update(i, { skipped: true,  dateWrong: null, descWrong: null, amtWrong: null, dirWrong: null });
   }
 
   const decided = rows.filter((r) => r.decided).length;
@@ -225,16 +288,18 @@ function ReviewScreen({
   async function submit() {
     setError(null); setSubmitting(true);
     try {
+      const trimmedNotes = globalNotes.trim();
       const verdicts = rows
         .filter((r) => r.decided)
         .map((r) => ({
           transactionId: r.v.transactionId,
           skipped: r.skipped,
-          dateVerdict: r.dateV,
-          descriptionVerdict: r.descV,
-          amountVerdict: r.amtV,
-          directionVerdict: r.dirV,
-          notes: r.notes.trim() ? r.notes.trim() : null,
+          dateVerdict:        r.dateWrong ?? "ok",
+          descriptionVerdict: r.descWrong ?? "ok",
+          amountVerdict:      r.amtWrong  ?? "ok",
+          directionVerdict:   r.dirWrong  ?? "ok",
+          // spec §5: footer Notes field "carried onto every verdict".
+          notes: trimmedNotes ? trimmedNotes : null,
         }));
       const res = await apiFetch(`/api/dev/parser-samples/${sampleId}`, {
         method: "PATCH",
@@ -262,30 +327,30 @@ function ReviewScreen({
         </h2>
         <p className="acc-merchants-intro">
           For each row, compare the reconstructed raw values against what the parser produced.
-          Click <strong>Looks right</strong> if all four fields match, <strong>Skip</strong> if the
-          raw row can't be evaluated, or flag specific fields below. The reconstructed raw values
-          are display-only and never written back.
+          Toggle each field to <strong>OK</strong> or <strong>Wrong</strong> — picking Wrong
+          reveals the common error types. Skip a row if the raw values can't be evaluated.
+          Reconstructed raw values are display-only and never written back.
         </p>
 
         <div className="acc-merchants-table-wrap">
-          <table className="acc-merchants-table">
+          <table className="acc-merchants-table parser-review-table">
             <thead>
               <tr>
-                <th>Raw (reconstructed)</th>
-                <th>Parsed</th>
+                <th style={{ minWidth: 220 }}>Raw (reconstructed)</th>
+                <th style={{ minWidth: 220 }}>Parsed</th>
                 <th>Date</th>
                 <th>Description</th>
                 <th>Amount</th>
                 <th>Direction</th>
-                <th>Notes</th>
                 <th>Action</th>
               </tr>
             </thead>
             <tbody>
               {rows.map((r, i) => {
                 const disabled = r.skipped;
+                const txnId = r.v.transactionId;
                 return (
-                  <tr key={r.v.transactionId} data-testid={`row-parser-${r.v.transactionId}`}>
+                  <tr key={txnId} data-testid={`row-parser-${txnId}`}>
                     <td>
                       <div className="acc-metric-raw">{r.v.rawDate}</div>
                       <div>{r.v.rawDescription}</div>
@@ -295,57 +360,46 @@ function ReviewScreen({
                       <div className="acc-metric-raw">{r.v.parsedDate}</div>
                       <div>{r.v.parsedDescription}</div>
                       <div className="acc-metric-raw">
-                        {r.v.parsedAmount.toFixed(2)} ({r.v.parsedFlowType})
+                        {r.v.parsedAmount.toFixed(2)}{" "}
+                        <span className={`parser-pill parser-pill-${r.v.parsedFlowType}`}>
+                          {r.v.parsedFlowType}
+                        </span>
+                        {r.v.parsedAmbiguous && (
+                          <span
+                            className="parser-pill parser-pill-ambiguous"
+                            data-testid={`pill-ambiguous-${txnId}`}
+                          >
+                            ambiguous
+                          </span>
+                        )}
                       </div>
                     </td>
                     <td>
-                      <select
-                        value={r.dateV}
-                        disabled={disabled}
-                        onChange={(e) => update(i, { dateV: e.target.value as ParserVerdict["dateVerdict"] })}
-                        data-testid={`select-date-${r.v.transactionId}`}
-                      >
-                        {PARSER_DATE_VERDICTS.map((c) => <option key={c} value={c}>{c}</option>)}
-                      </select>
+                      <FieldVerdict
+                        label="Date" value={r.dateWrong} options={DATE_WRONG_OPTIONS}
+                        disabled={disabled} testIdPrefix="date" txnId={txnId}
+                        onChange={(next) => update(i, { dateWrong: next })}
+                      />
                     </td>
                     <td>
-                      <select
-                        value={r.descV}
-                        disabled={disabled}
-                        onChange={(e) => update(i, { descV: e.target.value as ParserVerdict["descriptionVerdict"] })}
-                        data-testid={`select-description-${r.v.transactionId}`}
-                      >
-                        {PARSER_DESC_VERDICTS.map((c) => <option key={c} value={c}>{c}</option>)}
-                      </select>
+                      <FieldVerdict
+                        label="Description" value={r.descWrong} options={DESC_WRONG_OPTIONS}
+                        disabled={disabled} testIdPrefix="description" txnId={txnId}
+                        onChange={(next) => update(i, { descWrong: next })}
+                      />
                     </td>
                     <td>
-                      <select
-                        value={r.amtV}
-                        disabled={disabled}
-                        onChange={(e) => update(i, { amtV: e.target.value as ParserVerdict["amountVerdict"] })}
-                        data-testid={`select-amount-${r.v.transactionId}`}
-                      >
-                        {PARSER_AMOUNT_VERDICTS.map((c) => <option key={c} value={c}>{c}</option>)}
-                      </select>
+                      <FieldVerdict
+                        label="Amount" value={r.amtWrong} options={AMOUNT_WRONG_OPTIONS}
+                        disabled={disabled} testIdPrefix="amount" txnId={txnId}
+                        onChange={(next) => update(i, { amtWrong: next })}
+                      />
                     </td>
                     <td>
-                      <select
-                        value={r.dirV}
-                        disabled={disabled}
-                        onChange={(e) => update(i, { dirV: e.target.value as ParserVerdict["directionVerdict"] })}
-                        data-testid={`select-direction-${r.v.transactionId}`}
-                      >
-                        {PARSER_DIRECTION_VERDICTS.map((c) => <option key={c} value={c}>{c}</option>)}
-                      </select>
-                    </td>
-                    <td>
-                      <input
-                        type="text"
-                        value={r.notes}
-                        maxLength={500}
-                        onChange={(e) => update(i, { notes: e.target.value })}
-                        placeholder="optional"
-                        data-testid={`input-notes-${r.v.transactionId}`}
+                      <FieldVerdict
+                        label="Direction" value={r.dirWrong} options={DIRECTION_WRONG_OPTIONS}
+                        disabled={disabled} testIdPrefix="direction" txnId={txnId}
+                        onChange={(next) => update(i, { dirWrong: next })}
                       />
                     </td>
                     <td>
@@ -353,14 +407,14 @@ function ReviewScreen({
                         <button
                           type="button"
                           onClick={() => confirmRow(i)}
-                          data-testid={`btn-confirm-${r.v.transactionId}`}
+                          data-testid={`btn-confirm-${txnId}`}
                         >
                           Looks right
                         </button>
                         <button
                           type="button"
                           onClick={() => skipRow(i)}
-                          data-testid={`btn-skip-${r.v.transactionId}`}
+                          data-testid={`btn-skip-${txnId}`}
                         >
                           {r.skipped ? "✓ Skipped" : "Skip"}
                         </button>
@@ -374,8 +428,24 @@ function ReviewScreen({
         </div>
       </div>
 
-      <div className="acc-corrections glass-card" data-testid="parser-submit-bar">
-        <div>
+      <div className="acc-corrections glass-card parser-submit-bar" data-testid="parser-submit-bar">
+        <p className="parser-disclaimer" data-testid="text-parser-disclaimer">
+          {PARSER_DISCLAIMER}
+        </p>
+
+        <label className="parser-global-notes">
+          <div>Notes (applied to every verdict)</div>
+          <input
+            type="text"
+            value={globalNotes}
+            maxLength={500}
+            onChange={(e) => setGlobalNotes(e.target.value)}
+            placeholder="optional — context for the whole sample"
+            data-testid="input-parser-global-notes"
+          />
+        </label>
+
+        <div className="parser-submit-status">
           <strong>{decided}</strong> of <strong>{rows.length}</strong> rows have a verdict
           ({decided}/{rows.length})
         </div>
@@ -439,14 +509,13 @@ function ReportScreen({ sample }: { sample: SampleRecord }) {
       <div className="acc-merchants glass-card" data-testid="parser-report">
         <h2 className="acc-merchants-title">Parser output validation report</h2>
         <p className="acc-merchants-intro">
-          Sample of <strong>{sample.sampleSize}</strong> transactions
-          {sample.uploadRowCount != null && (
-            <> from upload #{sample.uploadId} ({sample.uploadRowCount} rows, {sample.uploadWarningCount ?? 0} parser warnings)</>
-          )}
-          .{" "}
+          Sample of <strong>{sample.sampleSize}</strong> transactions.{" "}
           <strong>{sample.confirmedCount}</strong> confirmed,{" "}
           <strong>{sample.flaggedCount}</strong> flagged,{" "}
           <strong>{sample.sampleSize - sample.confirmedCount - sample.flaggedCount}</strong> skipped.
+        </p>
+        <p className="parser-disclaimer" data-testid="text-parser-disclaimer-report">
+          {PARSER_DISCLAIMER}
         </p>
 
         <div className="acc-merchants-table-wrap">
@@ -490,6 +559,36 @@ function ReportScreen({ sample }: { sample: SampleRecord }) {
         </div>
       </div>
 
+      <div className="acc-merchants glass-card" data-testid="parser-upload-context">
+        <h2 className="acc-merchants-title">Upload context</h2>
+        <table className="acc-merchants-table">
+          <tbody>
+            <tr data-testid="row-upload-id">
+              <th style={{ width: 200 }}>Upload ID</th>
+              <td>{sample.uploadId ?? "—"}</td>
+            </tr>
+            <tr data-testid="row-upload-date">
+              <th>Upload date</th>
+              <td>{fmtUploadDate(sample.uploadDate)}</td>
+            </tr>
+            <tr data-testid="row-upload-row-count">
+              <th>Upload row count</th>
+              <td>{sample.uploadRowCount ?? "—"}</td>
+            </tr>
+            <tr data-testid="row-upload-warning-count">
+              <th>Parser warnings</th>
+              <td>
+                {sample.uploadWarningCount ?? 0}
+                {" — "}
+                <Link href="/upload" data-testid="link-upload-warnings">
+                  view in uploads
+                </Link>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
       {flaggedRows.length > 0 && (
         <div className="acc-merchants glass-card" data-testid="parser-flagged">
           <h2 className="acc-merchants-title">Flagged rows ({flaggedRows.length})</h2>
@@ -511,6 +610,9 @@ function ReportScreen({ sample }: { sample: SampleRecord }) {
                     </td>
                     <td className="acc-metric-raw">
                       {v.parsedDate} / {v.parsedDescription} / {v.parsedAmount.toFixed(2)} ({v.parsedFlowType})
+                      {v.parsedAmbiguous && (
+                        <span className="parser-pill parser-pill-ambiguous">ambiguous</span>
+                      )}
                     </td>
                     <td>
                       {[
