@@ -3015,6 +3015,19 @@ html.dark .leaks-error {
 .acc-corrections {
   padding: 1.4rem 1.75rem;
   border-left-width: 4px;
+  /* Task #60: prevent the submit bar from overlapping the last table row on
+     small viewports — give it a guaranteed gap above and breathing room below
+     so it never visually clips the row above it. */
+  margin-top: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+@media (max-width: 720px) {
+  .acc-corrections {
+    /* Mobile devices have less viewport height; ensure the submit button is
+       fully tappable above the system gesture bar. */
+    padding-bottom: max(1.4rem, env(safe-area-inset-bottom, 0));
+  }
 }
 
 .acc-corrections--positive { border-left-color: #34d399; }
@@ -3481,6 +3494,16 @@ html.dark .acc-signal-name {
 html.dark .acc-merchants-title {
   color: #f1f5f9;
 }
+
+/* Task #60: dark-mode contrast fixes for the Test Suite explainer + submit
+   bar. Defaults use #0f172a / #475569 / #64748b which are unreadable on the
+   glass-card dark background. */
+html.dark .acc-explainer-item strong { color: #f1f5f9; }
+html.dark .acc-explainer-item p      { color: #cbd5e1; }
+html.dark .acc-corrections-title     { color: #cbd5e1; }
+html.dark .acc-corrections-badge     { color: #f1f5f9; }
+html.dark .acc-corrections-body      { color: #cbd5e1; }
+html.dark .acc-corrections-note      { color: #94a3b8; border-top-color: rgb(255 255 255 / 0.08); }
 
 html.dark .acc-merchants-intro {
   color: #94a3b8;
