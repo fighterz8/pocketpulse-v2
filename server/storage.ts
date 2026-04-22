@@ -1484,6 +1484,26 @@ export async function completeClassificationSample(input: {
 }
 
 /**
+ * Delete a classification sample owned by `userId`. The userId scope prevents
+ * cross-account deletion even with a guessed id. Returns true when a row was
+ * actually removed, false when no matching row existed (caller treats as 404).
+ *
+ * Used by the Dev Test Suite to let testers discard abandoned in-progress
+ * samples (and re-runs of completed ones) without leaving stale rows in the
+ * "Past classification samples" table.
+ */
+export async function deleteClassificationSample(
+  id: number,
+  userId: number,
+): Promise<boolean> {
+  const rows = await db
+    .delete(classificationSamples)
+    .where(and(eq(classificationSamples.id, id), eq(classificationSamples.userId, userId)))
+    .returning({ id: classificationSamples.id });
+  return rows.length > 0;
+}
+
+/**
  * Latest completed classification sample per user — used by the team
  * side-by-side view. Returns at most one row per user_id in `userIds`.
  */

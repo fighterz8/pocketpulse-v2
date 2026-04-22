@@ -26,6 +26,7 @@ import {
 import {
   completeClassificationSample,
   createClassificationSample,
+  deleteClassificationSample,
   getClassificationSampleById,
   getLatestCompletedClassificationByUsers,
   getTransactionDisplayByIds,
@@ -391,6 +392,29 @@ export function createDevTestSuiteRouter(): Router {
 
       if (!updated) return notFound(res);
       res.json({ sample: sampleToJson(updated) });
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  /**
+   * DELETE /api/dev/classification-samples/:id — discard a sample.
+   *
+   * Allowed for both in-progress and completed samples owned by the caller,
+   * so testers can clear out abandoned runs (the primary use case) and clean
+   * up the "Past classification samples" table after milestone documentation.
+   * Scoped to req.session.userId — never deletes another user's row.
+   * Returns 404 (the dev-suite default) when the id doesn't exist or doesn't
+   * belong to the caller.
+   */
+  router.delete("/classification-samples/:id", async (req, res, next) => {
+    try {
+      const id = Number.parseInt(req.params.id ?? "", 10);
+      if (!Number.isFinite(id)) return notFound(res);
+      const userId = req.session.userId!;
+      const removed = await deleteClassificationSample(id, userId);
+      if (!removed) return notFound(res);
+      res.json({ deleted: true, id });
     } catch (e) {
       next(e);
     }

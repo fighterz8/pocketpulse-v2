@@ -238,6 +238,84 @@ describe.skipIf(!runRouteIntegrationTests)("Dev Test Suite routes (/api/dev/*)",
     expect(submit.body.error).toMatch(/Unknown transactionId/);
   });
 
+  // ── DELETE /classification-samples/:id ──────────────────────────────────
+
+  it("deletes an in-progress sample owned by the caller", async () => {
+    const app = testApp();
+    const { agent, csrf, userId } = await registerUser(app, { isDev: true });
+    await seedTransactions(agent, csrf, userId, 20);
+    const create = await agent
+      .post("/api/dev/classification-samples")
+      .set("X-CSRF-Token", csrf)
+      .send({ sampleSize: 15 });
+    expect(create.status).toBe(201);
+    const sampleId = create.body.sampleId as number;
+
+    const del = await agent
+      .delete(`/api/dev/classification-samples/${sampleId}`)
+      .set("X-CSRF-Token", csrf);
+    expect(del.status).toBe(200);
+    expect(del.body).toMatchObject({ deleted: true, id: sampleId });
+
+    // Subsequent GET returns 404 (the dev-suite-default opaque not-found).
+    const after = await agent.get(`/api/dev/classification-samples/${sampleId}`);
+    expect(after.status).toBe(404);
+  });
+
+  it("deletes a completed sample owned by the caller", async () => {
+    const app = testApp();
+    const { agent, csrf, userId } = await registerUser(app, { isDev: true });
+    await seedTransactions(agent, csrf, userId, 20);
+    const create = await agent
+      .post("/api/dev/classification-samples")
+      .set("X-CSRF-Token", csrf)
+      .send({ sampleSize: 15 });
+    const sampleId = create.body.sampleId as number;
+    const txns = create.body.transactions as Array<{ id: number }>;
+    const allConfirmed = txns.map((t) => ({ transactionId: t.id, verdict: "confirmed" }));
+    const submit = await agent
+      .patch(`/api/dev/classification-samples/${sampleId}`)
+      .set("X-CSRF-Token", csrf)
+      .send({ verdicts: allConfirmed });
+    expect(submit.status).toBe(200);
+
+    const del = await agent
+      .delete(`/api/dev/classification-samples/${sampleId}`)
+      .set("X-CSRF-Token", csrf);
+    expect(del.status).toBe(200);
+    expect(del.body.deleted).toBe(true);
+  });
+
+  it("returns 404 when deleting a sample owned by another user", async () => {
+    const app = testApp();
+    const owner = await registerUser(app, { isDev: true });
+    const intruder = await registerUser(app, { isDev: true });
+    await seedTransactions(owner.agent, owner.csrf, owner.userId, 20);
+    const create = await owner.agent
+      .post("/api/dev/classification-samples")
+      .set("X-CSRF-Token", owner.csrf)
+      .send({ sampleSize: 15 });
+    const sampleId = create.body.sampleId as number;
+
+    const del = await intruder.agent
+      .delete(`/api/dev/classification-samples/${sampleId}`)
+      .set("X-CSRF-Token", intruder.csrf);
+    expect(del.status).toBe(404);
+
+    // Owner can still see their sample.
+    const stillThere = await owner.agent.get(`/api/dev/classification-samples/${sampleId}`);
+    expect(stillThere.status).toBe(200);
+  });
+
+  it("returns 404 when DELETE id does not exist", async () => {
+    const app = testApp();
+    const { agent, csrf } = await registerUser(app, { isDev: true });
+    const del = await agent
+      .delete("/api/dev/classification-samples/9999999")
+      .set("X-CSRF-Token", csrf);
+    expect(del.status).toBe(404);
+  });
+
   // ── Team summary ────────────────────────────────────────────────────────
 
   it("team-summary returns 400 with a helpful error when DEV_TEAM_USER_IDS is unset", async () => {

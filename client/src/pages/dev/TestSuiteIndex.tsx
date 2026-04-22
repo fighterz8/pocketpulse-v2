@@ -39,6 +39,8 @@ export function TestSuiteIndex() {
   const [samples, setSamples] = useState<SampleListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<number | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -60,6 +62,27 @@ export function TestSuiteIndex() {
     })();
     return () => { cancelled = true; };
   }, []);
+
+  async function handleDelete(s: SampleListItem) {
+    const label = s.completedAt ? "completed" : "in-progress";
+    const confirmed = window.confirm(
+      `Delete this ${label} classification sample (started ${fmtDate(s.createdAt)})? This cannot be undone.`,
+    );
+    if (!confirmed) return;
+    setDeletingId(s.id);
+    setDeleteError(null);
+    try {
+      const res = await apiFetch(`/api/dev/classification-samples/${s.id}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) throw new Error(`Delete failed (${res.status})`);
+      setSamples((prev) => prev.filter((x) => x.id !== s.id));
+    } catch (e) {
+      setDeleteError(e instanceof Error ? e.message : "Unknown error");
+    } finally {
+      setDeletingId(null);
+    }
+  }
 
   return (
     <div className="acc-page" data-testid="page-test-suite-index">
@@ -120,6 +143,11 @@ export function TestSuiteIndex() {
 
       <div className="acc-merchants glass-card">
         <h2 className="acc-merchants-title">Past classification samples</h2>
+        {deleteError && (
+          <div className="acc-error" role="alert" data-testid="text-delete-error">
+            {deleteError}
+          </div>
+        )}
         {error ? (
           <div className="acc-error" role="alert" data-testid="text-samples-error">{error}</div>
         ) : loading ? (
@@ -158,6 +186,16 @@ export function TestSuiteIndex() {
                       >
                         Open
                       </Link>
+                      {" · "}
+                      <button
+                        type="button"
+                        className="acc-link-button"
+                        onClick={() => void handleDelete(s)}
+                        disabled={deletingId === s.id}
+                        data-testid={`button-delete-sample-${s.id}`}
+                      >
+                        {deletingId === s.id ? "Deleting…" : "Delete"}
+                      </button>
                     </td>
                   </tr>
                 ))}
