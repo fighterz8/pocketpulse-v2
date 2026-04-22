@@ -566,7 +566,14 @@ export function createDevTestSuiteRouter(): Router {
       let explicitUploadId: number | null = null;
       if (req.body?.uploadId != null) {
         const raw = req.body.uploadId;
-        const parsed = typeof raw === "number" ? raw : Number.parseInt(String(raw), 10);
+        // Strict: numbers must be positive integers; strings must match
+        // /^\d+$/ exactly so we reject partial parses like "12abc" → 12.
+        let parsed: number = NaN;
+        if (typeof raw === "number" && Number.isInteger(raw)) {
+          parsed = raw;
+        } else if (typeof raw === "string" && /^\d+$/.test(raw)) {
+          parsed = Number.parseInt(raw, 10);
+        }
         if (!Number.isInteger(parsed) || parsed <= 0) {
           res.status(400).json({ error: "uploadId must be a positive integer." });
           return;
