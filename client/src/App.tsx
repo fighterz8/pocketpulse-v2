@@ -17,17 +17,9 @@ import { createQueryClient } from "./lib/queryClient";
 import { cn } from "./lib/utils";
 import { DEV_MODE_ENABLED } from "@shared/devConfig";
 
-function AppAuthenticated({ onInactivityLogout }: { onInactivityLogout: () => void }) {
+function AppAuthenticated() {
   const { logout, user } = useAuth();
   const canAccessAccuracy = DEV_MODE_ENABLED && user?.isDev === true;
-
-  useInactivityLogout({
-    enabled: true,
-    onTimeout: () => {
-      onInactivityLogout();
-      void logout.mutateAsync();
-    },
-  });
 
   return (
     <AppLayout
@@ -62,9 +54,20 @@ function AppGate() {
   const auth = useAuth();
   const [inactivityLogout, setInactivityLogout] = useState(false);
 
+  // Clear the inactivity flag once the user re-authenticates.
   useEffect(() => {
     if (auth.isAuthenticated) setInactivityLogout(false);
   }, [auth.isAuthenticated]);
+
+  // Run the 30-minute inactivity timer for all authenticated paths
+  // (AppAuthenticated and AccountSetup). Disabled when not authenticated.
+  useInactivityLogout({
+    enabled: auth.isAuthenticated,
+    onTimeout: () => {
+      setInactivityLogout(true);
+      void auth.logout.mutateAsync();
+    },
+  });
 
   if (auth.isLoading) {
     return (
@@ -124,7 +127,7 @@ function AppGate() {
     return <AccountSetup />;
   }
 
-  return <AppAuthenticated onInactivityLogout={() => setInactivityLogout(true)} />;
+  return <AppAuthenticated />;
 }
 
 function ThemeInit() {
