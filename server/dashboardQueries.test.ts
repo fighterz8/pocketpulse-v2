@@ -96,3 +96,87 @@ describe("month-mode periodDays arithmetic (explicit range)", () => {
     expect(allTimeDays).toBeGreaterThan(singleMonth);
   });
 });
+
+// ─── Recurring KPI aggregate filter policy ────────────────────────────────────
+// These tests verify the exact predicate used by the SQL CASE WHEN expressions
+// in buildDashboardSummary.  The policy: recurrenceType is the ONLY gate —
+// recurrenceSource must NOT affect whether a transaction is counted in the KPI.
+// Any row with recurrenceType='recurring' must be included regardless of source.
+
+type TxnRow = {
+  transactionClass: string;
+  recurrenceType: string;
+  recurrenceSource: string;
+  amount: number;
+};
+
+function kpiRecurringIncome(rows: TxnRow[]): number {
+  return rows.reduce(
+    (sum, r) =>
+      r.transactionClass === "income" && r.recurrenceType === "recurring"
+        ? sum + Math.abs(r.amount)
+        : sum,
+    0,
+  );
+}
+
+function kpiRecurringExpenses(rows: TxnRow[]): number {
+  return rows.reduce(
+    (sum, r) =>
+      r.transactionClass === "expense" && r.recurrenceType === "recurring"
+        ? sum + Math.abs(r.amount)
+        : sum,
+    0,
+  );
+}
+
+describe("recurring KPI aggregate — recurrenceSource must not gate results", () => {
+  const sources = ["none", "hint", "detected", "manual"] as const;
+
+  it("counts income rows with recurrenceType='recurring' for every recurrenceSource", () => {
+    for (const src of sources) {
+      const rows: TxnRow[] = [
+        { transactionClass: "income", recurrenceType: "recurring", recurrenceSource: src, amount: 100 },
+      ];
+      expect(kpiRecurringIncome(rows)).toBe(100);
+    }
+  });
+
+  it("counts expense rows with recurrenceType='recurring' for every recurrenceSource", () => {
+    for (const src of sources) {
+      const rows: TxnRow[] = [
+        { transactionClass: "expense", recurrenceType: "recurring", recurrenceSource: src, amount: -50 },
+      ];
+      expect(kpiRecurringExpenses(rows)).toBe(50);
+    }
+  });
+
+  it("excludes rows where recurrenceType is not 'recurring'", () => {
+    const rows: TxnRow[] = [
+      { transactionClass: "income",  recurrenceType: "one-time",  recurrenceSource: "detected", amount: 200 },
+      { transactionClass: "expense", recurrenceType: "one-time",  recurrenceSource: "detected", amount: 75 },
+      { transactionClass: "income",  recurrenceType: "unknown",   recurrenceSource: "hint",     amount: 30 },
+    ];
+    expect(kpiRecurringIncome(rows)).toBe(0);
+    expect(kpiRecurringExpenses(rows)).toBe(0);
+  });
+
+  it("mixed batch: manually-set and propagated rows are counted alongside detected rows", () => {
+    const rows: TxnRow[] = [
+      { transactionClass: "income",  recurrenceType: "recurring", recurrenceSource: "detected", amount: 1000 },
+      { transactionClass: "income",  recurrenceType: "recurring", recurrenceSource: "manual",   amount:  500 },
+      { transactionClass: "income",  recurrenceType: "recurring", recurrenceSource: "none",     amount:  250 },
+      { transactionClass: "income",  recurrenceType: "one-time",  recurrenceSource: "detected", amount: 9999 },
+    ];
+    expect(kpiRecurringIncome(rows)).toBe(1750);
+  });
+
+  it("expense KPI does not bleed income rows and vice versa", () => {
+    const rows: TxnRow[] = [
+      { transactionClass: "income",  recurrenceType: "recurring", recurrenceSource: "manual", amount:  600 },
+      { transactionClass: "expense", recurrenceType: "recurring", recurrenceSource: "manual", amount: -200 },
+    ];
+    expect(kpiRecurringIncome(rows)).toBe(600);
+    expect(kpiRecurringExpenses(rows)).toBe(200);
+  });
+});

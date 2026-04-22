@@ -773,7 +773,13 @@ export async function updateTransaction(
   if (fields.flowType !== undefined) setValues.flowType = fields.flowType;
   if (fields.category !== undefined) setValues.category = fields.category;
   if (fields.transactionClass !== undefined) setValues.transactionClass = fields.transactionClass;
-  if (fields.recurrenceType !== undefined) setValues.recurrenceType = fields.recurrenceType;
+  if (fields.recurrenceType !== undefined) {
+    setValues.recurrenceType = fields.recurrenceType;
+    // Record that a human explicitly set this value so the KPI aggregates
+    // and any future provenance queries can distinguish manual overrides
+    // from system-detected or keyword-hinted classifications.
+    setValues.recurrenceSource = "manual";
+  }
   if (fields.excludedFromAnalysis !== undefined) {
     setValues.excludedFromAnalysis = fields.excludedFromAnalysis;
     setValues.excludedAt = fields.excludedFromAnalysis ? new Date() : null;
@@ -835,7 +841,13 @@ export async function propagateUserCorrection(
   const setValues: Record<string, unknown> = { labelSource: "propagated" };
   if (category !== undefined) setValues.category = category;
   if (transactionClass !== undefined) setValues.transactionClass = transactionClass;
-  if (recurrenceType !== undefined) setValues.recurrenceType = recurrenceType;
+  if (recurrenceType !== undefined) {
+    setValues.recurrenceType = recurrenceType;
+    // Mirror updateTransaction: propagated rows get recurrenceSource='manual'
+    // so their provenance is clear and KPI aggregates treat them identically
+    // to directly-edited rows.
+    setValues.recurrenceSource = "manual";
+  }
 
   // --- Fuzzy path: JS-side normalization via recurrenceKey() ---
   // Fetch all non-corrected, non-source transactions for the user and filter
