@@ -4,7 +4,7 @@ import { DEV_MODE_ENABLED } from "@shared/devConfig";
 import { cn } from "../../lib/utils";
 import { useAuth } from "../../hooks/use-auth";
 import { useTheme } from "../../hooks/use-theme";
-import { AiEnhancementBadge } from "./AiEnhancementBadge";
+import { BrandPulse } from "./BrandPulse";
 
 /* ── Nav item definitions with unique icons ───────────────────────────────── */
 
@@ -63,33 +63,6 @@ const NAV_ITEMS = [
   { href: "/transactions", label: "Ledger",        Icon: IconLedger    },
   { href: "/upload",      label: "Upload",        Icon: IconUpload    },
 ] as const;
-
-/* ── Pulse logo SVG (unique gradient IDs per instance) ────────────────────── */
-
-function PulseLogo({ gradId }: { gradId: string }) {
-  return (
-    <svg
-      className="app-sidebar-brand-pulse"
-      viewBox="0 0 32 14"
-      fill="none"
-      aria-hidden="true"
-    >
-      <defs>
-        <linearGradient id={gradId} x1="0" y1="0" x2="32" y2="0" gradientUnits="userSpaceOnUse">
-          <stop offset="0%" stopColor="#0ea5e9" />
-          <stop offset="100%" stopColor="#2563eb" />
-        </linearGradient>
-      </defs>
-      <polyline
-        points="0,7 6,7 9,1 12,13 15,7 32,7"
-        stroke={`url(#${gradId})`}
-        strokeWidth="1.8"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
 
 /* ── AppLayout ────────────────────────────────────────────────────────────── */
 
@@ -219,9 +192,7 @@ export function AppLayout({
         </button>
 
         <div className="mobile-header-brand">
-          <PulseLogo gradId="pulseGradMobile" />
-          <span className="app-nav-brand">PocketPulse</span>
-          <AiEnhancementBadge compact />
+          <BrandPulse gradId="pulseGradMobile" compact />
         </div>
 
         <button
@@ -246,12 +217,8 @@ export function AppLayout({
       {/* Sidebar */}
       <aside className={cn("app-sidebar", mobileOpen && "app-sidebar--open")}>
         <div className="app-sidebar-brand">
-          <PulseLogo gradId="pulseGradSidebar" />
-          <p className="app-nav-brand">PocketPulse</p>
+          <BrandPulse gradId="pulseGradSidebar" />
         </div>
-
-        <AiEnhancementBadge />
-
 
         <nav className="app-nav" aria-label="Main navigation">
           <ul className="app-nav-list">
