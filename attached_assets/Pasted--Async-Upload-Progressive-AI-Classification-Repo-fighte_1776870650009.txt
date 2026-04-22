@@ -1,0 +1,307 @@
+# Async Upload + Progressive AI Classification
+
+**Repo:** `fighterz8/pocketpulse-v1`
+**Supersedes:** the 2-minute timeout fix (that was a stopgap — this is the real fix)
+**Purpose:** Decouple AI classification from the upload request. Target: user sees "upload complete" in 15-20 seconds regardless of file size; AI finishes asynchronously in the background with a visible progress indicator.
+
+---
+
+## 1. Current state and problem
+
+The `/api/upload` handler parses CSVs, runs the full classification pipeline, and persists everything inside a single HTTP request. AI classification is the slow part — large CSVs with many novel merchants need 10-20 sequential AI batch calls at ~3 seconds each, which blows past the current 6-second Promise.race timeout. The previous patch raised that to 120_000ms, which makes AI actually land on rows but makes the upload UI block for over a minute on big files.
+
+The correct architecture is to make AI classification async: the upload completes fast with rule/cache labels, and AI runs in the background, progressively updating rows as results come in.
+
+---
+
+## 2. Target user experience
+
+1. User drops 1 to N CSV files into the uploader (batch upload UI already exists).
+2. Upload progress indicator: per-file parse/insert progress (fast — under ~15 seconds total for the slowest file even at 1500 rows).
+3. Upload completes. Success toast: "3 files imported, 4,213 transactions added. AI is enhancing 892 transactions in the background."
+4. User navigates to Ledger or stays on Upload page. A small pulse badge appears in the top bar: a stylized PocketPulse pulse icon + "Enhancing 892 transactions... (42%)".
+5. As AI batches complete, rows in the Ledger visibly update their category labels (the user can watch new categorizations appear if they stay on the page). Badge percentage climbs.
+6. When AI completes, badge disappears. Subtle toast: "AI enhancement complete."
+
+Maximum acceptable synchronous upload latency: **30 seconds (hard ceiling), 15-20 seconds target**.
+
+---
+
+## 3. Architecture
+
+### 3.1 Schema additions
+
+Extend `uploads` table to track async AI state per upload:
+
+```ts
+// shared/schema.ts — add to the uploads table
+export const uploads = pgTable("uploads", {
+  // ... existing columns ...
+  
+  // AI classification progress tracking.
+  aiStatus: text("ai_status").notNull().default("none"),
+    // "none" | "pending" | "processing" | "complete" | "failed"
+  aiRowsPending: integer("ai_rows_pending").notNull().default(0),
+  aiRowsDone: integer("ai_rows_done").notNull().default(0),
+  aiStartedAt: timestamp("ai_started_at", { mode: "date", withTimezone: true }),
+  aiCompletedAt: timestamp("ai_completed_at", { mode: "date", withTimezone: true }),
+  aiError: text("ai_error"),
+});
+```
+
+Migration: `drizzle/migrations/0008_upload_ai_status.sql`. Must backfill `aiStatus = 'complete'` for all existing uploads (their AI work is already done or irrelevant).
+
+**Note:** the existing `status` column stays as-is for file parse/insert status. The new `aiStatus` column is its own lifecycle. Keeping them separate means the upload row naturally progresses: `status: "complete", aiStatus: "processing"` is a valid state.
+
+### 3.2 Split the pipeline
+
+`classifyPipeline.ts` gets a new option and a new return field.
+
+New option:
+
+```ts
+export type PipelineOptions = {
+  // ... existing ...
+  
+  /**
+   * When true, the pipeline runs rules + user-rule + cache + global-seed
+   * ONLY. AI is skipped even for rows that would otherwise qualify.
+   * Rows that WOULD have gone to AI are returned with aiAssisted=true,
+   * needsAi=true, and labelSource="rule" (or whatever the rule pass set).
+   * Callers use this for fast synchronous passes, then kick off the async
+   * AI pass separately.
+   * Default: false.
+   */
+  skipAi?: boolean;
+};
+```
+
+The return type gets `needsAi` surfaced (currently internal only) so the caller knows which rows are still pending AI.
+
+```ts
+export type PipelineOutput = {
+  // ... existing ...
+  needsAi: boolean;  // true if this row qualifies for async AI enhancement
+};
+```
+
+When `skipAi: true`, the pipeline returns immediately after Phase 1.8 (global seed lookup), never building AI candidates, never calling `aiClassifyBatch`, never writing to the cache from AI results.
+
+### 3.3 Upload handler refactor
+
+In `server/routes.ts`, `/api/upload`:
+
+**Phase 1 (synchronous, inside the request):**
+
+For each file:
+1. Parse CSV
+2. Call `classifyPipeline(..., { skipAi: true, ... })`
+3. Insert all transactions with whatever labels rules/cache/seed produced
+4. Count how many rows have `needsAi: true`
+5. If any, update the upload row: `aiStatus: "pending", aiRowsPending: <count>, aiRowsDone: 0`
+6. If zero needs-AI rows, skip to `aiStatus: "complete"` immediately
+7. Update upload `status: "complete"`
+
+**Phase 2 (kicked off after response is sent):**
+
+After all files are processed and the response is sent:
+
+```ts
+// After res.status(201).json({ results });
+// Kick off async AI classification. Do NOT await.
+for (const result of results) {
+  if (result.uploadId && result.status === "complete") {
+    runAsyncAiClassification(userId, result.uploadId).catch((err) => {
+      console.error(`[upload] async AI failed for upload ${result.uploadId}:`, err);
+    });
+  }
+}
+```
+
+`runAsyncAiClassification` lives in a new file: `server/asyncClassifier.ts`. See 3.4.
+
+### 3.4 The async worker
+
+`server/asyncClassifier.ts` exports:
+
+```ts
+export async function runAsyncAiClassification(
+  userId: number,
+  uploadId: number,
+): Promise<void>;
+```
+
+Behavior:
+1. Load all transactions for this upload where `aiAssisted = true AND label_source != 'ai'` (the needs-AI pool).
+2. Update upload: `aiStatus: "processing", aiStartedAt: now`.
+3. Process in chunks of 25 (match existing `aiClassifyBatch` CHUNK_SIZE).
+4. For each chunk:
+   - Call `aiClassifyBatch` with 600_000ms timeout (generous — we're not user-blocking).
+   - For returned results, update transaction rows individually with the AI classification (category, class, recurrence, labelSource, confidence, reason).
+   - Write successful results back to `merchant_classifications` cache (existing behavior).
+   - Increment `aiRowsDone` on the upload row after each chunk completes.
+5. On all chunks complete: set `aiStatus: "complete", aiCompletedAt: now`.
+6. On fatal error (API key missing, repeated failures): set `aiStatus: "failed", aiError: <message>`.
+
+**Concurrency**: when a user uploads 3 files simultaneously, 3 async workers run in parallel — that's fine; each operates on a different `uploadId`. No mutex needed. When the SAME user uploads another batch while a previous batch is still AI-processing, both run concurrently — the per-user cache writes might race, but `onConflictDoUpdate` handles that; last write wins on equal-priority sources. Acceptable.
+
+**Process lifecycle caveat**: in a single-instance Node server, if the process restarts mid-classification, the `aiStatus: "processing"` row becomes orphaned. Add a startup sweep in `server/startup.ts`:
+
+```ts
+// On boot, reset any orphaned processing uploads to "pending" so they can
+// resume. This handles server restarts mid-classification.
+export async function resumeOrphanedClassifications(): Promise<void> {
+  // Find uploads where aiStatus = "processing" and aiStartedAt > 1 hour ago
+  // (older than 1 hour means we gave up) — set to "failed".
+  // Uploads where aiStatus = "processing" and aiStartedAt < 1 hour — reset
+  // to "pending" and kick off a worker for each.
+}
+```
+
+### 3.5 Status polling endpoint
+
+New: `GET /api/uploads/:id/status`
+
+Returns:
+```ts
+{
+  uploadId: number;
+  status: "pending" | "processing" | "complete" | "failed";
+  aiStatus: "none" | "pending" | "processing" | "complete" | "failed";
+  aiRowsPending: number;
+  aiRowsDone: number;
+  aiProgress: number;  // 0.0 - 1.0 (aiRowsDone / aiRowsPending, 1.0 if pending=0)
+  aiStartedAt: string | null;
+  aiCompletedAt: string | null;
+  aiError: string | null;
+}
+```
+
+Also: `GET /api/uploads/ai-status` returns the aggregate for all the user's recent active uploads:
+
+```ts
+{
+  anyActive: boolean;
+  activeCount: number;
+  totalPending: number;
+  totalDone: number;
+  overallProgress: number;  // 0.0 - 1.0
+  uploads: Array<{ uploadId, filename, aiStatus, aiRowsDone, aiRowsPending }>;
+}
+```
+
+Used by the top-bar pulse badge. When `anyActive: false`, the badge hides.
+
+### 3.6 Frontend: the pulse badge
+
+New component: `client/src/components/AiEnhancementBadge.tsx`.
+
+Lives in the top bar (or wherever the header sits — use the existing layout). Polls `GET /api/uploads/ai-status` every 3 seconds while active; stops polling when `anyActive: false`.
+
+Visual:
+- Small circular pulse animation (concentric expanding circles in PocketPulse brand blue — this is the branded "pulse" visual Nick mentioned)
+- Text: "Enhancing {totalPending - totalDone} transactions... ({overallProgress}%)"
+- On hover: expanded tooltip listing each active upload
+- On completion: brief 2-second "AI enhancement complete" toast, then badge fades out
+
+Keep it SMALL. This is a status indicator, not a dashboard. The animation should be subtle — attention without annoyance.
+
+Use `@tanstack/react-query`'s `refetchInterval` (3 seconds when active, disabled when not). Don't roll your own polling.
+
+### 3.7 Frontend: progressive Ledger updates
+
+This is the subtle-but-important UX piece. When the user opens the Ledger while AI is still working, the rows should visibly update as they get classified.
+
+Simplest path: the existing Ledger query refreshes every 5 seconds while any AI enhancement is active. Check the `useQuery` for transactions in the Ledger, add `refetchInterval: (query) => hasActiveAiEnhancement ? 5000 : false`.
+
+The `hasActiveAiEnhancement` flag comes from the same `/api/uploads/ai-status` endpoint. Share a hook: `useAiEnhancementStatus()` returns `{ anyActive, overallProgress }`. Both the badge and the Ledger subscribe.
+
+Rows that change their category mid-view will simply re-render with the new category. No special animation, no fancy transition — React's normal render flow handles it. If the visual pop feels abrupt in practice, you can add a 500ms color-fade transition in CSS on the category pill.
+
+---
+
+## 4. Implementation order and PR breakdown
+
+Split into 3 PRs so each can be reviewed and merged independently. Each PR should leave the app in a working state.
+
+### PR 1 — Schema + split pipeline (foundation)
+
+- Migration 0008 adds the new `aiStatus` / `aiRows*` columns with default backfill
+- `classifyPipeline.ts` gets the `skipAi` option
+- `classifyPipeline.ts` `PipelineOutput` gets `needsAi` surfaced
+- `reclassify.ts` continues to work unchanged (does NOT use `skipAi`)
+- No behavior change to the upload path yet — that comes in PR 2
+
+This PR is pure plumbing. All tests should pass. Upload behavior is identical to before.
+
+### PR 2 — Async upload + worker
+
+- New file: `server/asyncClassifier.ts` with `runAsyncAiClassification`
+- `/api/upload` handler: use `skipAi: true`, kick off async worker after response
+- New `GET /api/uploads/:id/status` and `GET /api/uploads/ai-status` endpoints
+- Startup sweep for orphaned classifications in `server/startup.ts`
+- Integration test: upload a CSV, assert response returns in under 5 seconds, assert `aiStatus` transitions pending → processing → complete over time
+- REMOVE the 120_000ms timeout from `routes.ts` upload handler — no longer needed
+
+### PR 3 — Frontend badge and progressive rendering
+
+- `AiEnhancementBadge.tsx` component
+- `useAiEnhancementStatus.ts` hook
+- Wire Ledger refetch interval to the status hook
+- CSS for the pulse animation (keep it in the component file or a colocated module, don't bloat `index.css`)
+
+---
+
+## 5. Acceptance criteria
+
+- A 1,500-row CSV upload returns HTTP 201 in under 20 seconds (measure on dev environment with a realistic CSV).
+- Immediately after upload, the user sees all transactions in the Ledger with at least rule/cache labels.
+- The pulse badge appears in the top bar showing remaining AI work. Polling happens every 3 seconds.
+- Rows in the Ledger update their category labels progressively as AI chunks complete (verified by watching the page while upload processes).
+- Badge disappears when AI work finishes for all active uploads.
+- If `OPENAI_API_KEY` is missing, the upload still succeeds, rows land with rule/cache labels, AI status flips to `"failed"` with a clear error message, badge briefly shows the error and then hides.
+- Server restart mid-AI-processing does not leave orphaned uploads — the startup sweep correctly resumes or marks failed.
+- No AI-related code path exists in the synchronous upload handler after PR 2.
+- Zero existing tests fail without modification except those explicitly about the old synchronous timeout.
+
+---
+
+## 6. Risk
+
+**Overall: ~30%.** This is the biggest refactor in the app since the pipeline extraction. Three specific risks:
+
+- **Race conditions between concurrent async workers writing to `merchant_classifications` cache.** Covered by `onConflictDoUpdate` with the `setWhere source <> 'manual'` rule already in place. Low real risk.
+- **Orphaned uploads on server restart.** Handled by the startup sweep. Medium risk if the sweep has bugs — write one unit test specifically for the sweep logic.
+- **Tests that assume upload is synchronous with full AI.** Review and update each one. Some tests will legitimately need to wait for async completion; write a helper `waitForAiComplete(uploadId)` that polls the status endpoint.
+
+---
+
+## 7. Rollback plan per PR
+
+- **PR 1**: revert the commit; the migration is additive (new columns default to safe values), no DB rollback required.
+- **PR 2**: revert the commit. `skipAi` falls back to `false`, upload handler runs synchronously as before. Accept the user-facing slowdown while investigating. The `aiStatus` columns remain in the DB but are unused — no cleanup required.
+- **PR 3**: revert the frontend commit. The backend keeps working; users just don't see the badge.
+
+Each rollback is a single-commit revert.
+
+---
+
+## 8. Out of scope
+
+- Websockets or server-sent events for real-time push. Polling every 3 seconds is fine for this scale and far simpler.
+- Queue systems (BullMQ, Redis workers). In-process promises are enough until the app runs across multiple server instances. Revisit when multi-instance deployment becomes a real thing.
+- Retry policy for failed AI batches. For now: one attempt per chunk, fail the whole upload's AI status on fatal error. Add retries later if needed.
+- Partial AI results (e.g. "chunk 5 of 10 succeeded, 6 failed"). Either the chunk lands fully or not at all. Fine for this scale.
+- Rate limiting the status polling endpoint. A dev-tier hobby app does not need it; add if load becomes real.
+- Email/push notifications when AI finishes. The badge is enough.
+
+---
+
+## 9. Notes for the build agent
+
+- Do NOT use `setImmediate` or `setTimeout` to fire-and-forget. Use a proper async function that is called without `await` but with a `.catch` to log failures.
+- Do NOT block the upload response on any AI work. The response must return before the async worker starts meaningful work.
+- Do NOT change the existing `/api/transactions/reclassify` endpoint. It stays synchronous for now. It's admin/dev-facing and its existing 600-second timeout is fine for its use case.
+- The pulse animation should be CSS-only. No animation libraries. No `framer-motion` for this one element; the existing `framer-motion` dependency is used sparingly and keeping the badge lightweight matters.
+- Commit hygiene: squashed commits, one per PR. No 30-commit iteration histories.
+- If any PR's acceptance criteria cannot be met, stop and report rather than pushing through. Especially the "upload returns in under 20 seconds" criterion — if you find a hidden blocker there, surface it before merging.
