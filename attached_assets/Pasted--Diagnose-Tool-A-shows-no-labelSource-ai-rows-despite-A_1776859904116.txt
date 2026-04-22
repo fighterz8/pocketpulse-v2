@@ -1,0 +1,114 @@
+# Diagnose: Tool A shows no `labelSource: "ai"` rows despite AI firing
+
+## CRITICAL: One check per session. Do not run ahead.
+
+This task is structured as a numbered sequence of checks. **Perform ONLY Check 1 in this session. Report the result. Stop. End the task.** Do not proceed to Check 2, 3, or 4 in the same session even if Check 1 seems inconclusive. Each check is a separate task handoff.
+
+If Check 1 resolves the question fully, you are done and subsequent checks are unnecessary. If Check 1 is inconclusive, the user will explicitly invoke Check 2 in a new session.
+
+---
+
+## Context
+
+- AI classification IS firing. Confirmed via OpenAI dashboard: 159 API requests, 276K tokens used, real responses returning (example pipeline output included `labelSource: "ai"`, `category: "other"`, `labelConfidence: 0.4`).
+- Yet every run of the Dev Test Suite's Tool A (`/dev/test-suite/classification`) returns samples where every row's `labelSource` is `"rule"` or `"cache"`. Never `"ai"`.
+- Tool A samples from the `transactions` table via `POST /api/dev/classification-samples`.
+
+So AI runs at upload/reclassify time, but the AI-classified rows either (a) aren't persisted with `labelSource: "ai"`, (b) are overwritten before Tool A queries them, or (c) are filtered out by Tool A's sampling, or (d) are statistically underrepresented in a random sample.
+
+## Rules for this and every subsequent check
+
+- Investigate only. No code changes except temporary `console.log` for observation.
+- Do not modify the test suite implementation.
+- Do not implement fixes without explicit approval.
+- Report findings in the structured format at the end of this brief.
+- If you find the root cause and it is high confidence, describe the fix but do not implement.
+- **End the task after completing the one check assigned.**
+
+---
+
+## Check 1 — Direct DB query: is `labelSource = 'ai'` actually in the data?
+
+This is the fastest check and potentially the most decisive. Run it first because everything else depends on whether AI-labeled rows exist in the DB at all.
+
+### What to do
+
+Run these two SQL queries against the production database. Use the most recently active dev user's user ID — identify that user by selecting from `users` where `is_dev = true` ordered by most recent activity (or ask the user for their ID if ambiguous):
+
+```sql
+-- Query 1: labelSource distribution for this user's eligible transactions
+SELECT label_source, COUNT(*) 
+FROM transactions 
+WHERE user_id = <dev user id>
+  AND user_corrected = false 
+  AND excluded_from_analysis = false
+GROUP BY label_source
+ORDER BY COUNT(*) DESC;
+```
+
+```sql
+-- Query 2: the AI-labeled row pool as a percentage of the sampling pool
+-- (the sampling pool is what Tool A's random sampler draws from)
+SELECT 
+  COUNT(*) FILTER (WHERE label_source = 'ai') AS ai_count,
+  COUNT(*) FILTER (WHERE label_source IN ('rule', 'cache', 'ai', 'user-rule')) AS eligible_pool,
+  ROUND(
+    100.0 * COUNT(*) FILTER (WHERE label_source = 'ai') / 
+    NULLIF(COUNT(*) FILTER (WHERE label_source IN ('rule', 'cache', 'ai', 'user-rule')), 0),
+    2
+  ) AS ai_percent_of_pool
+FROM transactions 
+WHERE user_id = <dev user id>
+  AND user_corrected = false 
+  AND excluded_from_analysis = false;
+```
+
+### What to report
+
+Paste both query results verbatim, then interpret:
+
+- **If Query 1 shows zero rows with `label_source = 'ai'`**: the AI-firing seen in the OpenAI dashboard is not landing in the DB as `'ai'`. Something in the persistence path is overwriting `labelSource`. This is a persistence bug. Describe the likely cause in one paragraph (the prime suspect is the cache writeback block in `classifyPipeline.ts` — look at whether AI results get re-read from cache after being written, which would demote `'ai'` to `'cache'`). Do not fix. Stop.
+
+- **If Query 1 shows rows with `label_source = 'ai'` AND Query 2 shows `ai_percent_of_pool` is ≥ 5%**: AI rows exist and are a reasonable fraction of the pool. The problem is in Tool A's sampling query — it's filtering AI rows out. Proceed to Check 3 (in a new session).
+
+- **If Query 1 shows rows with `label_source = 'ai'` AND Query 2 shows `ai_percent_of_pool` is < 5%**: AI rows exist but are statistically rare in the pool. A 50-row random sample legitimately has a low probability of including any. This is not a bug; it is a sampling design issue. Recommend stratified sampling as the fix. Do not fix. Stop.
+
+### Output format for Check 1
+
+```
+## Check 1 Report
+
+Query 1 result (labelSource distribution):
+  rule:      N
+  cache:     N
+  ai:        N
+  user-rule: N
+  (other):   N
+  TOTAL:     N
+
+Query 2 result:
+  ai_count:           N
+  eligible_pool:      N
+  ai_percent_of_pool: N.NN%
+
+Interpretation: <which of the three bullets above applies>
+
+Next step: <"Check 3" | "persistence path bug, proposed fix below" | "stratified sampling recommended">
+
+Proposed fix (if applicable, describe only, do not implement):
+<one paragraph>
+```
+
+**End the task after producing this report. Do not proceed to Check 2, 3, or 4.**
+
+---
+
+## Future checks (reference only — do NOT execute in this session)
+
+For context, so you understand this brief's overall structure. These checks will be assigned in future sessions if Check 1 is inconclusive.
+
+- **Check 2**: Trace the persistence path in `classifyPipeline.ts`, `routes.ts` upload handler, and `reclassify.ts` to find where `labelSource: "ai"` might be getting overwritten.
+- **Check 3**: Inspect the SQL filter in the `POST /api/dev/classification-samples` handler to confirm it doesn't exclude `label_source = 'ai'`.
+- **Check 4**: Evaluate whether a random 50-row sample has meaningful probability of drawing AI rows given their share of the pool; propose stratified sampling if warranted.
+
+**Ignore these for now. Only Check 1.**
