@@ -36,6 +36,13 @@
       "when": 1777300000000,
       "tag": "0009_uploads_ai_status",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1777400000000,
+      "tag": "0010_allow_manual_recurrence_source",
+      "breakpoints": true
     }
   ]
 }
