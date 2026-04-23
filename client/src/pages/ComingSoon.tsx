@@ -31,37 +31,42 @@ export function ComingSoon({ onUnlock }: { onUnlock: () => void }) {
           <span className="auth-brand-dot" aria-hidden="true" />
         </div>
 
-        <div style={{ position: "relative", margin: "0 auto 1.75rem", width: "5.5rem", height: "5.5rem" }}>
-          <div aria-hidden="true" style={{
+        <div aria-hidden="true" style={{
+          position: "relative",
+          margin: "0 auto 1.75rem",
+          width: "9rem",
+          height: "4rem",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          animation: "cs-pulse 2.8s ease-in-out infinite",
+        }}>
+          <div style={{
             position: "absolute",
-            inset: 0,
+            inset: "-12px 0",
             borderRadius: "999px",
-            border: "2px solid rgb(14 165 233 / 0.25)",
-            animation: "cs-ring-spin 8s linear infinite",
+            background: "radial-gradient(ellipse at center, rgb(14 165 233 / 0.18), transparent 72%)",
+            filter: "blur(8px)",
           }} />
-          <div aria-hidden="true" style={{
-            position: "absolute",
-            inset: "6px",
-            borderRadius: "999px",
-            border: "1.5px dashed rgb(14 165 233 / 0.18)",
-            animation: "cs-ring-spin 14s linear infinite reverse",
-          }} />
-          <div aria-hidden="true" style={{
-            position: "absolute",
-            inset: "14px",
-            borderRadius: "999px",
-            background: "linear-gradient(135deg, #0ea5e9, #2563eb)",
-            boxShadow: "0 0 22px rgb(14 165 233 / 0.38)",
-            animation: "cs-pulse 2.8s ease-in-out infinite",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-          }}>
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z" fill="rgb(255 255 255 / 0.15)" />
-              <path d="M8 12h8M12 8l4 4-4 4" stroke="white" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-          </div>
+          <svg
+            viewBox="0 0 32 14"
+            fill="none"
+            style={{ width: "100%", height: "100%", position: "relative", filter: "drop-shadow(0 0 8px rgb(14 165 233 / 0.55))" }}
+          >
+            <defs>
+              <linearGradient id="cs-logo-grad" x1="0" y1="0" x2="32" y2="0" gradientUnits="userSpaceOnUse">
+                <stop offset="0%" stopColor="#0ea5e9" />
+                <stop offset="100%" stopColor="#2563eb" />
+              </linearGradient>
+            </defs>
+            <polyline
+              points="0,7 6,7 9,1 12,13 15,7 32,7"
+              stroke="url(#cs-logo-grad)"
+              strokeWidth="1.8"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
         </div>
 
         <h1 className="auth-title" style={{ textAlign: "center", marginBottom: "0.5rem" }} data-testid="cs-heading">
@@ -185,10 +190,6 @@ export function ComingSoon({ onUnlock }: { onUnlock: () => void }) {
       </div>
 
       <style>{`
-        @keyframes cs-ring-spin {
-          from { transform: rotate(0deg); }
-          to   { transform: rotate(360deg); }
-        }
         @keyframes cs-pulse {
           0%, 100% { transform: scale(1);    box-shadow: 0 0 22px rgb(14 165 233 / 0.38); }
           50%       { transform: scale(1.07); box-shadow: 0 0 32px rgb(14 165 233 / 0.55); }
