@@ -4030,10 +4030,36 @@ html.dark .ai-pulse-tooltip-progress { color: #94a3b8; }
   padding: clamp(1.5rem, 4vw, 3rem) 1.25rem;
   color-scheme: light;
   background:
-    radial-gradient(circle at 18% 12%, rgb(186 230 253 / 0.55), transparent 32%),
-    radial-gradient(circle at 88% 18%, rgb(191 219 254 / 0.5), transparent 30%),
-    radial-gradient(circle at 78% 88%, rgb(186 230 253 / 0.45), transparent 32%),
-    linear-gradient(180deg, #eff6ff 0%, #dbeafe 55%, #bfdbfe 100%);
+    radial-gradient(circle at 16% 18%, rgb(125 211 252 / 0.34), transparent 28%),
+    radial-gradient(circle at 84% 20%, rgb(96 165 250 / 0.3), transparent 26%),
+    radial-gradient(circle at 76% 78%, rgb(56 189 248 / 0.22), transparent 24%),
+    linear-gradient(145deg, #dbeafe 0%, #e0f2fe 26%, #cbd5e1 70%, #94a3b8 100%);
+}
+
+.coming-soon-main::before,
+.coming-soon-main::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.coming-soon-main::before {
+  background-image:
+    linear-gradient(rgb(15 23 42 / 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(15 23 42 / 0.05) 1px, transparent 1px);
+  background-size: 56px 56px;
+  mask-image: linear-gradient(180deg, rgb(0 0 0 / 0.9), rgb(0 0 0 / 0.2));
+}
+
+.coming-soon-main::after {
+  inset: auto -10% -16% auto;
+  width: 38rem;
+  height: 38rem;
+  border-radius: 999px;
+  background: radial-gradient(circle, rgb(255 255 255 / 0.34), transparent 68%);
+  filter: blur(20px);
 }
 
 .coming-soon-decor {
@@ -4054,7 +4080,7 @@ html.dark .ai-pulse-tooltip-progress { color: #94a3b8; }
   left: 4%;
   width: 7.5rem;
   height: 7.5rem;
-  opacity: 0.55;
+  opacity: 0.3;
 }
 
 .cs-decor--mini {
@@ -4067,7 +4093,7 @@ html.dark .ai-pulse-tooltip-progress { color: #94a3b8; }
   border: 1px solid rgb(15 23 42 / 0.05);
   box-shadow: 0 1.25rem 2.5rem -0.75rem rgb(15 23 42 / 0.18);
   text-align: left;
-  opacity: 1;
+  opacity: 0.3;
 }
 
 .cs-mini-label {
@@ -4105,7 +4131,7 @@ html.dark .ai-pulse-tooltip-progress { color: #94a3b8; }
   right: 4%;
   width: 14rem;
   height: 8rem;
-  opacity: 0.55;
+  opacity: 0.3;
 }
 
 .cs-decor--bars svg {
@@ -4127,7 +4153,7 @@ html.dark .ai-pulse-tooltip-progress { color: #94a3b8; }
   font-size: 0.72rem;
   font-weight: 600;
   color: #0f172a;
-  opacity: 1;
+  opacity: 0.3;
 }
 
 .cs-ontrack-dot {

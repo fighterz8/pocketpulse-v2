@@ -70,18 +70,9 @@ function CardDecorations() {
   return (
     <div className="coming-soon-decor" aria-hidden="true">
       <svg className="cs-decor cs-decor--donut" viewBox="0 0 200 200">
-        <circle cx="100" cy="100" r="72" fill="none" stroke="#cbd5e1" strokeWidth="22" />
-        <circle
-          cx="100"
-          cy="100"
-          r="72"
-          fill="none"
-          stroke="#0ea5e9"
-          strokeWidth="22"
-          strokeDasharray="220 452"
-          strokeLinecap="round"
-          transform="rotate(-90 100 100)"
-        />
+        <circle cx="100" cy="100" r="84" fill="#cbd5e1" />
+        <path d="M 100 100 L 100 16 A 84 84 0 0 1 181.07 121.65 Z" fill="#0ea5e9" />
+        <path d="M 100 100 L 181.07 121.65 A 84 84 0 0 1 132.61 174.46 Z" fill="#38bdf8" />
       </svg>
 
       <div className="cs-decor cs-decor--mini">
