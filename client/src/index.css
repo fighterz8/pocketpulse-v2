@@ -4228,6 +4228,21 @@ html.dark .ai-pulse-tooltip-progress { color: #94a3b8; }
   padding-top: clamp(1.25rem, 2.5vw, 1.5rem);
 }
 
+.coming-soon-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+
+.coming-soon-form--shake {
+  animation: cs-shake 0.45s ease;
+}
+
+.coming-soon-input--code {
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
 .coming-soon-link-button {
   background: none;
   border: none;

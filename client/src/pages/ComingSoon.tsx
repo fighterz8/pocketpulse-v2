@@ -125,7 +125,7 @@ export function ComingSoon({ onUnlock }: { onUnlock: () => void }) {
               You're on the list! We'll notify you at launch.
             </div>
           ) : (
-            <form onSubmit={handleWaitlistSubmit} data-testid="cs-waitlist-form" style={{ display: "flex", flexDirection: "column", gap: "0.55rem" }}>
+            <form onSubmit={handleWaitlistSubmit} data-testid="cs-waitlist-form" className="coming-soon-form">
               <label>
                 <span className="coming-soon-label">
                   Get notified at launch
@@ -172,19 +172,14 @@ export function ComingSoon({ onUnlock }: { onUnlock: () => void }) {
             <form
               onSubmit={handleSubmit}
               data-testid="cs-beta-form"
-              style={{
-                display: "flex",
-                flexDirection: "column",
-                gap: "0.6rem",
-                animation: shaking ? "cs-shake 0.45s ease" : undefined,
-              }}
+              className={shaking ? "coming-soon-form coming-soon-form--shake" : "coming-soon-form"}
             >
               <label>
                 <span className="coming-soon-label">
                   Beta Access Code
                 </span>
                 <input
-                  className="coming-soon-input"
+                  className="coming-soon-input coming-soon-input--code"
                   type="text"
                   autoFocus
                   autoComplete="off"
@@ -193,7 +188,6 @@ export function ComingSoon({ onUnlock }: { onUnlock: () => void }) {
                   data-testid="cs-code-input"
                   onChange={(e) => { setCode(e.target.value); setError(false); }}
                   placeholder="Enter code"
-                  style={{ letterSpacing: "0.06em", textTransform: "uppercase" }}
                 />
               </label>
               {error && (
