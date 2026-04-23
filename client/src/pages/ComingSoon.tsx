@@ -200,6 +200,7 @@ export function ComingSoon({ onUnlock }: { onUnlock: () => void }) {
     <main className="coming-soon-main">
       <div className="coming-soon-card">
         <CardDecorations />
+        <div className="coming-soon-content">
         <svg
           className="coming-soon-logo"
           aria-hidden="true"
@@ -377,6 +378,7 @@ export function ComingSoon({ onUnlock }: { onUnlock: () => void }) {
           )}
         </div>
 
+        </div>{/* coming-soon-content */}
       </div>
     </main>
   );

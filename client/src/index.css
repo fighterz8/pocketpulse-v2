@@ -4089,6 +4089,11 @@ html.dark .ai-pulse-tooltip-progress { color: #94a3b8; }
   border-radius: inherit;
 }
 
+.coming-soon-content {
+  position: relative;
+  z-index: 1;
+}
+
 .cs-decor {
   position: absolute;
 }
