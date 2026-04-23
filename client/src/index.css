@@ -4465,8 +4465,14 @@ html.dark .ai-pulse-tooltip-progress { color: #94a3b8; }
 .cs-link-plain { text-decoration: none; }
 
 @keyframes cs-logo-pulse {
-  0%, 100% { transform: scale(1); }
-  50%      { transform: scale(1.07); }
+  0%, 100% {
+    transform: scale(1);
+    filter: drop-shadow(0 0 0px rgb(14 165 233 / 0)) drop-shadow(0 0 0px rgb(37 99 235 / 0));
+  }
+  50% {
+    transform: scale(1.11);
+    filter: drop-shadow(0 0 10px rgb(14 165 233 / 0.85)) drop-shadow(0 0 22px rgb(37 99 235 / 0.45));
+  }
 }
 
 @keyframes cs-shake {
