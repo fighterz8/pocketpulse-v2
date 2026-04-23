@@ -163,6 +163,65 @@ describe("detectLeaks: inactive recurring merchants", () => {
   });
 });
 
+// ─── (e) isRecurring honours recurrenceType regardless of recurrenceSource ────
+
+describe("detectLeaks: isRecurring based on recurrenceType only", () => {
+  it("merchant with recurrenceSource='manual' and recurrenceType='recurring' is flagged isSubscriptionLike", () => {
+    // "PayBoost" in "dining" with fixed $15 amounts and recurrenceSource='manual'
+    // — not in any subscription-pattern list, not in SUBSCRIPTION_LIKE_CATEGORIES.
+    // Before fix: isRecurring=false → isSubscriptionLike=false.
+    // After fix:  isRecurring=true + zero variance → isSubscriptionLike=true.
+    const txns = [1, 2, 3, 4].map((i) => ({
+      transactionClass: "expense",
+      category: "dining",
+      merchant: "PayBoost",
+      amount: "-15.00",
+      date: `2026-0${i}-15`,
+      recurrenceType: "recurring" as const,
+      recurrenceSource: "manual",
+      excludedFromAnalysis: false,
+    }));
+    const leaks = detectLeaks(txns, { rangeDays: 120 });
+    const leak = leaks.find((l) => l.merchantKey === "payboost");
+    expect(leak).toBeDefined();
+    expect(leak!.isSubscriptionLike).toBe(true);
+  });
+
+  it("merchant with recurrenceSource='detected' and recurrenceType='recurring' still flagged isSubscriptionLike (no regression)", () => {
+    const txns = [1, 2, 3, 4].map((i) => ({
+      transactionClass: "expense",
+      category: "dining",
+      merchant: "PayBoost",
+      amount: "-15.00",
+      date: `2026-0${i}-15`,
+      recurrenceType: "recurring" as const,
+      recurrenceSource: "detected",
+      excludedFromAnalysis: false,
+    }));
+    const leaks = detectLeaks(txns, { rangeDays: 120 });
+    const leak = leaks.find((l) => l.merchantKey === "payboost");
+    expect(leak).toBeDefined();
+    expect(leak!.isSubscriptionLike).toBe(true);
+  });
+
+  it("merchant with recurrenceType='one-time' only is NOT flagged isSubscriptionLike (dining, no pattern match)", () => {
+    const txns = [1, 2, 3, 4].map((i) => ({
+      transactionClass: "expense",
+      category: "dining",
+      merchant: "PayBoost",
+      amount: "-15.00",
+      date: `2026-0${i}-15`,
+      recurrenceType: "one-time" as const,
+      recurrenceSource: "none",
+      excludedFromAnalysis: false,
+    }));
+    const leaks = detectLeaks(txns, { rangeDays: 120 });
+    const leak = leaks.find((l) => l.merchantKey === "payboost");
+    expect(leak).toBeDefined();
+    expect(leak!.isSubscriptionLike).toBe(false);
+  });
+});
+
 // ─── (d) rangeDays parameter governs monthlyAmount ───────────────────────────
 
 describe("detectLeaks: rangeDays parameter", () => {

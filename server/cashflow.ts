@@ -247,7 +247,7 @@ export function detectLeaks(
       amounts.length > 1 ? Math.max(...amounts) - Math.min(...amounts) : 0;
 
     const isRecurring = entries.some(
-      (e) => e.recurrenceSource === "detected" && e.recurrenceType === "recurring",
+      (e) => e.recurrenceType === "recurring",
     );
 
     // Build per-category breakdown (sorted by count desc, tiebreak by total desc)
