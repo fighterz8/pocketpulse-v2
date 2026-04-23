@@ -1,7 +1,7 @@
 import { FormEvent, useState } from "react";
 
 const BETA_CODE =
-  (import.meta.env.VITE_BETA_CODE as string | undefined)?.trim().toLowerCase() ??
+  (import.meta.env.VITE_BETA_CODE as string | undefined)?.trim().toLowerCase() ||
   "pennysavers2025";
 
 export function ComingSoon({ onUnlock }: { onUnlock: () => void }) {
