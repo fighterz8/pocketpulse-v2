@@ -4050,22 +4050,22 @@ html.dark .ai-pulse-tooltip-progress { color: #94a3b8; }
 }
 
 .cs-decor--donut {
-  top: 1.25rem;
-  right: 1.25rem;
-  width: 7rem;
-  height: 7rem;
-  opacity: 0.7;
+  top: 14%;
+  left: 4%;
+  width: 7.5rem;
+  height: 7.5rem;
+  opacity: 0.55;
 }
 
 .cs-decor--mini {
-  bottom: 1.25rem;
-  left: 1.25rem;
-  width: 12rem;
-  padding: 0.75rem 0.9rem 0.55rem;
-  border-radius: 0.85rem;
+  top: 32%;
+  left: 4%;
+  width: 13rem;
+  padding: 0.85rem 1rem 0.7rem;
+  border-radius: 0.9rem;
   background: #ffffff;
-  border: 1px solid rgb(15 23 42 / 0.06);
-  box-shadow: 0 1.25rem 2.5rem -1rem rgb(15 23 42 / 0.22);
+  border: 1px solid rgb(15 23 42 / 0.05);
+  box-shadow: 0 1.25rem 2.5rem -0.75rem rgb(15 23 42 / 0.18);
   text-align: left;
   opacity: 1;
 }
@@ -4101,11 +4101,11 @@ html.dark .ai-pulse-tooltip-progress { color: #94a3b8; }
 }
 
 .cs-decor--bars {
-  top: 1.5rem;
-  left: 1.25rem;
-  width: 9rem;
-  height: 5.5rem;
-  opacity: 0.7;
+  top: 30%;
+  right: 4%;
+  width: 14rem;
+  height: 8rem;
+  opacity: 0.55;
 }
 
 .cs-decor--bars svg {
@@ -4114,20 +4114,20 @@ html.dark .ai-pulse-tooltip-progress { color: #94a3b8; }
 }
 
 .cs-ontrack-pill {
-  position: absolute;
-  top: -0.4rem;
-  left: 0.5rem;
+  top: 22%;
+  right: 5%;
   display: inline-flex;
   align-items: center;
   gap: 0.4rem;
-  padding: 0.3rem 0.7rem;
+  padding: 0.35rem 0.8rem;
   border-radius: 999px;
-  background: #fff;
+  background: #ffffff;
   border: 1px solid rgb(15 23 42 / 0.06);
-  box-shadow: 0 0.5rem 1rem -0.5rem rgb(15 23 42 / 0.15);
-  font-size: 0.7rem;
+  box-shadow: 0 0.625rem 1.25rem -0.5rem rgb(15 23 42 / 0.2);
+  font-size: 0.72rem;
   font-weight: 600;
   color: #0f172a;
+  opacity: 1;
 }
 
 .cs-ontrack-dot {
@@ -4137,10 +4137,20 @@ html.dark .ai-pulse-tooltip-progress { color: #94a3b8; }
   background: #0ea5e9;
 }
 
+.cs-decor--dots {
+  bottom: 22%;
+  left: 4%;
+  width: 7rem;
+  height: 7rem;
+  opacity: 0.18;
+}
+
 @media (max-width: 700px) {
   .cs-decor--mini,
   .cs-decor--bars,
-  .cs-decor--donut { display: none; }
+  .cs-decor--donut,
+  .cs-decor--dots,
+  .cs-ontrack-pill { display: none; }
 }
 
 .coming-soon-card {
