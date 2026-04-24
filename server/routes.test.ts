@@ -1,6 +1,6 @@
 import request from "supertest";
 import session from "express-session";
-import { beforeAll, describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it, vi } from "vitest";
 
 /**
  * Route integration tests require PostgreSQL (same opt-in as storage tests in `auth.test.ts`).
@@ -385,5 +385,123 @@ describe.skipIf(!runRouteIntegrationTests)("API routes", () => {
         displayName: "CSRF Test",
       });
     expect(res.status).toBe(201);
+  });
+
+  describe("cookie security attributes", () => {
+    function findCookie(header: unknown, name: string): string | undefined {
+      const cookies = Array.isArray(header) ? header : typeof header === "string" ? [header] : [];
+      return (cookies as string[]).find((c) => c.split(";")[0].trim().startsWith(`${name}=`));
+    }
+
+    it("CSRF cookie has HttpOnly and SameSite=Strict", async () => {
+      const app = testApp();
+      const res = await request(app).get("/api/csrf-token");
+      const cookie = findCookie(res.headers["set-cookie"], "pocketpulse.csrf");
+      expect(cookie, "pocketpulse.csrf cookie must be present").toBeDefined();
+      expect(cookie!.toLowerCase()).toContain("httponly");
+      expect(cookie!.toLowerCase()).toContain("samesite=strict");
+    });
+
+    it("session cookie has HttpOnly and SameSite=Strict after login", async () => {
+      const app = testApp();
+      const regAgent = request.agent(app);
+      const regCsrf = await withCsrf(regAgent);
+      const email = `cookie-login-${crypto.randomUUID()}@example.com`;
+      const password = "cookie-test-pw";
+      await regAgent.post("/api/auth/register").set("X-CSRF-Token", regCsrf).send({
+        email,
+        password,
+        displayName: "Cookie Test",
+      });
+
+      const agent = request.agent(app);
+      const csrf = await withCsrf(agent);
+      const res = await agent.post("/api/auth/login").set("X-CSRF-Token", csrf).send({ email, password });
+      expect(res.status).toBe(200);
+
+      const cookie = findCookie(res.headers["set-cookie"], "pocketpulse.sid");
+      expect(cookie, "pocketpulse.sid cookie must be present after login").toBeDefined();
+      expect(cookie!.toLowerCase()).toContain("httponly");
+      expect(cookie!.toLowerCase()).toContain("samesite=strict");
+    });
+
+    it("session cookie has HttpOnly and SameSite=Strict after register", async () => {
+      const app = testApp();
+      const agent = request.agent(app);
+      const csrf = await withCsrf(agent);
+      const res = await agent.post("/api/auth/register").set("X-CSRF-Token", csrf).send({
+        email: `cookie-reg-${crypto.randomUUID()}@example.com`,
+        password: "cookie-test-pw",
+        displayName: "Cookie Reg",
+      });
+      expect(res.status).toBe(201);
+
+      const cookie = findCookie(res.headers["set-cookie"], "pocketpulse.sid");
+      expect(cookie, "pocketpulse.sid cookie must be present after register").toBeDefined();
+      expect(cookie!.toLowerCase()).toContain("httponly");
+      expect(cookie!.toLowerCase()).toContain("samesite=strict");
+    });
+
+    it("neither cookie carries Secure flag outside production", async () => {
+      const app = testApp();
+      const agent = request.agent(app);
+      const csrf = await withCsrf(agent);
+      const csrfCookie = findCookie(
+        (await request(app).get("/api/csrf-token")).headers["set-cookie"],
+        "pocketpulse.csrf",
+      );
+      expect(csrfCookie!.toLowerCase()).not.toContain("; secure");
+
+      const res = await agent.post("/api/auth/register").set("X-CSRF-Token", csrf).send({
+        email: `cookie-nosec-${crypto.randomUUID()}@example.com`,
+        password: "cookie-test-pw",
+        displayName: "No Secure",
+      });
+      const sidCookie = findCookie(res.headers["set-cookie"], "pocketpulse.sid");
+      expect(sidCookie!.toLowerCase()).not.toContain("; secure");
+    });
+
+    it("both cookies carry Secure flag in production environment", async () => {
+      const origNodeEnv = process.env.NODE_ENV;
+      const origSecret = process.env.SESSION_SECRET;
+      try {
+        process.env.NODE_ENV = "production";
+        process.env.SESSION_SECRET = "prod-test-secret-long-enough-123456";
+        // Reset module cache so csrf.ts re-evaluates its module-level cookieOptions
+        // with NODE_ENV=production before re-importing routes.
+        vi.resetModules();
+        const mod = await import("./routes.js");
+        const prodApp = mod.createApp({ sessionStore: new session.MemoryStore() });
+
+        const csrfRes = await request(prodApp).get("/api/csrf-token");
+        const csrfCookie = findCookie(csrfRes.headers["set-cookie"], "pocketpulse.csrf");
+        expect(csrfCookie, "CSRF cookie must be set in production").toBeDefined();
+        expect(csrfCookie!.toLowerCase()).toContain("secure");
+
+        const agent = request.agent(prodApp);
+        const csrfToken = csrfRes.body.token as string;
+        const regRes = await agent
+          .post("/api/auth/register")
+          .set("X-CSRF-Token", csrfToken)
+          .set("Cookie", csrfRes.headers["set-cookie"] as string[])
+          .send({
+            email: `cookie-prod-${crypto.randomUUID()}@example.com`,
+            password: "cookie-test-pw",
+            displayName: "Prod Secure",
+          });
+        const sidCookie = findCookie(regRes.headers["set-cookie"], "pocketpulse.sid");
+        expect(sidCookie, "session cookie must be set after register in production").toBeDefined();
+        expect(sidCookie!.toLowerCase()).toContain("secure");
+      } finally {
+        process.env.NODE_ENV = origNodeEnv;
+        if (origSecret !== undefined) {
+          process.env.SESSION_SECRET = origSecret;
+        } else {
+          delete process.env.SESSION_SECRET;
+        }
+        // Restore original module state for subsequent tests.
+        vi.resetModules();
+      }
+    });
   });
 });
