@@ -450,6 +450,7 @@ describe.skipIf(!runRouteIntegrationTests)("API routes", () => {
         (await request(app).get("/api/csrf-token")).headers["set-cookie"],
         "pocketpulse.csrf",
       );
+      expect(csrfCookie, "pocketpulse.csrf cookie must be present").toBeDefined();
       expect(csrfCookie!.toLowerCase()).not.toContain("; secure");
 
       const res = await agent.post("/api/auth/register").set("X-CSRF-Token", csrf).send({
@@ -458,6 +459,7 @@ describe.skipIf(!runRouteIntegrationTests)("API routes", () => {
         displayName: "No Secure",
       });
       const sidCookie = findCookie(res.headers["set-cookie"], "pocketpulse.sid");
+      expect(sidCookie, "pocketpulse.sid cookie must be present after register").toBeDefined();
       expect(sidCookie!.toLowerCase()).not.toContain("; secure");
     });
 
