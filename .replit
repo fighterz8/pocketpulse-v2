@@ -80,7 +80,7 @@ waitForPort = 5000
 [agent]
 stack = "MOCKUP_JS"
 mockupState = "FULLSTACK"
-integrations = ["github:1.0.0"]
+integrations = ["github:1.0.0", "resend:1.0.0"]
 
 [postMerge]
 path = "scripts/post-merge.sh"

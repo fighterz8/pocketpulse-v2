@@ -1805,3 +1805,7 @@ export async function addWaitlistEmail(email: string): Promise<void> {
     throw err;
   }
 }
+
+export async function listAllWaitlistEmails(): Promise<{ email: string; createdAt: Date }[]> {
+  return db.select({ email: waitlist.email, createdAt: waitlist.createdAt }).from(waitlist).orderBy(asc(waitlist.createdAt));
+}
