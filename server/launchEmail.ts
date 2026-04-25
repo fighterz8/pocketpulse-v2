@@ -31,10 +31,7 @@ export function buildLaunchEmailHtml(): string {
                     <table cellpadding="0" cellspacing="0" role="presentation" align="center" style="margin:0 auto 44px;">
                       <tr>
                         <td valign="middle" style="padding-right:14px;">
-                          <svg width="56" height="56" viewBox="0 0 56 56" fill="none" xmlns="http://www.w3.org/2000/svg" aria-label="PocketPulse logo">
-                            <rect x="1" y="1" width="54" height="54" rx="15" fill="#111f3a" stroke="rgba(147,197,253,0.28)" stroke-width="1.5"/>
-                            <path d="M12 29H20.1L23.2 19L28 39L32.4 25L35.7 31H44" stroke="#60A5FA" stroke-width="3.3" stroke-linecap="round" stroke-linejoin="round"/>
-                          </svg>
+                          <img src="https://pocket-pulse.com/email-logo.webp" width="56" height="56" alt="PocketPulse logo" style="display:block;border-radius:15px;" />
                         </td>
                         <td valign="middle" style="font-size:34px;line-height:1;font-weight:800;letter-spacing:-1.2px;color:#f8fafc;text-align:left;">
                           PocketPulse
