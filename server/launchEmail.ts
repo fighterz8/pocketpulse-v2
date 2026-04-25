@@ -105,7 +105,7 @@ export function buildLaunchEmailHtml(): string {
           <!-- CTA -->
           <tr>
             <td align="center" style="padding:32px 40px 0;">
-              <a href="https://pocketpulse.replit.app"
+              <a href="https://pocket-pulse.com"
                  style="display:inline-block;background:linear-gradient(135deg,#3b82f6,#2563eb);
                         color:#fff;font-size:16px;font-weight:700;text-decoration:none;
                         padding:14px 40px;border-radius:12px;
@@ -175,7 +175,7 @@ What you get:
 • Auto-Categorize — smart labels from the moment you import
 • Recurring detection — subscriptions caught automatically
 
-Get started: https://pocketpulse.replit.app
+Get started: https://pocket-pulse.com
 
 —
 Team PennySavers, NUS CIS490B
