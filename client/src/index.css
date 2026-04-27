@@ -1238,7 +1238,8 @@ html.dark .upload-new-account-cancel:hover:not(:disabled) {
   border-left: 3px solid color-mix(in srgb, currentColor 14%, transparent);
 }
 
-.upload-queue-item--uploading {
+.upload-queue-item--uploading,
+.upload-queue-item--parsing {
   border-left-color: #2563eb;
   background: color-mix(in srgb, #2563eb 4%, transparent);
 }
@@ -1297,6 +1298,11 @@ html.dark .upload-new-account-cancel:hover:not(:disabled) {
   color: #1d4ed8;
 }
 
+.upload-status-pill--parsing {
+  background: color-mix(in srgb, #6366f1 14%, transparent);
+  color: #4338ca;
+}
+
 .upload-status-pill--complete {
   background: #dcfce7;
   color: #15803d;
@@ -1307,7 +1313,8 @@ html.dark .upload-new-account-cancel:hover:not(:disabled) {
   color: #b91c1c;
 }
 
-.upload-status-pill--uploading .upload-loading-spinner {
+.upload-status-pill--uploading .upload-loading-spinner,
+.upload-status-pill--parsing .upload-loading-spinner {
   width: 0.75rem;
   height: 0.75rem;
   border-width: 1.5px;

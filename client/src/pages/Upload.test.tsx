@@ -1,17 +1,4 @@
-/**
- * Tests for the Upload page and the embeddable UploadCore.
- *
- * Coverage:
- *   - Page-level "create your first bank account" gate appears when the
- *     user has zero accounts and disappears once an account exists.
- *   - Drop-zone toggles its drag-active class on dragenter/dragleave.
- *   - Per-file CSV preview renders header + first 5 rows when toggled.
- *   - Bulk "Set account for all" applies the chosen account to every
- *     pending row.
- *   - Per-row status pill transitions pending → uploading → complete/failed.
- *   - Existing test ids (`upload-dropzone`, `upload-queue`, etc.) remain
- *     stable so callers using them don't break.
- */
+// Tests for the Upload page + embeddable UploadCore.
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   fireEvent,
@@ -350,21 +337,42 @@ describe("Robustness against bad batches and races", () => {
   });
 });
 
+/**
+ * Helper: returns a `fetch` mock that holds the /api/upload POST until
+ * `resolve()` is called. Use it when we need to observe the in-flight UI.
+ */
+function makeDeferredUploadFetch(): {
+  fetch: ReturnType<typeof vi.fn>;
+  resolve: (body: unknown, status?: number) => void;
+} {
+  let pendingResolve: ((value: Response) => void) | null = null;
+  const fn = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+    const url = typeof input === "string" ? input : input.toString();
+    if (url === "/api/upload" && init?.method === "POST") {
+      return new Promise<Response>((r) => {
+        pendingResolve = r;
+      });
+    }
+    return mockFetch(input, init);
+  });
+  return {
+    fetch: fn,
+    resolve(body, status = 200) {
+      pendingResolve?.(
+        new Response(JSON.stringify(body), {
+          status,
+          headers: { "Content-Type": "application/json" },
+        }),
+      );
+    },
+  };
+}
+
 describe("Dropzone is locked while an import is in flight", () => {
   it("disables the dropzone, file input, and removes tab focus while uploading", async () => {
     mockAccounts = [makeAccount({ id: 1 })];
-    // Make the upload "hang" so we can observe the in-flight state.
-    let resolveUpload: ((value: Response) => void) | null = null;
-    const slowFetch = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
-      const url = typeof input === "string" ? input : input.toString();
-      if (url === "/api/upload" && init?.method === "POST") {
-        return new Promise<Response>((resolve) => {
-          resolveUpload = resolve;
-        });
-      }
-      return mockFetch(input, init);
-    });
-    vi.stubGlobal("fetch", slowFetch);
+    const deferred = makeDeferredUploadFetch();
+    vi.stubGlobal("fetch", deferred.fetch);
 
     renderUpload();
     const dz = await screen.findByTestId("upload-dropzone");
@@ -376,7 +384,6 @@ describe("Dropzone is locked while an import is in flight", () => {
     await screen.findByTestId("upload-queue");
     fireEvent.click(screen.getByTestId("button-import"));
 
-    // Wait for the in-flight UI lockout.
     await waitFor(() => {
       expect(dz).toHaveAttribute("aria-disabled", "true");
     });
@@ -388,23 +395,79 @@ describe("Dropzone is locked while an import is in flight", () => {
     ) as HTMLInputElement;
     expect(fileInput.disabled).toBe(true);
 
-    // Resolve the hanging request so the test cleans up.
-    resolveUpload?.(
-      new Response(
-        JSON.stringify({
-          results: [
-            {
-              filename: "a.csv",
-              uploadId: 1,
-              status: "complete",
-              rowCount: 1,
-            },
-          ],
-        }),
-        { status: 200, headers: { "Content-Type": "application/json" } },
-      ),
-    );
+    deferred.resolve({
+      results: [
+        { filename: "a.csv", uploadId: 1, status: "complete", rowCount: 1 },
+      ],
+    });
     await screen.findByTestId("button-upload-more");
+  });
+});
+
+describe("Parsing-stage status pill", () => {
+  it("transitions a row from uploading to parsing while the server is processing", async () => {
+    mockAccounts = [makeAccount({ id: 1 })];
+    const deferred = makeDeferredUploadFetch();
+    vi.stubGlobal("fetch", deferred.fetch);
+
+    renderUpload();
+    const dz = await screen.findByTestId("upload-dropzone");
+    fireEvent.drop(dz, {
+      dataTransfer: {
+        files: [csvFile("slow.csv", "Date,Amount\n2025-01-01,1\n")],
+      },
+    });
+    await screen.findByTestId("upload-queue");
+    const rowEl = screen
+      .getAllByRole("listitem")
+      .find((el) =>
+        el.getAttribute("data-testid")?.startsWith("row-queue-"),
+      )!;
+    const rowKey = rowEl.getAttribute("data-testid")!.replace("row-queue-", "");
+
+    fireEvent.click(screen.getByTestId("button-import"));
+
+    // Immediately after click the row is in `uploading`.
+    await waitFor(() => {
+      expect(
+        screen.getByTestId(`row-queue-${rowKey}`).getAttribute("data-status"),
+      ).toBe("uploading");
+    });
+    expect(screen.getByTestId(`status-pill-${rowKey}`)).toHaveTextContent(
+      /Uploading/i,
+    );
+
+    // After the parsing-after delay (600ms) it flips to `parsing`.
+    await waitFor(
+      () => {
+        expect(
+          screen
+            .getByTestId(`row-queue-${rowKey}`)
+            .getAttribute("data-status"),
+        ).toBe("parsing");
+      },
+      { timeout: 2000 },
+    );
+    expect(screen.getByTestId(`status-pill-${rowKey}`)).toHaveTextContent(
+      /Parsing/i,
+    );
+
+    // Resolving the request lands the row on `complete`.
+    deferred.resolve({
+      results: [
+        {
+          filename: "slow.csv",
+          uploadId: 7,
+          status: "complete",
+          rowCount: 3,
+        },
+      ],
+    });
+    await waitFor(() => {
+      expect(
+        screen.getByTestId(`row-queue-${rowKey}`).getAttribute("data-status"),
+      ).toBe("complete");
+    });
   });
 });
 
