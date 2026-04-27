@@ -3626,11 +3626,27 @@ html.dark .leaks-error {
 .acc-merchants-table-wrap {
   border: 1px solid #e2e8f0;
   border-radius: 0.75rem;
-  overflow: hidden;
+  /*
+   * Task #120: when the table is wider than its card container (e.g. on
+   * narrower desktop widths once Task #118 added the 8th "Legibility"
+   * column), scroll horizontally INSIDE the card instead of silently
+   * clipping the right edge. `overflow-y: hidden` prevents the wrap from
+   * also gaining a vertical scrollbar — the table grows the card height
+   * naturally as more rows render.
+   */
+  overflow-x: auto;
+  overflow-y: hidden;
 }
 
 .acc-merchants-table {
   width: 100%;
+  /*
+   * Floor the table at a width that comfortably fits all 8 columns
+   * without clipping the Action buttons. Below this, the wrap above
+   * scrolls horizontally instead of squashing cells into unreadable
+   * columns.
+   */
+  min-width: 880px;
   border-collapse: collapse;
   font-size: 0.82rem;
 }
@@ -3647,7 +3663,10 @@ html.dark .leaks-error {
   text-transform: uppercase;
   letter-spacing: 0.07em;
   color: #64748b;
-  padding: 0.6rem 1rem;
+  /* Tightened from 1rem → 0.55rem horizontal so the 8 columns fit on
+   * a typical desktop viewport without triggering horizontal scroll. */
+  padding: 0.6rem 0.55rem;
+  white-space: nowrap;
 }
 
 .acc-merchants-table tbody tr {
@@ -3659,7 +3678,8 @@ html.dark .leaks-error {
 }
 
 .acc-merchants-table td {
-  padding: 0.7rem 1rem;
+  /* Matches th padding above (Task #120). */
+  padding: 0.7rem 0.55rem;
   vertical-align: middle;
 }
 
@@ -3684,6 +3704,9 @@ html.dark .leaks-error {
   font-size: 0.82rem;
   color: #64748b;
   text-align: right;
+  /* Task #120: keep the date column on one line ("2023-09-18") so it
+   * doesn't stack into 3 lines and waste vertical space. */
+  white-space: nowrap;
 }
 
 @media (max-width: 600px) {
