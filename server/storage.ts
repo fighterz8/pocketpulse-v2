@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import { and, asc, count, desc, eq, gte, ilike, inArray, isNull, lte, ne, or, sql } from "drizzle-orm";
 import { DatabaseError } from "pg";
 
@@ -192,34 +193,94 @@ export async function issuePasswordResetToken(
 }
 
 /**
+ * Constant-time hash comparator. Wraps `crypto.timingSafeEqual` with a
+ * length pre-check so that callers don't need to pre-validate hex
+ * strings before comparison. Returns `false` for any mismatch — never
+ * throws on bad input.
+ *
+ * Exported so unit tests can exercise the timing-safe path directly.
+ */
+export function constantTimeHashEquals(a: string, b: string): boolean {
+  if (typeof a !== "string" || typeof b !== "string") return false;
+  if (a.length !== b.length) return false;
+  // Hex parsing rejects any non-hex character; reject the comparison if
+  // either side is not parseable instead of letting Buffer silently
+  // truncate.
+  if (!/^[a-f0-9]*$/i.test(a) || !/^[a-f0-9]*$/i.test(b)) return false;
+  const ab = Buffer.from(a, "hex");
+  const bb = Buffer.from(b, "hex");
+  if (ab.length !== bb.length) return false;
+  return crypto.timingSafeEqual(ab, bb);
+}
+
+/**
  * Atomically consume a password reset token and rotate the user's
  * password, in a single DB transaction.
  *
- * The consume step is a conditional UPDATE ... RETURNING that only
- * matches rows where `used_at IS NULL` and `expires_at > now()`. This
- * makes the check-then-set race-free — two concurrent reset attempts
- * with the same token can never both succeed because at most one row
- * meets the predicate at the moment the UPDATE runs.
+ * Verification uses the **selector / verifier** pattern (OWASP-recommended
+ * for password-reset tokens). The selector — `tokenId`, the row's serial
+ * primary key — is the public, indexable lookup key embedded in the
+ * email URL. The verifier (the secret half of the token) is hashed and
+ * compared against the stored hash with `crypto.timingSafeEqual` so the
+ * comparison cannot leak information through timing side channels.
+ * Looking up by `tokenId` instead of `tokenHash` means the equality
+ * check happens in this constant-time helper rather than inside the DB
+ * index.
+ *
+ * After a successful timing-safe verification, a conditional
+ * `UPDATE ... RETURNING` matches only rows where the row is still
+ * `used_at IS NULL` and `expires_at > now()`. That makes the
+ * check-then-set race-free — two concurrent attempts with the same
+ * token can never both succeed because at most one row meets the
+ * predicate at the moment the UPDATE runs.
  *
  * Both the token mark-used and the password rotate live in the same
  * transaction: if the password update throws, the consume is rolled
  * back so the user can simply click the same email link again.
  *
- * Returns the affected userId on success, or null if the token was
- * unknown / expired / already used.
+ * Returns the affected userId on success, or null if the selector
+ * was unknown, the verifier mismatched, or the row was already
+ * used / expired.
  */
 export async function consumePasswordResetTokenAndUpdatePassword(
-  tokenHash: string,
+  tokenId: number,
+  computedVerifierHash: string,
   passwordHash: string,
 ): Promise<{ userId: number } | null> {
+  if (!Number.isInteger(tokenId) || tokenId <= 0) return null;
   return db.transaction(async (tx) => {
     const now = new Date();
+    const [row] = await tx
+      .select({
+        id: passwordResetTokens.id,
+        userId: passwordResetTokens.userId,
+        tokenHash: passwordResetTokens.tokenHash,
+        expiresAt: passwordResetTokens.expiresAt,
+        usedAt: passwordResetTokens.usedAt,
+      })
+      .from(passwordResetTokens)
+      .where(eq(passwordResetTokens.id, tokenId))
+      .limit(1);
+
+    if (!row) return null;
+
+    // Constant-time comparison happens BEFORE we look at usedAt /
+    // expiresAt so that an attacker who guesses a valid selector but a
+    // wrong verifier cannot tell from response timing whether the row
+    // was already used or just had a bad verifier.
+    if (!constantTimeHashEquals(row.tokenHash, computedVerifierHash)) {
+      return null;
+    }
+
+    if (row.usedAt != null) return null;
+    if (row.expiresAt.getTime() <= now.getTime()) return null;
+
     const [consumed] = await tx
       .update(passwordResetTokens)
       .set({ usedAt: now })
       .where(
         and(
-          eq(passwordResetTokens.tokenHash, tokenHash),
+          eq(passwordResetTokens.id, row.id),
           isNull(passwordResetTokens.usedAt),
           gte(passwordResetTokens.expiresAt, now),
         ),

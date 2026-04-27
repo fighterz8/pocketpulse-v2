@@ -2,8 +2,8 @@
  * Password reset route tests.
  *
  * Mocks storage, db, auth, csrf, and the Resend client so we can exercise
- * the HTTP shape (anti-enumeration, atomic consume + update, etc.)
- * without touching PostgreSQL or sending real email.
+ * the HTTP shape (anti-enumeration, atomic consume + update, rate-limit,
+ * CSRF policy) without touching PostgreSQL or sending real email.
  */
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 
@@ -30,10 +30,14 @@ vi.mock("./auth.js", () => ({
   normalizeEmail: vi.fn((e: string) => e.toLowerCase().trim()),
 }));
 
-// Disable CSRF so tests can post without juggling cookies.
+// Disable CSRF in tests so we can post without juggling cookies. The
+// middleware is exposed as a vi.fn() spy (default impl: pass through)
+// so one dedicated test can assert that POST /api/auth/forgot-password
+// never invokes it (i.e. the route is exempt at the express layer).
 vi.mock("./csrf.js", () => ({
-  doubleCsrfProtection: (_req: unknown, _res: unknown, next: () => void) =>
-    next(),
+  doubleCsrfProtection: vi.fn(
+    (_req: unknown, _res: unknown, next: () => void) => next(),
+  ),
   generateToken: () => "test-token",
   invalidCsrfTokenError: new Error("invalid csrf"),
 }));
@@ -54,12 +58,14 @@ import {
   getUserByEmailForAuth,
   issuePasswordResetToken,
 } from "./storage.js";
+import { doubleCsrfProtection } from "./csrf.js";
 import { createApp } from "./routes.js";
 
 const mockedGetUser = vi.mocked(getUserByEmailForAuth);
 const mockedIssue = vi.mocked(issuePasswordResetToken);
 const mockedConsume = vi.mocked(consumePasswordResetTokenAndUpdatePassword);
 const mockedCleanup = vi.mocked(deleteExpiredPasswordResetTokens);
+const mockedCsrf = vi.mocked(doubleCsrfProtection);
 
 function buildApp() {
   const store = new session.MemoryStore();
@@ -107,7 +113,7 @@ describe("POST /api/auth/forgot-password", () => {
     expect(sendMock).not.toHaveBeenCalled();
   });
 
-  it("issues a token (invalidating older ones) and sends email when the user exists", async () => {
+  it("issues a token (invalidating older ones) and emails a <id>.<verifier> URL when the user exists", async () => {
     mockedGetUser.mockResolvedValueOnce({
       id: 42,
       email: "alice@example.com",
@@ -128,11 +134,12 @@ describe("POST /api/auth/forgot-password", () => {
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ ok: true });
     expect(mockedIssue).toHaveBeenCalledTimes(1);
-    const [userId, tokenHash, expiresAt] = mockedIssue.mock.calls[0]!;
+    const [userId, verifierHash, expiresAt] = mockedIssue.mock.calls[0]!;
     expect(userId).toBe(42);
-    // SHA-256 hex is 64 chars — confirms we hashed before storing.
-    expect(typeof tokenHash).toBe("string");
-    expect(tokenHash).toMatch(/^[a-f0-9]{64}$/);
+    // SHA-256 hex is 64 chars — confirms we hashed the verifier before
+    // storing.
+    expect(typeof verifierHash).toBe("string");
+    expect(verifierHash).toMatch(/^[a-f0-9]{64}$/);
     expect(expiresAt).toBeInstanceOf(Date);
     // ~30 minutes in the future.
     const deltaMin = (expiresAt.getTime() - Date.now()) / 60000;
@@ -149,7 +156,14 @@ describe("POST /api/auth/forgot-password", () => {
     expect(sendArg.from).toBe("PocketPulse <noreply@pocket-pulse.com>");
     expect(sendArg.to).toBe("alice@example.com");
     expect(sendArg.subject).toMatch(/reset/i);
-    expect(sendArg.html).toMatch(/reset-password\?token=/);
+    // Token in URL must be the selector/verifier composite, not the
+    // raw verifier alone, so the reset endpoint can locate the row by
+    // primary key.
+    const tokenMatch = sendArg.html.match(
+      /reset-password\?token=([0-9]+)\.([a-f0-9]{64})/,
+    );
+    expect(tokenMatch, "URL must include <id>.<verifier>").not.toBeNull();
+    expect(tokenMatch![1]).toBe(String(1)); // selector = issued row id
   });
 
   it("uses the canonical https://pocket-pulse.com origin when PUBLIC_APP_URL is unset (no Host-header fallback)", async () => {
@@ -174,7 +188,7 @@ describe("POST /api/auth/forgot-password", () => {
     expect(sendMock).toHaveBeenCalledTimes(1);
     const sendArg = sendMock.mock.calls[0]![0] as { html: string; text: string };
     expect(sendArg.html).toMatch(
-      /https:\/\/pocket-pulse\.com\/reset-password\?token=/,
+      /https:\/\/pocket-pulse\.com\/reset-password\?token=99\./,
     );
     expect(sendArg.html).not.toMatch(/evil\.attacker/);
     expect(sendArg.text).not.toMatch(/evil\.attacker/);
@@ -201,7 +215,7 @@ describe("POST /api/auth/forgot-password", () => {
       .send({ email: "a@b.com" });
     const sendArg = sendMock.mock.calls[0]![0] as { html: string };
     expect(sendArg.html).toMatch(
-      /https:\/\/app\.example\.test\/reset-password\?token=/,
+      /https:\/\/app\.example\.test\/reset-password\?token=99\./,
     );
   });
 
@@ -227,6 +241,63 @@ describe("POST /api/auth/forgot-password", () => {
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ ok: true });
   });
+
+  it("never invokes CSRF protection (the route is exempt)", async () => {
+    // Each request that flows through the global CSRF mount calls this
+    // spy. Forgot-password must NOT — that's the whole point of being
+    // CSRF-exempt at the express layer.
+    mockedGetUser.mockResolvedValueOnce(null);
+    const app = buildApp();
+    // Capture only the calls produced by *this* request.
+    mockedCsrf.mockClear();
+    const res = await request(app)
+      .post("/api/auth/forgot-password")
+      .send({ email: "ghost@example.com" });
+    expect(res.status).toBe(200);
+    const csrfCallsForForgot = mockedCsrf.mock.calls.filter(
+      (c) =>
+        (c[0] as { method?: string; path?: string }).method === "POST" &&
+        (c[0] as { method?: string; path?: string }).path ===
+          "/api/auth/forgot-password",
+    );
+    expect(csrfCallsForForgot).toHaveLength(0);
+  });
+
+  it("DOES invoke CSRF protection for POST /api/auth/reset-password (companion)", async () => {
+    // Counter-test: confirm the exemption is scoped to forgot-password
+    // alone and the reset endpoint still runs through the middleware.
+    mockedConsume.mockResolvedValueOnce(null);
+    const app = buildApp();
+    mockedCsrf.mockClear();
+    await request(app)
+      .post("/api/auth/reset-password")
+      .send({ token: "1.deadbeef", newPassword: "longenough" });
+    const csrfCallsForReset = mockedCsrf.mock.calls.filter(
+      (c) =>
+        (c[0] as { method?: string; path?: string }).method === "POST" &&
+        (c[0] as { method?: string; path?: string }).path ===
+          "/api/auth/reset-password",
+    );
+    expect(csrfCallsForReset.length).toBeGreaterThan(0);
+  });
+
+  it("rate-limits at the 6th request from the same IP within the window", async () => {
+    // Limiter is 5 / 15 min per IP. supertest opens an ephemeral server
+    // and reuses 127.0.0.1, so all 6 requests share an IP key.
+    mockedGetUser.mockResolvedValue(null);
+    const app = buildApp();
+    const statuses: number[] = [];
+    for (let i = 0; i < 6; i++) {
+      const res = await request(app)
+        .post("/api/auth/forgot-password")
+        .send({ email: `t${i}@example.com` });
+      statuses.push(res.status);
+    }
+    // First 5 succeed (anti-enumeration generic ok), 6th must be
+    // rejected by the limiter.
+    expect(statuses.slice(0, 5)).toEqual([200, 200, 200, 200, 200]);
+    expect(statuses[5]).toBe(429);
+  });
 });
 
 describe("POST /api/auth/reset-password", () => {
@@ -248,9 +319,21 @@ describe("POST /api/auth/reset-password", () => {
     const app = buildApp();
     const res = await request(app)
       .post("/api/auth/reset-password")
-      .send({ token: "abc", newPassword: "short" });
+      .send({ token: "1.abc", newPassword: "short" });
     expect(res.status).toBe(400);
     expect(res.body.error).toMatch(/8 characters/);
+    expect(mockedConsume).not.toHaveBeenCalled();
+  });
+
+  it("rejects malformed tokens (no dot, bad id, empty verifier) without hitting storage", async () => {
+    const app = buildApp();
+    for (const bad of ["nodothere", ".verifieronly", "5.", "abc.def", "0.x"]) {
+      const res = await request(app)
+        .post("/api/auth/reset-password")
+        .send({ token: bad, newPassword: "longenough" });
+      expect(res.status).toBe(400);
+      expect(res.body.error).toMatch(/expired or already been used/i);
+    }
     expect(mockedConsume).not.toHaveBeenCalled();
   });
 
@@ -259,23 +342,24 @@ describe("POST /api/auth/reset-password", () => {
     const app = buildApp();
     const res = await request(app)
       .post("/api/auth/reset-password")
-      .send({ token: "deadbeef", newPassword: "longenough" });
+      .send({ token: "1.deadbeef", newPassword: "longenough" });
     expect(res.status).toBe(400);
     expect(res.body.error).toMatch(/expired or already been used/i);
   });
 
-  it("hashes the token (SHA-256 hex) before passing it to the storage layer", async () => {
+  it("parses <id>.<verifier> and forwards (tokenId, sha256(verifier), passwordHash) to storage", async () => {
     mockedConsume.mockResolvedValueOnce(null);
     const app = buildApp();
     await request(app)
       .post("/api/auth/reset-password")
-      .send({ token: "rawtoken", newPassword: "longenough" });
+      .send({ token: "42.rawverifier", newPassword: "longenough" });
     expect(mockedConsume).toHaveBeenCalledTimes(1);
-    const [hashArg, pwArg] = mockedConsume.mock.calls[0]!;
+    const [tokenIdArg, hashArg, pwArg] = mockedConsume.mock.calls[0]!;
+    expect(tokenIdArg).toBe(42);
     expect(hashArg).toMatch(/^[a-f0-9]{64}$/);
-    // Pre-computed SHA-256 of "rawtoken"
+    // Pre-computed SHA-256 of "rawverifier"
     expect(hashArg).toBe(
-      "3c2154bddfc9b3642ef800176f4b927f1275dd9880ed595a3875e0c5714d7cee",
+      "800932813b755a2395e5837ecb8270cc816aff33cb1f07b193f3ebd4395d7213",
     );
     expect(pwArg).toBe("new-bcrypt-hash");
   });
@@ -285,7 +369,7 @@ describe("POST /api/auth/reset-password", () => {
     const app = buildApp();
     const res = await request(app)
       .post("/api/auth/reset-password")
-      .send({ token: "validtoken", newPassword: "newlongpassword" });
+      .send({ token: "7.validverifier", newPassword: "newlongpassword" });
 
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ ok: true });
@@ -297,7 +381,24 @@ describe("POST /api/auth/reset-password", () => {
     const app = buildApp();
     const res = await request(app)
       .post("/api/auth/reset-password")
-      .send({ token: "validtoken", newPassword: "newlongpassword" });
+      .send({ token: "7.validverifier", newPassword: "newlongpassword" });
     expect(res.status).toBe(500);
+  });
+
+  it("rate-limits at the 6th request from the same IP within the window", async () => {
+    // Limiter is 5 / 15 min per IP, shared across both reset endpoints.
+    mockedConsume.mockResolvedValue(null);
+    const app = buildApp();
+    const statuses: number[] = [];
+    for (let i = 0; i < 6; i++) {
+      const res = await request(app)
+        .post("/api/auth/reset-password")
+        .send({ token: `${i + 1}.deadbeef`, newPassword: "longenough" });
+      statuses.push(res.status);
+    }
+    // First 5 are processed (and return 400 because consume returns null),
+    // 6th must hit the limiter.
+    expect(statuses.slice(0, 5).every((s) => s === 400)).toBe(true);
+    expect(statuses[5]).toBe(429);
   });
 });

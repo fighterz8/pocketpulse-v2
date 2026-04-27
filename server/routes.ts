@@ -399,7 +399,21 @@ export function createApp(options?: CreateAppOptions) {
     }
   });
 
-  app.use(doubleCsrfProtection);
+  // CSRF middleware mounted globally for all state-changing requests,
+  // with one explicit exemption: POST /api/auth/forgot-password. That
+  // endpoint accepts no session, returns the same anti-enumeration
+  // response regardless of whether the email exists, and is reachable
+  // from the unauth'd Forgot screen — adding a CSRF token would only
+  // block legitimate submissions without raising the bar for an
+  // attacker (who already cannot learn anything from the response).
+  // The companion POST /api/auth/reset-password remains CSRF-protected
+  // because it mutates a credential.
+  app.use((req, res, next) => {
+    if (req.method === "POST" && req.path === "/api/auth/forgot-password") {
+      return next();
+    }
+    return doubleCsrfProtection(req, res, next);
+  });
 
   app.get("/api/csrf-token", (req, res) => {
     const token = generateToken(req, res);
@@ -604,12 +618,17 @@ export function createApp(options?: CreateAppOptions) {
    * "ok" envelope regardless of whether the email belongs to a registered
    * user, so an attacker cannot use this endpoint to discover which
    * addresses have accounts. When the email *does* match, we generate a
-   * 32-byte token, store only its SHA-256 hash, and email the raw token
-   * back to the user inside a short-lived (30 min) reset URL.
+   * 32-byte verifier, store only its SHA-256 hash, and email a short-lived
+   * (30 min) reset URL whose token has the form `<id>.<verifier>` — the
+   * `id` half (the row's serial primary key) acts as a non-secret
+   * selector so the reset endpoint can look the row up by primary key
+   * and verify the verifier with `crypto.timingSafeEqual` rather than
+   * doing a hash-equality lookup inside the DB index.
    *
-   * Rate-limited at 5 / 15 min per IP and CSRF-protected (the unauth'd
-   * Forgot screen still fetches a CSRF token before submitting, matching
-   * the login/register pattern) so this can't be hit by a cross-site form.
+   * Rate-limited at 5 / 15 min per IP. Deliberately CSRF-EXEMPT (see
+   * the global CSRF mount above): the endpoint is reachable from the
+   * unauth'd Forgot screen and its anti-enumeration guarantee means a
+   * CSRF token would add no security while breaking legitimate use.
    */
   app.post(
     "/api/auth/forgot-password",
@@ -640,19 +659,25 @@ export function createApp(options?: CreateAppOptions) {
           return;
         }
 
-        // 32 random bytes → 64-char hex token. SHA-256 of the raw bytes is
-        // what we persist; the raw token only ever exists in the email URL.
-        const rawToken = crypto.randomBytes(32).toString("hex");
-        const tokenHash = crypto
+        // 32 random bytes → 64-char hex verifier (the secret half of the
+        // token). SHA-256 of the verifier is what we persist; the raw
+        // verifier only ever exists in the email URL.
+        const verifier = crypto.randomBytes(32).toString("hex");
+        const verifierHash = crypto
           .createHash("sha256")
-          .update(rawToken)
+          .update(verifier)
           .digest("hex");
         const expiresAt = new Date(Date.now() + 30 * 60 * 1000);
 
         // Atomically invalidates any older unused tokens for this user
         // before issuing the new one, so previous emailed links stop
-        // working as soon as a fresh reset is requested.
-        await issuePasswordResetToken(user.id, tokenHash, expiresAt);
+        // working as soon as a fresh reset is requested. The returned
+        // row's serial id becomes the selector half of the token URL.
+        const issued = await issuePasswordResetToken(
+          user.id,
+          verifierHash,
+          expiresAt,
+        );
 
         // Reset URLs MUST come from a trusted, configured origin — never
         // from the request's Host header, which is attacker-controllable
@@ -662,6 +687,10 @@ export function createApp(options?: CreateAppOptions) {
         const origin = (
           process.env.PUBLIC_APP_URL ?? "https://pocket-pulse.com"
         ).replace(/\/$/, "");
+        // Token = "<id>.<verifier>". The id is non-secret (it just
+        // identifies which row to fetch); the verifier is the part the
+        // server compares against the stored hash with timingSafeEqual.
+        const rawToken = `${issued.id}.${verifier}`;
         const resetUrl = `${origin}/reset-password?token=${rawToken}`;
 
         try {
@@ -691,10 +720,16 @@ export function createApp(options?: CreateAppOptions) {
    * POST /api/auth/reset-password
    *
    * Consumes a one-time reset token and rotates the user's bcrypt hash.
-   * Token is hashed (SHA-256) before lookup so this endpoint never needs
-   * to see the raw value sitting in the database, and the lookup itself
-   * enforces both expiry and single-use at the SQL layer. On success the
-   * row is marked used so the same URL cannot be replayed.
+   * Tokens use the **selector / verifier** pattern: the URL token is
+   * `<id>.<verifier>`, where the id is the row's serial primary key
+   * (the public selector) and the verifier is the 32-byte secret. The
+   * storage layer looks the row up by id, then compares the stored
+   * SHA-256 hash to `sha256(verifier)` with `crypto.timingSafeEqual`,
+   * so the equality check happens in a constant-time path rather than
+   * inside the DB index. The same transaction conditionally marks the
+   * row used (race-free single-use) and rotates the password.
+   *
+   * CSRF-protected (mutates a credential).
    *
    * We deliberately do NOT auto-sign-in afterward: the user is bounced
    * to the login screen with the new password so they confirm it works
@@ -722,27 +757,50 @@ export function createApp(options?: CreateAppOptions) {
           return;
         }
 
-        const tokenHash = crypto
+        // Parse the "<id>.<verifier>" token. A malformed token gets the
+        // same generic "expired or used" response so we don't leak the
+        // shape of the secret to a probing attacker.
+        const expiredMessage =
+          "This reset link has expired or already been used";
+        const dot = token.indexOf(".");
+        if (dot <= 0 || dot === token.length - 1) {
+          res.status(400).json({ error: expiredMessage });
+          return;
+        }
+        const idPart = token.slice(0, dot);
+        const verifier = token.slice(dot + 1);
+        const tokenId = Number.parseInt(idPart, 10);
+        if (
+          !Number.isInteger(tokenId) ||
+          tokenId <= 0 ||
+          String(tokenId) !== idPart
+        ) {
+          res.status(400).json({ error: expiredMessage });
+          return;
+        }
+
+        const computedVerifierHash = crypto
           .createHash("sha256")
-          .update(token)
+          .update(verifier)
           .digest("hex");
 
         const passwordHash = await hashPassword(newPassword);
 
         // Atomic single-transaction consume + password rotate. The
-        // storage layer uses a conditional UPDATE ... RETURNING that
-        // matches only unused, unexpired rows, eliminating the
-        // check-then-set race that a separate find + mark would have.
-        // If the password update inside the same transaction fails,
-        // the consume is rolled back so the user can retry the link.
+        // storage layer first does a constant-time hash comparison
+        // (crypto.timingSafeEqual) on the verifier, then runs a
+        // conditional UPDATE ... RETURNING that matches only unused,
+        // unexpired rows, eliminating the check-then-set race that a
+        // separate find + mark would have. If the password update
+        // inside the same transaction fails, the consume is rolled
+        // back so the user can retry the link.
         const result = await consumePasswordResetTokenAndUpdatePassword(
-          tokenHash,
+          tokenId,
+          computedVerifierHash,
           passwordHash,
         );
         if (!result) {
-          res.status(400).json({
-            error: "This reset link has expired or already been used",
-          });
+          res.status(400).json({ error: expiredMessage });
           return;
         }
 
