@@ -18,16 +18,17 @@ export type WelcomeOverlayProps = {
   onDismiss?: () => void;
   /**
    * CSS selector for the element to focus after the overlay is dismissed.
-   * Used to return keyboard focus to the underlying form (Step 1's first
-   * input) so the user can immediately start typing.
+   * Used to return keyboard focus to a meaningful element on the host page
+   * (e.g. the Dashboard's Export button) so the user has an obvious entry
+   * point for keyboard navigation.
    */
   restoreFocusSelector?: string;
 };
 
 /**
  * First-run welcome overlay shown the first time a freshly authenticated
- * user lands on Step 1 of onboarding. Persists `pp_welcome_seen` in
- * localStorage on dismiss so it never replays for that browser.
+ * user lands on the Dashboard. Persists `pp_welcome_seen` in localStorage
+ * on dismiss so it never replays for that browser.
  *
  * Behaviour:
  *  - Backdrop click, Esc, and the primary CTA all dismiss.
@@ -143,8 +144,8 @@ export function WelcomeOverlay({
   }, [open]);
 
   // Make every sibling element of the backdrop inert + aria-hidden so
-  // screen readers and keyboard users cannot reach Step 1 controls behind
-  // the dialog. Restored on dismiss.
+  // screen readers and keyboard users cannot reach the host page's content
+  // behind the dialog. Restored on dismiss.
   useEffect(() => {
     if (!open) return;
     const backdrop = backdropRef.current;

@@ -6,7 +6,6 @@ import { TooltipProvider } from "./components/ui/tooltip";
 import { useAuth, type AuthAccount } from "./hooks/use-auth";
 import { useInactivityLogout } from "./hooks/use-inactivity-logout";
 import { useTheme } from "./hooks/use-theme";
-import { WelcomeOverlay } from "./components/ui/welcome-overlay";
 import { AccountSetup } from "./pages/AccountSetup";
 import { Auth } from "./pages/Auth";
 import { ComingSoon } from "./pages/ComingSoon";
@@ -210,16 +209,10 @@ export function AppGate() {
   if (auth.accounts !== null) {
     if (auth.accounts.length === 0 && !onboardingSkipped) {
       return (
-        <>
-          <AccountSetup
-            onCreated={handleStep1Created}
-            onSkip={handleSkipOnboarding}
-          />
-          <WelcomeOverlay
-            enabled
-            restoreFocusSelector="[data-testid='input-account-label']"
-          />
-        </>
+        <AccountSetup
+          onCreated={handleStep1Created}
+          onSkip={handleSkipOnboarding}
+        />
       );
     }
     if (auth.accounts.length >= 1 && step2Pending) {

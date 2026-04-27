@@ -77,15 +77,15 @@ describe("AccountSetup", () => {
     expect(screen.getByTestId("text-preview-label")).toHaveTextContent(
       "Your account",
     );
-    expect(screen.getByTestId("text-preview-digits")).toHaveTextContent(
-      "•••• ••••",
-    );
+    // The Last 4 input was removed from this onboarding form (Task #119),
+    // so the preview no longer shows a masked-card "•••• ••••" row.
+    expect(screen.queryByTestId("text-preview-digits")).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId("input-account-last-four"),
+    ).not.toBeInTheDocument();
 
     fireEvent.change(screen.getByTestId("input-account-label"), {
       target: { value: "Chase Checking" },
-    });
-    fireEvent.change(screen.getByTestId("input-account-last-four"), {
-      target: { value: "1234" },
     });
     fireEvent.change(screen.getByTestId("input-account-type"), {
       target: { value: "checking" },
@@ -94,12 +94,37 @@ describe("AccountSetup", () => {
     expect(screen.getByTestId("text-preview-label")).toHaveTextContent(
       "Chase Checking",
     );
-    expect(screen.getByTestId("text-preview-digits")).toHaveTextContent(
-      "•••• 1234",
-    );
     expect(screen.getByTestId("text-preview-type")).toHaveTextContent(
       "checking",
     );
+  });
+
+  it("submits with only label + accountType (no lastFour key in payload)", async () => {
+    mockCreateAccount.mutateAsync.mockResolvedValueOnce({
+      account: {
+        id: 9,
+        userId: 1,
+        label: "Chase",
+        lastFour: null,
+        accountType: "checking",
+        createdAt: "2026-01-01T00:00:00Z",
+        updatedAt: "2026-01-01T00:00:00Z",
+      },
+    });
+    setup();
+    fireEvent.change(screen.getByTestId("input-account-label"), {
+      target: { value: "Chase" },
+    });
+    fireEvent.change(screen.getByTestId("input-account-type"), {
+      target: { value: "checking" },
+    });
+    fireEvent.click(screen.getByTestId("button-create-account"));
+    await waitFor(() => {
+      expect(mockCreateAccount.mutateAsync).toHaveBeenCalledTimes(1);
+    });
+    const payload = mockCreateAccount.mutateAsync.mock.calls[0][0];
+    expect(payload).toEqual({ label: "Chase", accountType: "checking" });
+    expect(payload).not.toHaveProperty("lastFour");
   });
 
   it("submits the form and calls onCreated with the created account on success", async () => {
@@ -156,14 +181,19 @@ describe("AccountSetup", () => {
     expect(mockCreateAccount.mutateAsync).not.toHaveBeenCalled();
   });
 
-  it("renders the fields in the order Nickname → Account type → Last 4", () => {
+  it("renders only the Nickname → Account type fields (Last 4 removed)", () => {
     setup();
     const labels = Array.from(
       document.querySelectorAll<HTMLSpanElement>(".auth-label"),
     ).map((el) => (el.textContent ?? "").trim());
+    expect(labels).toHaveLength(2);
     expect(labels[0]).toMatch(/^Nickname/);
     expect(labels[1]).toMatch(/^Account type/);
-    expect(labels[2]).toMatch(/^Last 4/);
+    // Belt-and-braces: the Last 4 hint and input must be gone.
+    expect(screen.queryByTestId("hint-last-four")).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId("input-account-last-four"),
+    ).not.toBeInTheDocument();
   });
 
   it("renders the nickname hint trigger", () => {

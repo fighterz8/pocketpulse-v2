@@ -16,7 +16,6 @@ export type AccountSetupProps = {
 export function AccountSetup({ onCreated, onSkip }: AccountSetupProps) {
   const { createAccount, logout } = useAuth();
   const [label, setLabel] = useState("");
-  const [lastFour, setLastFour] = useState("");
   const [accountType, setAccountType] = useState("");
   const [formError, setFormError] = useState<string | null>(null);
 
@@ -39,7 +38,6 @@ export function AccountSetup({ onCreated, onSkip }: AccountSetupProps) {
     try {
       const result = await createAccount.mutateAsync({
         label: trimmed,
-        ...(lastFour !== "" ? { lastFour } : {}),
         ...(accountType.trim() !== ""
           ? { accountType: accountType.trim() }
           : {}),
@@ -84,7 +82,6 @@ export function AccountSetup({ onCreated, onSkip }: AccountSetupProps) {
 
         <AccountPreview
           label={label}
-          lastFour={lastFour}
           accountType={accountType}
         />
 
@@ -138,31 +135,6 @@ export function AccountSetup({ onCreated, onSkip }: AccountSetupProps) {
             </select>
           </label>
 
-          <label className="auth-field">
-            <span className="auth-label">
-              Last 4
-              <HintIcon
-                label="About last 4 digits"
-                content="Optional. Helps you tell apart multiple cards from the same bank — handy if you have, say, two Chase cards."
-                data-testid="hint-last-four"
-              />
-            </span>
-            <input
-              className="auth-input"
-              type="text"
-              name="lastFour"
-              inputMode="numeric"
-              maxLength={4}
-              autoComplete="off"
-              value={lastFour}
-              onChange={(e) =>
-                setLastFour(e.target.value.replace(/\D/g, "").slice(0, 4))
-              }
-              disabled={busy}
-              data-testid="input-account-last-four"
-            />
-          </label>
-
           {shownError ? (
             <p
               className="auth-error"
@@ -214,16 +186,12 @@ export function AccountSetup({ onCreated, onSkip }: AccountSetupProps) {
 
 function AccountPreview({
   label,
-  lastFour,
   accountType,
 }: {
   label: string;
-  lastFour: string;
   accountType: string;
 }) {
   const shownLabel = label.trim() === "" ? "Your account" : label.trim();
-  const last4Display =
-    lastFour.length === 4 ? `•••• ${lastFour}` : "•••• ••••";
   return (
     <div
       className="account-preview"
@@ -244,12 +212,6 @@ function AccountPreview({
           </span>
         )}
       </div>
-      <span
-        className="account-preview-digits"
-        data-testid="text-preview-digits"
-      >
-        {last4Display}
-      </span>
     </div>
   );
 }

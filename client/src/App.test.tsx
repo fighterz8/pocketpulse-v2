@@ -185,26 +185,12 @@ describe("AppGate routing state machine", () => {
     expect(screen.getByTestId("stub-account-setup")).toBeInTheDocument();
   });
 
-  it("mounts the welcome overlay over Step 1 the first time", () => {
-    authState.accounts = [];
-    renderGate();
-    expect(screen.getByTestId("welcome-overlay")).toBeInTheDocument();
-  });
-
-  it("does NOT mount the welcome overlay when pp_welcome_seen is set", () => {
-    localStorage.setItem("pp_welcome_seen", "1");
+  it("never mounts the welcome overlay over Step 1 (overlay moved to the Dashboard in Task #119)", () => {
     authState.accounts = [];
     renderGate();
     expect(screen.queryByTestId("welcome-overlay")).not.toBeInTheDocument();
-    // Step 1 itself still renders.
+    // Step 1 itself still renders so users see the form immediately.
     expect(screen.getByTestId("stub-account-setup")).toBeInTheDocument();
-  });
-
-  it("does NOT mount the welcome overlay outside the Step 1 branch", () => {
-    authState.accounts = [account];
-    renderGate();
-    expect(screen.queryByTestId("welcome-overlay")).not.toBeInTheDocument();
-    expect(screen.getByTestId("stub-dashboard")).toBeInTheDocument();
   });
 
   it("renders Step 2 (OnboardingUpload) when accounts has 1 entry and step2_pending is set", () => {

@@ -10,6 +10,7 @@ import {
 } from "../hooks/use-dashboard";
 import { useAuth } from "../hooks/use-auth";
 import { Hint, HintIcon } from "../components/ui/tooltip";
+import { WelcomeOverlay } from "../components/ui/welcome-overlay";
 import { ONBOARDING_UPLOAD_SUCCESS_FLAG } from "./OnboardingUpload";
 
 interface LeakItem {
@@ -262,6 +263,27 @@ function OnboardingSuccessNotice() {
 const HIDDEN_CATEGORIES = new Set(["income", "transfers"]);
 
 export function Dashboard() {
+  return (
+    <>
+      {/*
+        First-visit welcome overlay. Renders alongside DashboardImpl so that
+        when the modal opens the entire dashboard body becomes inert (the
+        overlay's backdrop marks every sibling of itself inert + aria-hidden
+        while open). Uses the same `pp_welcome_seen` localStorage flag as
+        before, so users who already dismissed it elsewhere never see it again.
+        Focus is returned to the Export button (a stable element present in
+        every dashboard state — loading, error, empty, populated).
+      */}
+      <WelcomeOverlay
+        enabled
+        restoreFocusSelector="[data-testid='btn-dashboard-export']"
+      />
+      <DashboardImpl />
+    </>
+  );
+}
+
+function DashboardImpl() {
   const { user } = useAuth();
   const [selectedMonth, setSelectedMonth] = useState<string | null>(null);
 

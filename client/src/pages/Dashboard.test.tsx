@@ -85,6 +85,14 @@ function makeSuccessFetch(summaryData: unknown) {
 
 beforeEach(() => {
   vi.unstubAllGlobals();
+  // Mark the first-visit welcome overlay as already seen by default so the
+  // existing dashboard tests render as if the user has been here before.
+  // Task #119 moved the WelcomeOverlay from AccountSetup into the Dashboard;
+  // when it opens it marks every sibling element inert + aria-hidden, which
+  // breaks accessibility-tree queries (getByRole / getByLabelText) for the
+  // dashboard body. The overlay-specific tests below clear this flag
+  // explicitly to verify the overlay's first-visit behaviour.
+  window.localStorage.setItem("pp_welcome_seen", "1");
 });
 
 describe("Dashboard", () => {
@@ -190,5 +198,45 @@ describe("Dashboard", () => {
     const content = await screen.findByTestId("hint-net-cashflow-content");
     expect(content).toHaveTextContent(/income/i);
     expect(content).toHaveTextContent(/spending/i);
+  });
+
+  // ── Task #119: WelcomeOverlay was moved from AccountSetup to the Dashboard ─
+  describe("first-visit welcome overlay", () => {
+    it("shows the welcome overlay on first dashboard visit when pp_welcome_seen is unset", async () => {
+      // Override the default beforeEach flag — this test simulates a brand-new
+      // user who has never seen the overlay.
+      window.localStorage.removeItem("pp_welcome_seen");
+      vi.stubGlobal("fetch", makeSuccessFetch(fullSummary));
+      renderDashboard();
+      // Overlay mounts synchronously regardless of dashboard data state, so
+      // it should be present before the dashboard data even resolves.
+      expect(screen.getByTestId("welcome-overlay")).toBeInTheDocument();
+      // The overlay's primary CTA is focused on mount.
+      expect(screen.getByTestId("welcome-overlay-dismiss")).toBeInTheDocument();
+      // After dismissing, the flag is persisted and the overlay disappears.
+      fireEvent.click(screen.getByTestId("welcome-overlay-dismiss"));
+      expect(screen.queryByTestId("welcome-overlay")).not.toBeInTheDocument();
+      expect(window.localStorage.getItem("pp_welcome_seen")).toBe("1");
+    });
+
+    it("does NOT show the welcome overlay when pp_welcome_seen=1 is already set", () => {
+      window.localStorage.setItem("pp_welcome_seen", "1");
+      vi.stubGlobal("fetch", makeSuccessFetch(fullSummary));
+      renderDashboard();
+      expect(screen.queryByTestId("welcome-overlay")).not.toBeInTheDocument();
+    });
+
+    it("still mounts the overlay during the dashboard's loading state (so it appears immediately)", () => {
+      window.localStorage.removeItem("pp_welcome_seen");
+      // Pending fetch — Dashboard shows the loading state, but the overlay
+      // sits outside DashboardImpl so it must still render.
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(() => new Promise(() => {})),
+      );
+      renderDashboard();
+      expect(screen.getByText(/loading dashboard/i)).toBeInTheDocument();
+      expect(screen.getByTestId("welcome-overlay")).toBeInTheDocument();
+    });
   });
 });
