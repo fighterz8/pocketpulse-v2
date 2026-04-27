@@ -8,11 +8,23 @@ import { apiFetch, readJsonError } from "../lib/api";
  * definition, not signed in (and may even be on a fresh device).
  *
  * The token comes in via the `?token=…` query string. After a successful
- * reset we hard-redirect to `/` with a localStorage flag the Auth screen
- * picks up to render the success notice — that way the new password is
- * confirmed via a real login attempt before we hand out a session cookie.
+ * reset we hard-navigate to `/` with two localStorage flags set:
+ *   - PASSWORD_RESET_SUCCESS_FLAG so the Auth screen renders the
+ *     "your password was updated, sign in below" notice.
+ *   - BETA_ACCESS_FLAG so users completing the reset on a fresh device
+ *     (the common case — they followed an email link in a new browser)
+ *     are taken straight to the sign-in form instead of being trapped
+ *     behind the beta `ComingSoon` gate. Successfully consuming a
+ *     one-time token is itself proof of account ownership, so allowing
+ *     them past the marketing gate is correct.
+ *
+ * The navigation is a full-page `window.location.assign` rather than a
+ * wouter `setLocation` so the AppGate component re-mounts and reads
+ * the freshly-set BETA_ACCESS_FLAG from localStorage on initial state
+ * (it's only sampled once in `useState`).
  */
 export const PASSWORD_RESET_SUCCESS_FLAG = "pp_password_reset_success";
+export const BETA_ACCESS_FLAG = "pp_beta_access";
 
 function readTokenFromLocation(): string | null {
   if (typeof window === "undefined") return null;
@@ -40,10 +52,15 @@ export function ResetPassword() {
     const t = window.setTimeout(() => {
       try {
         window.localStorage.setItem(PASSWORD_RESET_SUCCESS_FLAG, "1");
+        // Bypass the beta gate for users completing a reset on a
+        // fresh device — see the file-level comment for the rationale.
+        window.localStorage.setItem(BETA_ACCESS_FLAG, "1");
       } catch {
         /* localStorage may be disabled — the success state still shows */
       }
-      setLocation("/");
+      // Full-page nav (not setLocation) so AppGate remounts and re-reads
+      // the BETA_ACCESS_FLAG into its initial state.
+      window.location.assign("/");
     }, 1800);
     return () => window.clearTimeout(t);
   }, [success, setLocation]);
