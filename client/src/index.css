@@ -3263,7 +3263,17 @@ html.dark .leaks-error {
 /* ─── Accuracy Report page ────────────────────────────────────────────────── */
 
 .acc-page {
-  max-width: 900px;
+  /*
+   * Widened from 900px → 1200px so the dev Classification Sampler
+   * review page comfortably fits its 8-column table (880px min-width
+   * + ~100px card padding = ~980px needed) without forcing the
+   * tester to scroll horizontally inside the table — they might
+   * forget to scroll right and miss the Action buttons. The other
+   * pages on this shared layout (TeamSummary, TestSuiteIndex, the
+   * sampler Report screen) have shorter content and simply use the
+   * extra horizontal space gracefully.
+   */
+  max-width: 1200px;
   margin: 0 auto;
   padding: 2rem 1.25rem 4rem;
   display: flex;
