@@ -326,17 +326,19 @@ export function Auth({ inactivityLogout = false }: { inactivityLogout?: boolean 
           )}
         </div>
 
-        <button
-          type="button"
-          className="auth-beta-reset"
-          data-testid="button-beta-reset"
-          onClick={() => {
-            localStorage.removeItem("pp_beta_access");
-            window.location.reload();
-          }}
-        >
-          ← Back to coming soon
-        </button>
+        {mode === "login" ? (
+          <button
+            type="button"
+            className="auth-beta-reset"
+            data-testid="button-beta-reset"
+            onClick={() => {
+              localStorage.removeItem("pp_beta_access");
+              window.location.reload();
+            }}
+          >
+            ← Back to coming soon
+          </button>
+        ) : null}
       </div>
     </main>
   );

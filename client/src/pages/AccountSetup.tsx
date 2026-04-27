@@ -14,7 +14,7 @@ export type AccountSetupProps = {
 };
 
 export function AccountSetup({ onCreated, onSkip }: AccountSetupProps) {
-  const { createAccount } = useAuth();
+  const { createAccount, logout } = useAuth();
   const [label, setLabel] = useState("");
   const [lastFour, setLastFour] = useState("");
   const [accountType, setAccountType] = useState("");
@@ -50,6 +50,16 @@ export function AccountSetup({ onCreated, onSkip }: AccountSetupProps) {
     }
   }
 
+  function handleBackToLogin() {
+    // AppGate's auth.isAuthenticated effect clears the per-session
+    // onboarding flags as soon as logout flips meQuery to unauthenticated,
+    // so we just trigger the mutation and let the gate fall through to
+    // the Auth screen on its own.
+    void logout.mutateAsync().catch(() => {
+      /* logout failure leaves the user where they were — no special UX */
+    });
+  }
+
   return (
     <main className="app-main auth-main auth-main--centered auth-main--editorial">
       <div className="auth-card auth-card--capture onboarding-card">
@@ -81,7 +91,12 @@ export function AccountSetup({ onCreated, onSkip }: AccountSetupProps) {
         <form className="auth-form" onSubmit={(e) => void onSubmit(e)}>
           <label className="auth-field">
             <span className="auth-label">
-              Nickname for this account (e.g. Chase Checking, Amex Gold)
+              Nickname
+              <HintIcon
+                label="About the nickname"
+                content="A short name you'll recognize, e.g. Chase Checking or Amex Gold. You can change it later."
+                data-testid="hint-nickname"
+              />
             </span>
             <input
               className="auth-input"
@@ -94,31 +109,6 @@ export function AccountSetup({ onCreated, onSkip }: AccountSetupProps) {
               required
               disabled={busy}
               data-testid="input-account-label"
-            />
-          </label>
-
-          <label className="auth-field">
-            <span className="auth-label">
-              Last 4 digits — optional, helps you tell similar cards apart
-              <HintIcon
-                label="About last 4 digits"
-                content="Optional. Helps you tell apart multiple cards from the same bank — handy if you have, say, two Chase cards."
-                data-testid="hint-last-four"
-              />
-            </span>
-            <input
-              className="auth-input"
-              type="text"
-              name="lastFour"
-              inputMode="numeric"
-              maxLength={4}
-              autoComplete="off"
-              value={lastFour}
-              onChange={(e) =>
-                setLastFour(e.target.value.replace(/\D/g, "").slice(0, 4))
-              }
-              disabled={busy}
-              data-testid="input-account-last-four"
             />
           </label>
 
@@ -146,6 +136,31 @@ export function AccountSetup({ onCreated, onSkip }: AccountSetupProps) {
               <option value="cash">Cash</option>
               <option value="other">Other</option>
             </select>
+          </label>
+
+          <label className="auth-field">
+            <span className="auth-label">
+              Last 4
+              <HintIcon
+                label="About last 4 digits"
+                content="Optional. Helps you tell apart multiple cards from the same bank — handy if you have, say, two Chase cards."
+                data-testid="hint-last-four"
+              />
+            </span>
+            <input
+              className="auth-input"
+              type="text"
+              name="lastFour"
+              inputMode="numeric"
+              maxLength={4}
+              autoComplete="off"
+              value={lastFour}
+              onChange={(e) =>
+                setLastFour(e.target.value.replace(/\D/g, "").slice(0, 4))
+              }
+              disabled={busy}
+              data-testid="input-account-last-four"
+            />
           </label>
 
           {shownError ? (
@@ -182,6 +197,16 @@ export function AccountSetup({ onCreated, onSkip }: AccountSetupProps) {
             </button>
           </Hint>
         </form>
+
+        <button
+          type="button"
+          className="auth-beta-reset onboarding-back-to-login"
+          onClick={handleBackToLogin}
+          disabled={busy || logout.isPending}
+          data-testid="link-back-to-login"
+        >
+          ← Back to login
+        </button>
       </div>
     </main>
   );

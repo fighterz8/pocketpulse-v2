@@ -3,8 +3,14 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { TooltipProvider } from "../components/ui/tooltip";
 import { AccountSetup } from "./AccountSetup";
 
-const { mockCreateAccount } = vi.hoisted(() => ({
+const { mockCreateAccount, mockLogout } = vi.hoisted(() => ({
   mockCreateAccount: {
+    mutateAsync: vi.fn(),
+    isPending: false,
+    error: null as Error | null,
+    reset: vi.fn(),
+  },
+  mockLogout: {
     mutateAsync: vi.fn(),
     isPending: false,
     error: null as Error | null,
@@ -13,7 +19,10 @@ const { mockCreateAccount } = vi.hoisted(() => ({
 }));
 
 vi.mock("../hooks/use-auth", () => ({
-  useAuth: () => ({ createAccount: mockCreateAccount }),
+  useAuth: () => ({
+    createAccount: mockCreateAccount,
+    logout: mockLogout,
+  }),
 }));
 
 function setup() {
@@ -33,6 +42,9 @@ describe("AccountSetup", () => {
     mockCreateAccount.reset.mockReset();
     mockCreateAccount.isPending = false;
     mockCreateAccount.error = null;
+    mockLogout.mutateAsync.mockReset();
+    mockLogout.mutateAsync.mockResolvedValue(undefined);
+    mockLogout.isPending = false;
   });
 
   it("renders the Step 1 of 2 chrome and the new bank-account heading", () => {
@@ -142,6 +154,32 @@ describe("AccountSetup", () => {
     expect(onSkip).toHaveBeenCalledTimes(1);
     expect(onCreated).not.toHaveBeenCalled();
     expect(mockCreateAccount.mutateAsync).not.toHaveBeenCalled();
+  });
+
+  it("renders the fields in the order Nickname → Account type → Last 4", () => {
+    setup();
+    const labels = Array.from(
+      document.querySelectorAll<HTMLSpanElement>(".auth-label"),
+    ).map((el) => (el.textContent ?? "").trim());
+    expect(labels[0]).toMatch(/^Nickname/);
+    expect(labels[1]).toMatch(/^Account type/);
+    expect(labels[2]).toMatch(/^Last 4/);
+  });
+
+  it("renders the nickname hint trigger", () => {
+    setup();
+    const hint = screen.getByTestId("hint-nickname");
+    expect(hint).toHaveAttribute("aria-label", "About the nickname");
+  });
+
+  it("calls logout when the user clicks Back to login", async () => {
+    setup();
+    const back = screen.getByTestId("link-back-to-login");
+    expect(back).toHaveTextContent(/back to login/i);
+    fireEvent.click(back);
+    await waitFor(() => {
+      expect(mockLogout.mutateAsync).toHaveBeenCalledTimes(1);
+    });
   });
 
   it("blocks empty submission with an inline validation error", async () => {

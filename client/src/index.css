@@ -5040,3 +5040,131 @@ html.dark .pp-hint-icon:focus-visible {
   color: rgb(96 165 250);
   background: rgb(96 165 250 / 0.12);
 }
+
+/* ─── Onboarding "Back to login" link ─────────────────────────── */
+
+.onboarding-back-to-login {
+  margin-top: 0.6rem;
+}
+
+/* ─── First-run welcome overlay ───────────────────────────────── */
+
+.welcome-overlay-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: clamp(1rem, 4vw, 2.5rem);
+  background: rgb(15 23 42 / 0.55);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  animation: welcome-fade-in 220ms ease-out;
+}
+
+.welcome-overlay-card {
+  position: relative;
+  width: min(32rem, 100%);
+  max-height: 90vh;
+  overflow: auto;
+  padding: clamp(1.5rem, 4vw, 2.25rem);
+  border-radius: 1.25rem;
+  background: #ffffff;
+  color: #0f172a;
+  border: 1px solid rgb(15 23 42 / 0.06);
+  box-shadow:
+    0 24px 60px rgb(15 23 42 / 0.28),
+    0 4px 16px rgb(15 23 42 / 0.12);
+  animation: welcome-card-in 240ms cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+
+.welcome-overlay-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin: 0 0 1rem;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #64748b;
+}
+
+.welcome-overlay-dot {
+  display: inline-block;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 999px;
+  background: #22c55e;
+  box-shadow: 0 0 0 3px rgb(34 197 94 / 0.18);
+}
+
+.welcome-overlay-title {
+  margin: 0 0 0.85rem;
+  font-size: clamp(1.5rem, 3vw, 1.85rem);
+  font-weight: 700;
+  letter-spacing: -0.025em;
+  line-height: 1.15;
+}
+
+.welcome-overlay-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+  margin: 0 0 1.4rem;
+  font-size: 0.95rem;
+  line-height: 1.55;
+  color: #334155;
+}
+
+.welcome-overlay-body p { margin: 0; }
+.welcome-overlay-body strong { color: #0f172a; font-weight: 600; }
+
+.welcome-overlay-cta {
+  display: inline-block;
+  width: 100%;
+  padding: 0.7rem 1.1rem;
+  font: inherit;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #ffffff;
+  background: #2563eb;
+  border: none;
+  border-radius: 0.6rem;
+  cursor: pointer;
+  transition: background 120ms ease, transform 120ms ease;
+}
+
+.welcome-overlay-cta:hover { background: #1d4ed8; }
+.welcome-overlay-cta:active { transform: translateY(1px); }
+.welcome-overlay-cta:focus-visible {
+  outline: 2px solid #93c5fd;
+  outline-offset: 2px;
+}
+
+@keyframes welcome-fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes welcome-card-in {
+  from { opacity: 0; transform: translateY(8px) scale(0.98); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .welcome-overlay-backdrop,
+  .welcome-overlay-card {
+    animation: none;
+  }
+}
+
+html.dark .welcome-overlay-card {
+  background: #1e293b;
+  color: #e2e8f0;
+  border-color: rgb(148 163 184 / 0.18);
+}
+html.dark .welcome-overlay-eyebrow { color: #94a3b8; }
+html.dark .welcome-overlay-body { color: #cbd5e1; }
+html.dark .welcome-overlay-body strong { color: #f8fafc; }

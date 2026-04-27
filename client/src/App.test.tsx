@@ -176,12 +176,35 @@ describe("AppGate routing state machine", () => {
   });
   afterEach(() => {
     localStorage.removeItem("pp_beta_access");
+    localStorage.removeItem("pp_welcome_seen");
   });
 
   it("renders Step 1 (AccountSetup) when authenticated and accounts is empty", () => {
     authState.accounts = [];
     renderGate();
     expect(screen.getByTestId("stub-account-setup")).toBeInTheDocument();
+  });
+
+  it("mounts the welcome overlay over Step 1 the first time", () => {
+    authState.accounts = [];
+    renderGate();
+    expect(screen.getByTestId("welcome-overlay")).toBeInTheDocument();
+  });
+
+  it("does NOT mount the welcome overlay when pp_welcome_seen is set", () => {
+    localStorage.setItem("pp_welcome_seen", "1");
+    authState.accounts = [];
+    renderGate();
+    expect(screen.queryByTestId("welcome-overlay")).not.toBeInTheDocument();
+    // Step 1 itself still renders.
+    expect(screen.getByTestId("stub-account-setup")).toBeInTheDocument();
+  });
+
+  it("does NOT mount the welcome overlay outside the Step 1 branch", () => {
+    authState.accounts = [account];
+    renderGate();
+    expect(screen.queryByTestId("welcome-overlay")).not.toBeInTheDocument();
+    expect(screen.getByTestId("stub-dashboard")).toBeInTheDocument();
   });
 
   it("renders Step 2 (OnboardingUpload) when accounts has 1 entry and step2_pending is set", () => {
