@@ -1195,6 +1195,369 @@ html.dark .upload-new-account-cancel:hover:not(:disabled) {
   color: #e2e8f0;
 }
 
+/* ── Drag-active dropzone ────────────────────────────────────────────────── */
+
+.upload-dropzone {
+  /* `currentColor` keyed transitions inherited above + scale on drag-active */
+  transition:
+    border-color 150ms ease,
+    background-color 150ms ease,
+    transform 150ms ease,
+    box-shadow 150ms ease;
+}
+
+.upload-dropzone--active {
+  border-color: #2563eb;
+  border-style: solid;
+  background: color-mix(in srgb, #2563eb 10%, transparent);
+  transform: scale(1.01);
+  box-shadow: 0 8px 24px rgb(37 99 235 / 0.18);
+}
+
+.upload-dropzone--disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+  margin-top: 1rem;
+}
+
+.upload-dropzone--disabled:hover {
+  background: transparent;
+  border-color: color-mix(in srgb, currentColor 22%, transparent);
+}
+
+.upload-dropzone-formats {
+  margin: 0.5rem 0 0;
+  font-size: 0.78rem;
+  opacity: 0.55;
+  line-height: 1.4;
+}
+
+/* ── Per-row status treatment ────────────────────────────────────────────── */
+
+.upload-queue-item {
+  border-left: 3px solid color-mix(in srgb, currentColor 14%, transparent);
+}
+
+.upload-queue-item--uploading {
+  border-left-color: #2563eb;
+  background: color-mix(in srgb, #2563eb 4%, transparent);
+}
+
+.upload-queue-item--complete {
+  border-left-color: #16a34a;
+  background: color-mix(in srgb, #16a34a 4%, transparent);
+}
+
+.upload-queue-item--failed {
+  border-left-color: #b91c1c;
+  background: color-mix(in srgb, #b91c1c 5%, transparent);
+}
+
+.upload-queue-item-error {
+  margin: 0.5rem 0 0;
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: #b91c1c;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.upload-queue-item-error::before {
+  content: "⚠";
+  font-size: 1rem;
+}
+
+.upload-queue-item-result {
+  margin: 0.4rem 0 0;
+  font-size: 0.85rem;
+  opacity: 0.8;
+}
+
+.upload-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.18rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  flex-shrink: 0;
+}
+
+.upload-status-pill--pending {
+  background: color-mix(in srgb, currentColor 8%, transparent);
+  color: inherit;
+  opacity: 0.7;
+}
+
+.upload-status-pill--uploading {
+  background: color-mix(in srgb, #2563eb 12%, transparent);
+  color: #1d4ed8;
+}
+
+.upload-status-pill--complete {
+  background: #dcfce7;
+  color: #15803d;
+}
+
+.upload-status-pill--failed {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.upload-status-pill--uploading .upload-loading-spinner {
+  width: 0.75rem;
+  height: 0.75rem;
+  border-width: 1.5px;
+}
+
+/* ── Bulk-assign bar ─────────────────────────────────────────────────────── */
+
+.upload-bulk-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem;
+  margin: 0 0 0.75rem;
+  padding: 0.55rem 0.75rem;
+  border-radius: 0.55rem;
+  background: color-mix(in srgb, currentColor 5%, transparent);
+  border: 1px solid color-mix(in srgb, currentColor 12%, transparent);
+}
+
+.upload-bulk-label {
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  opacity: 0.75;
+}
+
+.upload-bulk-select {
+  flex: 1;
+  min-width: 10rem;
+}
+
+.upload-bulk-apply {
+  padding: 0.45rem 0.85rem;
+  font: inherit;
+  font-size: 0.85rem;
+  font-weight: 600;
+  border: none;
+  border-radius: 0.4rem;
+  background: linear-gradient(135deg, #0ea5e9 0%, #2563eb 100%);
+  color: #fff;
+  cursor: pointer;
+  transition: opacity 120ms ease, transform 120ms ease;
+}
+
+.upload-bulk-apply:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.upload-bulk-apply:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+/* ── Per-file preview ────────────────────────────────────────────────────── */
+
+.upload-preview-toggle {
+  align-self: flex-end;
+  padding: 0.4rem 0.6rem;
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 500;
+  color: #2563eb;
+  background: none;
+  border: 1px solid color-mix(in srgb, #2563eb 30%, transparent);
+  border-radius: 0.4rem;
+  cursor: pointer;
+  transition: background 120ms ease;
+  white-space: nowrap;
+}
+
+.upload-preview-toggle:hover {
+  background: color-mix(in srgb, #2563eb 8%, transparent);
+}
+
+.upload-preview {
+  margin-top: 0.6rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.upload-preview-warning {
+  margin: 0;
+  padding: 0.45rem 0.65rem;
+  border-radius: 0.4rem;
+  background: color-mix(in srgb, #f59e0b 12%, transparent);
+  color: #92400e;
+  font-size: 0.82rem;
+  font-weight: 500;
+}
+
+.upload-preview-loading,
+.upload-preview-error {
+  margin: 0.5rem 0 0;
+  font-size: 0.85rem;
+  opacity: 0.7;
+  font-style: italic;
+}
+
+.upload-preview-error {
+  color: #b91c1c;
+  font-style: normal;
+  font-weight: 500;
+}
+
+.upload-preview-scroll {
+  overflow-x: auto;
+  border-radius: 0.4rem;
+  border: 1px solid color-mix(in srgb, currentColor 14%, transparent);
+}
+
+.upload-preview-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+}
+
+.upload-preview-table th,
+.upload-preview-table td {
+  padding: 0.4rem 0.6rem;
+  border-bottom: 1px solid color-mix(in srgb, currentColor 10%, transparent);
+  text-align: left;
+  white-space: nowrap;
+}
+
+.upload-preview-table th {
+  background: color-mix(in srgb, currentColor 6%, transparent);
+  font-weight: 700;
+  font-size: 0.74rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  opacity: 0.85;
+}
+
+.upload-preview-table tr:last-child td {
+  border-bottom: none;
+}
+
+/* ── Results summary headline (in queue) ─────────────────────────────────── */
+
+.upload-results-summary {
+  margin: 0 0 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.upload-results-skipped-line {
+  margin: 0;
+  font-size: 0.8rem;
+  opacity: 0.7;
+}
+
+/* ── Bank-account gate (Upload page) ─────────────────────────────────────── */
+
+.upload-account-gate {
+  margin-top: 0.5rem;
+}
+
+.upload-account-gate-title {
+  margin: 0 0 0.35rem;
+  font-size: 1.15rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.upload-account-gate-subtitle {
+  margin: 0 0 1rem;
+  font-size: 0.9rem;
+  opacity: 0.75;
+  line-height: 1.45;
+}
+
+.upload-account-gate-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+}
+
+.upload-account-gate-row {
+  display: flex;
+  gap: 0.7rem;
+  flex-wrap: wrap;
+}
+
+.upload-account-gate-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  flex: 1;
+  min-width: 12rem;
+}
+
+.upload-account-gate-label {
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  opacity: 0.7;
+}
+
+.upload-account-gate-input {
+  padding: 0.55rem 0.7rem;
+  font: inherit;
+  font-size: 0.92rem;
+  border-radius: 0.45rem;
+  border: 1px solid color-mix(in srgb, currentColor 18%, transparent);
+  background: Field;
+  color: FieldText;
+  outline: none;
+  transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+
+.upload-account-gate-input:focus {
+  border-color: #2563eb;
+  box-shadow: 0 0 0 3px rgb(37 99 235 / 0.15);
+}
+
+.upload-account-gate-error {
+  margin: 0;
+  font-size: 0.85rem;
+  color: #b91c1c;
+  font-weight: 500;
+}
+
+/* Mobile layout: queue rows stack cleanly */
+
+@media (max-width: 640px) {
+  .upload-queue-item-header {
+    flex-wrap: wrap;
+  }
+  .upload-queue-item-fields {
+    flex-direction: column;
+    gap: 0.55rem;
+  }
+  .upload-preview-toggle {
+    align-self: flex-start;
+  }
+  .upload-bulk-bar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .upload-bulk-apply {
+    width: 100%;
+  }
+  .upload-account-gate-row {
+    flex-direction: column;
+  }
+}
+
 /* ── Import history section (Upload page) ───────────────────────────────── */
 
 .upload-history {
