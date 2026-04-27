@@ -209,7 +209,7 @@ export function WelcomeOverlay({
           className="welcome-overlay-title"
           data-testid="welcome-overlay-title"
         >
-          Welcome.
+          Welcome to PocketPulse.
         </h2>
         <div
           id="welcome-overlay-body"

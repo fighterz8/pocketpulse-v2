@@ -5154,9 +5154,13 @@ html.dark .pp-hint-icon:focus-visible {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .welcome-overlay-backdrop,
+  /* Keep a brief fade for both layers so the appearance still feels
+     intentional, but skip the scale-in transform on the card. */
+  .welcome-overlay-backdrop {
+    animation: welcome-fade-in 160ms ease-out;
+  }
   .welcome-overlay-card {
-    animation: none;
+    animation: welcome-fade-in 160ms ease-out;
   }
 }
 
