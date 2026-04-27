@@ -43,9 +43,18 @@ export type UploadCoreProps = {
   accounts: AuthAccount[];
   /** Called once an import has finished AND the user dismissed the queue. */
   onAllImportsDismissed?: () => void;
+  /** Called immediately after an import response is merged. */
+  onImportComplete?: (results: UploadFileResult[]) => void;
+  /** Override label for the "Upload more files" dismiss button. */
+  dismissButtonLabel?: string;
 };
 
-export function UploadCore({ accounts, onAllImportsDismissed }: UploadCoreProps) {
+export function UploadCore({
+  accounts,
+  onAllImportsDismissed,
+  onImportComplete,
+  dismissButtonLabel,
+}: UploadCoreProps) {
   const { upload } = useUploads();
 
   const [queue, setQueue] = useState<QueuedFile[]>([]);
@@ -210,6 +219,7 @@ export function UploadCore({ accounts, onAllImportsDismissed }: UploadCoreProps)
       clearTimeout(parsingTimer);
       const resultsByName = new Map<string, UploadFileResult>();
       for (const r of response.results) resultsByName.set(r.filename, r);
+      onImportComplete?.(response.results);
 
       setQueue((prev) =>
         prev.map((q) => {
@@ -431,7 +441,7 @@ export function UploadCore({ accounts, onAllImportsDismissed }: UploadCoreProps)
               onClick={dismissResults}
               data-testid="button-upload-more"
             >
-              Upload more files
+              {dismissButtonLabel ?? "Upload more files"}
             </button>
           ) : (
             <button

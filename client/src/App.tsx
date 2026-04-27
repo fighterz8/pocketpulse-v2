@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { QueryClientProvider } from "@tanstack/react-query";
-import { Route, Switch } from "wouter";
+import { Route, Switch, useLocation } from "wouter";
 import { AppLayout } from "./components/layout/AppLayout";
 import { useAuth } from "./hooks/use-auth";
 import { useInactivityLogout } from "./hooks/use-inactivity-logout";
@@ -12,6 +12,7 @@ import { Dashboard } from "./pages/Dashboard";
 import { Ledger } from "./pages/Ledger";
 import { Leaks } from "./pages/Leaks";
 import { NotFoundPage } from "./pages/not-found";
+import { OnboardingUpload } from "./pages/OnboardingUpload";
 import { ResetPassword } from "./pages/ResetPassword";
 import { Upload } from "./pages/Upload";
 import { ClassificationSampler } from "./pages/dev/ClassificationSampler";
@@ -61,18 +62,64 @@ function AppAuthenticated() {
 }
 
 const BETA_FLAG = "pp_beta_access";
+// Per-session onboarding state. Lives in sessionStorage so it dies with
+// the tab — users with no accounts always see Step 1 again on next login.
+const ONBOARDING_SKIP_FLAG = "pp_onboarding_skipped";
+const ONBOARDING_STEP2_FLAG = "pp_onboarding_step2_pending";
 
-function AppGate() {
+export function AppGate() {
   const auth = useAuth();
+  const [, setLocation] = useLocation();
   const [inactivityLogout, setInactivityLogout] = useState(false);
   const [betaUnlocked, setBetaUnlocked] = useState(
     () => localStorage.getItem(BETA_FLAG) === "1",
+  );
+  const [onboardingSkipped, setOnboardingSkipped] = useState(
+    () => sessionStorage.getItem(ONBOARDING_SKIP_FLAG) === "1",
+  );
+  const [step2Pending, setStep2Pending] = useState(
+    () => sessionStorage.getItem(ONBOARDING_STEP2_FLAG) === "1",
   );
 
   function handleUnlock() {
     localStorage.setItem(BETA_FLAG, "1");
     setBetaUnlocked(true);
   }
+
+  function handleStep1Created() {
+    sessionStorage.setItem(ONBOARDING_STEP2_FLAG, "1");
+    setStep2Pending(true);
+  }
+  function handleStep2Done() {
+    sessionStorage.removeItem(ONBOARDING_STEP2_FLAG);
+    setStep2Pending(false);
+    // Send the user to the dashboard regardless of whatever URL the
+    // onboarding screens were rendered at, so the success notice is
+    // guaranteed to surface and there's no surprise deep-link landing.
+    setLocation("/");
+  }
+  function handleSkipOnboarding() {
+    sessionStorage.setItem(ONBOARDING_SKIP_FLAG, "1");
+    sessionStorage.removeItem(ONBOARDING_STEP2_FLAG);
+    setOnboardingSkipped(true);
+    setStep2Pending(false);
+    setLocation("/");
+  }
+
+  // Reset all per-session onboarding state on logout so a fresh login
+  // starts at Step 1.
+  useEffect(() => {
+    if (!auth.isAuthenticated) {
+      if (sessionStorage.getItem(ONBOARDING_SKIP_FLAG) === "1") {
+        sessionStorage.removeItem(ONBOARDING_SKIP_FLAG);
+        setOnboardingSkipped(false);
+      }
+      if (sessionStorage.getItem(ONBOARDING_STEP2_FLAG) === "1") {
+        sessionStorage.removeItem(ONBOARDING_STEP2_FLAG);
+        setStep2Pending(false);
+      }
+    }
+  }, [auth.isAuthenticated]);
 
   // Clear the inactivity flag once the user re-authenticates.
   useEffect(() => {
@@ -148,8 +195,24 @@ function AppGate() {
     );
   }
 
-  if (auth.accounts !== null && auth.accounts.length === 0) {
-    return <AccountSetup />;
+  if (auth.accounts !== null) {
+    if (auth.accounts.length === 0 && !onboardingSkipped) {
+      return (
+        <AccountSetup
+          onCreated={handleStep1Created}
+          onSkip={handleSkipOnboarding}
+        />
+      );
+    }
+    if (auth.accounts.length >= 1 && step2Pending) {
+      return (
+        <OnboardingUpload
+          account={auth.accounts[0]!}
+          onDone={handleStep2Done}
+          onSkip={handleStep2Done}
+        />
+      );
+    }
   }
 
   return <AppAuthenticated />;

@@ -9,6 +9,7 @@ import {
   useDashboardSummary,
 } from "../hooks/use-dashboard";
 import { useAuth } from "../hooks/use-auth";
+import { ONBOARDING_UPLOAD_SUCCESS_FLAG } from "./OnboardingUpload";
 
 interface LeakItem {
   monthlyAmount: number;
@@ -210,6 +211,37 @@ function MonthSelector({
   );
 }
 
+// Reads + clears the onboarding-upload success flag set by OnboardingUpload
+// after a successful first import. Auto-dismisses after 6 seconds.
+function OnboardingSuccessNotice() {
+  const [count, setCount] = useState<number | null>(null);
+  useEffect(() => {
+    const raw = localStorage.getItem(ONBOARDING_UPLOAD_SUCCESS_FLAG);
+    if (!raw) return;
+    const n = parseInt(raw, 10);
+    localStorage.removeItem(ONBOARDING_UPLOAD_SUCCESS_FLAG);
+    if (Number.isFinite(n) && n > 0) {
+      setCount(n);
+      const t = setTimeout(() => setCount(null), 6000);
+      return () => clearTimeout(t);
+    }
+  }, []);
+  if (count === null) return null;
+  return (
+    <div
+      className="onboarding-success-notice"
+      role="status"
+      data-testid="onboarding-success-notice"
+    >
+      <span className="onboarding-success-notice-icon" aria-hidden="true">
+        ✓
+      </span>
+      Welcome to PocketPulse — we imported{" "}
+      <strong>{count}</strong> transaction{count !== 1 ? "s" : ""}.
+    </div>
+  );
+}
+
 // ─── Main component ──────────────────────────────────────────────────────────
 
 // Categories excluded from the spending breakdown display
@@ -406,6 +438,7 @@ export function Dashboard() {
 
   return (
     <div>
+      <OnboardingSuccessNotice />
       {headerRow}
 
       {/* ── Row 1: Safe-to-Spend Hero + Expense Leaks ─────────────────── */}

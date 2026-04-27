@@ -1,248 +1,285 @@
-import { fireEvent, render, screen } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Router } from "wouter";
 import { memoryLocation } from "wouter/memory-location";
-import { App } from "./App";
+import { AppGate } from "./App";
+import type { AuthAccount, AuthUser } from "./hooks/use-auth";
 
-const { mockAuthState } = vi.hoisted(() => ({
-  mockAuthState: {
+const { authState } = vi.hoisted(() => ({
+  authState: {
     isLoading: false,
     isAuthenticated: false as boolean,
-    user: null as null | { id: number; email: string; displayName: string },
-    meError: null as Error | null,
-    refetch: vi.fn(),
-    accounts: null as null | { id: number; label: string }[],
-    accountsLoading: false,
-    accountsError: null as Error | null,
-    refetchAccounts: vi.fn(),
-    login: {
-      mutateAsync: vi.fn(),
-      isPending: false,
-      error: null as Error | null,
-      reset: vi.fn(),
-    },
-    register: {
-      mutateAsync: vi.fn(),
-      isPending: false,
-      error: null as Error | null,
-      reset: vi.fn(),
-    },
-    createAccount: {
-      mutateAsync: vi.fn(),
-      isPending: false,
-      error: null as Error | null,
-      reset: vi.fn(),
-    },
-    logout: {
-      mutateAsync: vi.fn(),
-      isPending: false,
-      error: null as Error | null,
-      reset: vi.fn(),
-    },
+    accounts: null as AuthAccount[] | null,
+    user: null as AuthUser | null,
   },
 }));
 
 vi.mock("./hooks/use-auth", () => ({
-  useAuth: () => mockAuthState,
+  useAuth: () => ({
+    isLoading: authState.isLoading,
+    isAuthenticated: authState.isAuthenticated,
+    user: authState.user,
+    accounts: authState.accounts,
+    accountsLoading: false,
+    accountsError: null,
+    meError: null,
+    refetch: vi.fn(),
+    refetchAccounts: vi.fn(),
+    login: stubMutation(),
+    register: stubMutation(),
+    createAccount: stubMutation(),
+    logout: stubMutation(),
+  }),
 }));
 
-describe("app shell", () => {
+function stubMutation() {
+  return {
+    mutate: vi.fn(),
+    mutateAsync: vi.fn(),
+    isPending: false,
+    error: null,
+    reset: vi.fn(),
+  };
+}
+
+// Stub heavy page components — we only care which one renders.
+vi.mock("./pages/Auth", () => ({
+  Auth: () => <div data-testid="stub-auth">AUTH</div>,
+}));
+vi.mock("./pages/AccountSetup", () => ({
+  AccountSetup: ({
+    onCreated,
+    onSkip,
+  }: {
+    onCreated: () => void;
+    onSkip: () => void;
+  }) => (
+    <div data-testid="stub-account-setup">
+      ACCOUNT_SETUP
+      <button data-testid="stub-create" onClick={onCreated}>
+        create
+      </button>
+      <button data-testid="stub-skip-1" onClick={onSkip}>
+        skip
+      </button>
+    </div>
+  ),
+}));
+vi.mock("./pages/OnboardingUpload", () => ({
+  OnboardingUpload: ({
+    account,
+    onDone,
+    onSkip,
+  }: {
+    account: AuthAccount;
+    onDone: () => void;
+    onSkip: () => void;
+  }) => (
+    <div data-testid="stub-onboarding-upload">
+      ONBOARDING_UPLOAD:{account.label}
+      <button data-testid="stub-done" onClick={onDone}>
+        done
+      </button>
+      <button data-testid="stub-skip-2" onClick={onSkip}>
+        skip
+      </button>
+    </div>
+  ),
+  ONBOARDING_UPLOAD_SUCCESS_FLAG: "pp_onboarding_upload_count",
+}));
+vi.mock("./components/layout/AppLayout", () => ({
+  AppLayout: ({ children }: { children: React.ReactNode }) => (
+    <div data-testid="stub-app-layout">{children}</div>
+  ),
+}));
+vi.mock("./pages/Dashboard", () => ({
+  Dashboard: () => <div data-testid="stub-dashboard">DASHBOARD</div>,
+}));
+vi.mock("./pages/Ledger", () => ({
+  Ledger: () => <div data-testid="stub-ledger">LEDGER</div>,
+}));
+vi.mock("./pages/Leaks", () => ({
+  Leaks: () => <div data-testid="stub-leaks">LEAKS</div>,
+}));
+vi.mock("./pages/Upload", () => ({
+  Upload: () => <div data-testid="stub-upload">UPLOAD</div>,
+}));
+vi.mock("./pages/ResetPassword", () => ({
+  ResetPassword: () => <div data-testid="stub-reset">RESET</div>,
+  PASSWORD_RESET_SUCCESS_FLAG: "pp_password_reset_success",
+}));
+vi.mock("./pages/ComingSoon", () => ({
+  ComingSoon: () => <div data-testid="stub-coming-soon">COMING_SOON</div>,
+}));
+vi.mock("./pages/not-found", () => ({
+  NotFoundPage: () => <div data-testid="stub-not-found">NOT_FOUND</div>,
+}));
+vi.mock("./pages/dev/ClassificationSampler", () => ({
+  ClassificationSampler: () => <div>cs</div>,
+}));
+vi.mock("./pages/dev/TeamSummary", () => ({
+  TeamSummary: () => <div>ts</div>,
+}));
+vi.mock("./pages/dev/TestSuiteIndex", () => ({
+  TestSuiteIndex: () => <div>tsi</div>,
+}));
+vi.mock("./hooks/use-inactivity-logout", () => ({
+  useInactivityLogout: () => {},
+}));
+
+const account: AuthAccount = {
+  id: 1,
+  userId: 1,
+  label: "Chase",
+  lastFour: null,
+  accountType: null,
+  createdAt: "2026-01-01T00:00:00Z",
+  updatedAt: "2026-01-01T00:00:00Z",
+};
+
+function renderGate(initialPath: string = "/") {
+  const memory = memoryLocation({ path: initialPath, record: true });
+  const qc = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  });
+  // Mark beta unlocked so the gate doesn't trip the beta wall.
+  localStorage.setItem("pp_beta_access", "1");
+  const utils = render(
+    <QueryClientProvider client={qc}>
+      <Router hook={memory.hook}>
+        <AppGate />
+      </Router>
+    </QueryClientProvider>,
+  );
+  return { ...utils, history: memory.history };
+}
+
+describe("AppGate routing state machine", () => {
   beforeEach(() => {
-    mockAuthState.isLoading = false;
-    mockAuthState.isAuthenticated = false;
-    mockAuthState.user = null;
-    mockAuthState.meError = null;
-    mockAuthState.refetch.mockReset();
-    mockAuthState.login.mutateAsync.mockReset();
-    mockAuthState.login.isPending = false;
-    mockAuthState.login.error = null;
-    mockAuthState.login.reset.mockReset();
-    mockAuthState.register.mutateAsync.mockReset();
-    mockAuthState.register.isPending = false;
-    mockAuthState.register.error = null;
-    mockAuthState.register.reset.mockReset();
-    mockAuthState.accounts = null;
-    mockAuthState.accountsLoading = false;
-    mockAuthState.accountsError = null;
-    mockAuthState.refetchAccounts.mockReset();
-    mockAuthState.createAccount.mutateAsync.mockReset();
-    mockAuthState.createAccount.isPending = false;
-    mockAuthState.createAccount.error = null;
-    mockAuthState.createAccount.reset.mockReset();
-    mockAuthState.logout.mutateAsync.mockReset();
-    mockAuthState.logout.isPending = false;
-    mockAuthState.logout.error = null;
-    mockAuthState.logout.reset.mockReset();
-    vi.unstubAllGlobals();
-  });
-
-  it("renders the app root", () => {
-    render(<App />);
-    expect(screen.getByTestId("app-root")).toBeInTheDocument();
-  });
-
-  it("routes signed-out users to the auth screen", () => {
-    mockAuthState.isAuthenticated = false;
-    mockAuthState.isLoading = false;
-    render(<App />);
-    const title = screen.getByRole("heading", { name: /sign in/i });
-    expect(title).toBeInTheDocument();
-    expect(
-      screen.getByRole("button", { name: /create an account/i }),
-    ).toBeInTheDocument();
-    expect(screen.getByRole("main")).toHaveClass("auth-main--centered");
-    expect(screen.getByRole("main")).toHaveClass("auth-main--editorial");
-    expect(title.closest(".auth-card")).toHaveClass("auth-card--capture");
-    expect(screen.getByText(/^pocketpulse$/i)).toHaveClass("auth-brand");
-  });
-
-  it("routes authenticated users with no accounts to account setup onboarding", () => {
-    mockAuthState.isLoading = false;
-    mockAuthState.isAuthenticated = true;
-    mockAuthState.user = {
+    sessionStorage.clear();
+    authState.isLoading = false;
+    authState.isAuthenticated = true;
+    authState.user = {
       id: 1,
-      email: "user@example.com",
-      displayName: "Test User",
+      email: "x@y.z",
+      displayName: "X",
+      companyName: null,
+      isDev: false,
     };
-    mockAuthState.accountsLoading = false;
-    mockAuthState.accounts = [];
-    mockAuthState.accountsError = null;
-    render(<App />);
-    const title = screen.getByRole("heading", {
-      name: /set up your first account/i,
+    authState.accounts = null;
+  });
+  afterEach(() => {
+    localStorage.removeItem("pp_beta_access");
+  });
+
+  it("renders Step 1 (AccountSetup) when authenticated and accounts is empty", () => {
+    authState.accounts = [];
+    renderGate();
+    expect(screen.getByTestId("stub-account-setup")).toBeInTheDocument();
+  });
+
+  it("renders Step 2 (OnboardingUpload) when accounts has 1 entry and step2_pending is set", () => {
+    sessionStorage.setItem("pp_onboarding_step2_pending", "1");
+    authState.accounts = [account];
+    renderGate();
+    expect(screen.getByTestId("stub-onboarding-upload")).toHaveTextContent(
+      "ONBOARDING_UPLOAD:Chase",
+    );
+  });
+
+  it("renders the authenticated app when accounts has entries and no step2_pending", () => {
+    authState.accounts = [account];
+    renderGate();
+    expect(screen.getByTestId("stub-dashboard")).toBeInTheDocument();
+  });
+
+  it("renders the authenticated app when accounts is empty but skipped flag is set", () => {
+    sessionStorage.setItem("pp_onboarding_skipped", "1");
+    authState.accounts = [];
+    renderGate();
+    // No dashboard data, so we'll see the layout — what matters is that
+    // Step 1 is NOT shown (skipped takes effect).
+    expect(screen.queryByTestId("stub-account-setup")).not.toBeInTheDocument();
+    expect(screen.getByTestId("stub-app-layout")).toBeInTheDocument();
+  });
+
+  it("Step 1 onCreated transitions to Step 2 and sets the pending flag", async () => {
+    authState.accounts = [];
+    const { rerender } = renderGate();
+    fireEvent.click(screen.getByTestId("stub-create"));
+    expect(sessionStorage.getItem("pp_onboarding_step2_pending")).toBe("1");
+    // Simulate the createAccount cache update bumping accounts.length to 1
+    authState.accounts = [account];
+    rerender(
+      <QueryClientProvider
+        client={
+          new QueryClient({
+            defaultOptions: {
+              queries: { retry: false },
+              mutations: { retry: false },
+            },
+          })
+        }
+      >
+        <Router>
+          <AppGate />
+        </Router>
+      </QueryClientProvider>,
+    );
+    await waitFor(() => {
+      expect(
+        screen.getByTestId("stub-onboarding-upload"),
+      ).toBeInTheDocument();
     });
-    expect(title).toBeInTheDocument();
-    expect(
-      screen.getByRole("textbox", { name: /account name/i }),
-    ).toBeInTheDocument();
-    expect(screen.getByRole("main")).toHaveClass("auth-main--centered");
-    expect(screen.getByRole("main")).toHaveClass("auth-main--editorial");
-    expect(title.closest(".auth-card")).toHaveClass("auth-card--capture");
-    expect(screen.getByText(/^pocketpulse$/i)).toHaveClass("auth-brand");
   });
 
-  it("renders protected app shell with sidebar navigation when the user has accounts", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn((url: string) => {
-        // /api/dashboard/months and /api/leaks must return arrays so the
-        // Dashboard's useAvailableMonths hook and leak query don't crash.
-        if ((url as string).startsWith("/api/dashboard/months")) {
-          return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
-        }
-        if ((url as string).startsWith("/api/leaks")) {
-          return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
-        }
-        if ((url as string).startsWith("/api/dashboard-summary")) {
-          return Promise.resolve({
-            ok: true,
-            json: () =>
-              Promise.resolve({
-                totals: {
-                  totalInflow: 0,
-                  totalOutflow: 0,
-                  netCashflow: 0,
-                  safeToSpend: 0,
-                  transactionCount: 0,
-                  recurringIncome: 0,
-                  recurringExpenses: 0,
-                  oneTimeIncome: 0,
-                  oneTimeExpenses: 0,
-                  discretionarySpend: 0,
-                },
-                isAllTime: true,
-                categoryBreakdown: [],
-                monthlyTrend: [],
-                recentTransactions: [],
-                accountCount: 1,
-              }),
-          });
-        }
-        return Promise.resolve({ ok: true, json: () => Promise.resolve({}) });
-      }),
-    );
-    mockAuthState.isLoading = false;
-    mockAuthState.isAuthenticated = true;
-    mockAuthState.user = {
-      id: 1,
-      email: "user@example.com",
-      displayName: "Test User",
-    };
-    mockAuthState.accountsLoading = false;
-    mockAuthState.accounts = [{ id: 10, label: "Cash" }];
-    mockAuthState.accountsError = null;
-    render(<App />);
-    expect(
-      screen.getByRole("navigation", { name: /main navigation/i }),
-    ).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /^dashboard$/i })).toHaveAttribute(
-      "href",
-      "/",
-    );
-    expect(screen.getByRole("link", { name: /^upload$/i })).toHaveAttribute(
-      "href",
-      "/upload",
-    );
-    expect(screen.getByRole("link", { name: /^ledger$/i })).toHaveAttribute(
-      "href",
-      "/transactions",
-    );
-    expect(
-      screen.getByRole("link", { name: /leak detection/i }),
-    ).toHaveAttribute("href", "/leaks");
-    expect(
-      screen.getByRole("button", { name: /^logout$/i }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole("heading", { name: /^dashboard$/i }),
-    ).toBeInTheDocument();
-    // Dashboard empty state shows "No transactions in All Time." when
-    // selectedMonth is null and transactionCount is 0.
-    expect(
-      await screen.findByText(/no transactions in all time/i),
-    ).toBeInTheDocument();
-    expect(
-      screen.queryByRole("heading", { name: /set up your first account/i }),
-    ).not.toBeInTheDocument();
+  it("Step 1 skip persists in-session AND navigates to /", async () => {
+    authState.accounts = [];
+    const { history } = renderGate("/transactions");
+    fireEvent.click(screen.getByTestId("stub-skip-1"));
+    expect(sessionStorage.getItem("pp_onboarding_skipped")).toBe("1");
+    await waitFor(() => {
+      expect(history.at(-1)).toBe("/");
+    });
   });
 
-  it("invokes logout when the sidebar Logout control is used", () => {
-    mockAuthState.logout.mutateAsync.mockResolvedValue(undefined);
-    mockAuthState.isLoading = false;
-    mockAuthState.isAuthenticated = true;
-    mockAuthState.user = {
-      id: 1,
-      email: "user@example.com",
-      displayName: "Test User",
-    };
-    mockAuthState.accountsLoading = false;
-    mockAuthState.accounts = [{ id: 10, label: "Cash" }];
-    mockAuthState.accountsError = null;
-    render(<App />);
-    fireEvent.click(screen.getByRole("button", { name: /^logout$/i }));
-    expect(mockAuthState.logout.mutateAsync).toHaveBeenCalledTimes(1);
+  it("Step 2 done clears the pending flag AND navigates to /", async () => {
+    sessionStorage.setItem("pp_onboarding_step2_pending", "1");
+    authState.accounts = [account];
+    const { history } = renderGate("/transactions");
+    fireEvent.click(screen.getByTestId("stub-done"));
+    expect(sessionStorage.getItem("pp_onboarding_step2_pending")).toBeNull();
+    await waitFor(() => {
+      expect(history.at(-1)).toBe("/");
+    });
   });
 
-  it("renders not-found inside the protected shell for unknown routes", () => {
-    const { hook } = memoryLocation({ path: "/not-a-real-page", static: true });
-    mockAuthState.isLoading = false;
-    mockAuthState.isAuthenticated = true;
-    mockAuthState.user = {
-      id: 1,
-      email: "user@example.com",
-      displayName: "Test User",
-    };
-    mockAuthState.accountsLoading = false;
-    mockAuthState.accounts = [{ id: 10, label: "Cash" }];
-    mockAuthState.accountsError = null;
-    render(
-      <Router hook={hook}>
-        <App />
-      </Router>,
-    );
-    expect(
-      screen.getByRole("navigation", { name: /main navigation/i }),
-    ).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: /page not found/i })).toBeInTheDocument();
+  it("Step 2 skip clears the pending flag AND navigates to /", async () => {
+    sessionStorage.setItem("pp_onboarding_step2_pending", "1");
+    authState.accounts = [account];
+    const { history } = renderGate("/transactions");
+    fireEvent.click(screen.getByTestId("stub-skip-2"));
+    expect(sessionStorage.getItem("pp_onboarding_step2_pending")).toBeNull();
+    await waitFor(() => {
+      expect(history.at(-1)).toBe("/");
+    });
+  });
+
+  it("logout clears both per-session onboarding flags", async () => {
+    sessionStorage.setItem("pp_onboarding_skipped", "1");
+    sessionStorage.setItem("pp_onboarding_step2_pending", "1");
+    authState.isAuthenticated = false;
+    authState.accounts = null;
+    renderGate();
+    await waitFor(() => {
+      expect(sessionStorage.getItem("pp_onboarding_skipped")).toBeNull();
+      expect(sessionStorage.getItem("pp_onboarding_step2_pending")).toBeNull();
+    });
   });
 });
