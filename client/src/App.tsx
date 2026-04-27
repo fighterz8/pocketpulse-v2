@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { QueryClientProvider } from "@tanstack/react-query";
-import { Route, Switch, useLocation } from "wouter";
+import { Route, Switch } from "wouter";
 import { AppLayout } from "./components/layout/AppLayout";
 import { useAuth } from "./hooks/use-auth";
 import { useInactivityLogout } from "./hooks/use-inactivity-logout";
@@ -64,7 +64,6 @@ const BETA_FLAG = "pp_beta_access";
 
 function AppGate() {
   const auth = useAuth();
-  const [location] = useLocation();
   const [inactivityLogout, setInactivityLogout] = useState(false);
   const [betaUnlocked, setBetaUnlocked] = useState(
     () => localStorage.getItem(BETA_FLAG) === "1",
@@ -91,14 +90,6 @@ function AppGate() {
       );
     },
   });
-
-  // /reset-password is reached from an emailed link by definition-not-signed-in
-  // users (often on a fresh device), so it must render before the auth/beta
-  // gates. Placed after every hook call so the rules of hooks are preserved
-  // when the user navigates between this and the regular gated routes.
-  if (location === "/reset-password") {
-    return <ResetPassword />;
-  }
 
   if (auth.isLoading) {
     return (
@@ -176,7 +167,21 @@ export function App() {
     <QueryClientProvider client={queryClient}>
       <ThemeInit />
       <div className={cn("app-shell")} data-testid="app-root">
-        <AppGate />
+        {/*
+         * /reset-password is reached from an emailed link by
+         * definition-not-signed-in users (often on a fresh device), so
+         * it must render OUTSIDE the auth/beta gates. Declared as a
+         * top-level <Route> so that wouter's <Switch> short-circuits
+         * before AppGate runs any of its auth/beta logic.
+         */}
+        <Switch>
+          <Route path="/reset-password">
+            <ResetPassword />
+          </Route>
+          <Route>
+            <AppGate />
+          </Route>
+        </Switch>
       </div>
     </QueryClientProvider>
   );

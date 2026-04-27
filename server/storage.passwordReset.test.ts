@@ -22,6 +22,13 @@ import { describe, expect, it, vi, beforeEach } from "vitest";
 // vi.mock factories are hoisted, so any references they make must come
 // from vi.hoisted() to avoid the "Cannot access X before initialization"
 // temporal-dead-zone error.
+type TxLike = {
+  select: ReturnType<typeof vi.fn>;
+  update: ReturnType<typeof vi.fn>;
+  insert: ReturnType<typeof vi.fn>;
+  delete: ReturnType<typeof vi.fn>;
+};
+
 const { txMock, dbMock } = vi.hoisted(() => {
   const tx = {
     select: vi.fn(),
@@ -31,14 +38,14 @@ const { txMock, dbMock } = vi.hoisted(() => {
   };
   const db = {
     transaction: vi.fn(
-      async (fn: (tx: typeof tx) => Promise<unknown>) => fn(tx),
+      async (fn: (t: typeof tx) => Promise<unknown>) => fn(tx),
     ),
     delete: vi.fn(),
     select: vi.fn(),
     update: vi.fn(),
     insert: vi.fn(),
   };
-  return { txMock: tx, dbMock: db };
+  return { txMock: tx as TxLike, dbMock: db };
 });
 
 vi.mock("./db.js", () => ({
@@ -200,7 +207,8 @@ describe("consumePasswordResetTokenAndUpdatePassword", () => {
       await consumePasswordResetTokenAndUpdatePassword(-1, "x", "p"),
     ).toBeNull();
     expect(
-      // @ts-expect-error — runtime guard
+      // 1.5 is type-valid as `number` but rejected by the runtime
+      // Number.isInteger guard.
       await consumePasswordResetTokenAndUpdatePassword(1.5, "x", "p"),
     ).toBeNull();
     expect(dbMock.transaction).not.toHaveBeenCalled();
