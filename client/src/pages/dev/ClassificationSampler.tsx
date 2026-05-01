@@ -449,6 +449,10 @@ export function ReportScreen({
   transactions: SampleTransaction[] | null;
 }) {
   const verdicts = sample.verdicts;
+  const transactionsById = useMemo(
+    () => new Map((transactions ?? []).map((t) => [t.id, t])),
+    [transactions],
+  );
   const nonSkipped = verdicts.filter((v) => v.verdict !== "skipped");
   const nonSkippedCount = nonSkipped.length;
 
@@ -509,7 +513,25 @@ export function ReportScreen({
   const recMisses = topMisses("correctedRecurrence", "classifierRecurrence");
 
   function exportJson() {
-    const blob = new Blob([JSON.stringify(sample, null, 2)], { type: "application/json" });
+    // Include both the raw transaction context and an enriched per-row view so
+    // teammate exports are directly usable for classifier improvement work.
+    // The persisted sample/verdicts intentionally stay sandboxed and compact;
+    // export is where we join the raw merchant description back in.
+    const enrichedVerdicts = sample.verdicts.map((v) => {
+      const txn = transactionsById.get(v.transactionId);
+      return {
+        ...v,
+        rawDescription: txn?.rawDescription ?? null,
+        date: txn?.date ?? null,
+        amount: txn?.amount ?? null,
+      };
+    });
+    const payload = {
+      ...sample,
+      verdicts: enrichedVerdicts,
+      transactions: transactions ?? [],
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
