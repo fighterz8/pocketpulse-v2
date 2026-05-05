@@ -34,8 +34,10 @@ function currency(n: number): string {
 
 function currencyShort(n: number): string {
   const abs = Math.abs(n);
-  if (abs >= 1_000_000) return (n < 0 ? "-$" : "$") + (abs / 1_000_000).toFixed(1) + "M";
-  if (abs >= 1_000) return (n < 0 ? "-$" : "$") + (abs / 1_000).toFixed(1) + "K";
+  if (abs >= 1_000_000)
+    return (n < 0 ? "-$" : "$") + (abs / 1_000_000).toFixed(1) + "M";
+  if (abs >= 1_000)
+    return (n < 0 ? "-$" : "$") + (abs / 1_000).toFixed(1) + "K";
   return currency(n);
 }
 
@@ -67,7 +69,9 @@ function ledgerUrl(
 ): string {
   const qp = new URLSearchParams();
   const all = { excluded: "false", ...dateRange, ...params };
-  Object.entries(all).forEach(([k, v]) => { if (v !== undefined) qp.set(k, v); });
+  Object.entries(all).forEach(([k, v]) => {
+    if (v !== undefined) qp.set(k, v);
+  });
   const qs = qp.toString();
   return `/transactions${qs ? `?${qs}` : ""}`;
 }
@@ -79,7 +83,11 @@ const fadeUp = {
   visible: (i: number = 0) => ({
     opacity: 1,
     y: 0,
-    transition: { duration: 0.4, delay: i * 0.07, ease: [0.25, 0, 0, 1] as [number, number, number, number] },
+    transition: {
+      duration: 0.4,
+      delay: i * 0.07,
+      ease: [0.25, 0, 0, 1] as [number, number, number, number],
+    },
   }),
 };
 
@@ -109,7 +117,13 @@ function GlassCard({
       className={`glass-card ${clickable ? "glass-card--clickable" : ""} ${className}`}
       role={clickable ? "link" : undefined}
       tabIndex={clickable ? 0 : undefined}
-      onKeyDown={clickable ? (e) => { if (e.key === "Enter" || e.key === " ") navigate(href!); } : undefined}
+      onKeyDown={
+        clickable
+          ? (e) => {
+              if (e.key === "Enter" || e.key === " ") navigate(href!);
+            }
+          : undefined
+      }
     >
       {children}
     </motion.div>
@@ -157,23 +171,30 @@ function KpiCard({
           />
         ) : null}
       </p>
-      <p data-testid={testId} className={`kpi-value ${colorMap[accent]}`}>{value}</p>
+      <p data-testid={testId} className={`kpi-value ${colorMap[accent]}`}>
+        {value}
+      </p>
       {sub && <p className="kpi-sub">{sub}</p>}
       {href && <p className="kpi-drill">View transactions →</p>}
     </GlassCard>
   );
 }
 
-function safeToSpendStatus(netCashflow: number, totalInflow: number): {
+function safeToSpendStatus(
+  netCashflow: number,
+  totalInflow: number,
+): {
   label: string;
   badge: string;
 } {
-  if (totalInflow === 0) return { label: "No income data", badge: "badge-neutral" };
+  if (totalInflow === 0)
+    return { label: "No income data", badge: "badge-neutral" };
   const ratio = netCashflow / totalInflow;
   if (ratio > 0.2) return { label: "Healthy surplus", badge: "badge-green" };
   if (ratio > 0.05) return { label: "Positive cashflow", badge: "badge-green" };
-  if (ratio >= 0) return { label: "Break-even", badge: "badge-yellow" };
-  if (ratio > -0.15) return { label: "Spending over income", badge: "badge-orange" };
+  if (ratio >= 0) return { label: "Thin surplus", badge: "badge-yellow" };
+  if (ratio > -0.15)
+    return { label: "Spending over income", badge: "badge-orange" };
   return { label: "Over budget", badge: "badge-red" };
 }
 
@@ -191,8 +212,14 @@ function MonthSelector({
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const el = scrollRef.current?.querySelector<HTMLElement>("[data-active='true']");
-    el?.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" });
+    const el = scrollRef.current?.querySelector<HTMLElement>(
+      "[data-active='true']",
+    );
+    el?.scrollIntoView({
+      behavior: "smooth",
+      block: "nearest",
+      inline: "center",
+    });
   }, [selected]);
 
   return (
@@ -218,8 +245,10 @@ function MonthSelector({
           onClick={() => onSelect(month)}
           className={`period-btn ${selected === month ? "period-btn--active" : ""}`}
         >
-          {formatMonthLabel(month)}
-          <span className="ml-1.5 text-[10px] opacity-50 font-normal">{transactionCount}</span>
+          <span>{formatMonthLabel(month)}</span>
+          <span className="ml-1.5 text-[10px] opacity-60 font-normal">
+            {transactionCount} txns
+          </span>
         </button>
       ))}
     </div>
@@ -251,8 +280,8 @@ function OnboardingSuccessNotice() {
       <span className="onboarding-success-notice-icon" aria-hidden="true">
         ✓
       </span>
-      Welcome to PocketPulse — we imported{" "}
-      <strong>{count}</strong> transaction{count !== 1 ? "s" : ""}.
+      Welcome to PocketPulse — we imported <strong>{count}</strong> transaction
+      {count !== 1 ? "s" : ""}.
     </div>
   );
 }
@@ -303,7 +332,8 @@ function DashboardImpl() {
     a.remove();
   };
 
-  const { data: availableMonths, isLoading: monthsLoading } = useAvailableMonths();
+  const { data: availableMonths, isLoading: monthsLoading } =
+    useAvailableMonths();
 
   // Track the most-recent month seen so far so we only auto-advance the selector
   // when new data arrives (e.g. user uploads June 2026 CSV) — not on every
@@ -314,19 +344,23 @@ function DashboardImpl() {
     if (!availableMonths || availableMonths.length === 0) return;
     // Months are returned DESC (newest first).
     const mostRecent = availableMonths[0]?.month ?? null;
-    const isFirstLoad  = prevMostRecentRef.current === null;
-    const hasNewMonths = mostRecent !== null && mostRecent !== prevMostRecentRef.current;
+    const isFirstLoad = prevMostRecentRef.current === null;
+    const hasNewMonths =
+      mostRecent !== null && mostRecent !== prevMostRecentRef.current;
 
     if (isFirstLoad || hasNewMonths) {
       // Auto-select the most recent month that has meaningful transaction volume.
       const best =
-        availableMonths.find((m) => m.transactionCount >= 20) ?? availableMonths[0];
+        availableMonths.find((m) => m.transactionCount >= 20) ??
+        availableMonths[0];
       setSelectedMonth(best?.month ?? null);
     }
     prevMostRecentRef.current = mostRecent;
   }, [availableMonths]);
 
-  const { data, isLoading, error } = useDashboardSummary({ month: selectedMonth });
+  const { data, isLoading, error } = useDashboardSummary({
+    month: selectedMonth,
+  });
 
   // Date range for ledger deep-links
   const dateRange = selectedMonth ? monthToDateRange(selectedMonth) : undefined;
@@ -348,7 +382,9 @@ function DashboardImpl() {
 
   // Parse the actual dates from leaksQueryParams so the cache key matches
   // exactly what the Leaks page uses — prevents stale cross-page mismatches.
-  const _leaksParamObj = Object.fromEntries(new URLSearchParams(leaksQueryParams));
+  const _leaksParamObj = Object.fromEntries(
+    new URLSearchParams(leaksQueryParams),
+  );
   const { data: detectedLeaks = [] } = useQuery<LeakItem[]>({
     queryKey: ["/api/leaks", _leaksParamObj.startDate, _leaksParamObj.endDate],
     queryFn: async () => {
@@ -359,8 +395,10 @@ function DashboardImpl() {
     staleTime: 60_000,
   });
 
-  const leakCount   = detectedLeaks.length;
-  const leakMonthly = Math.round(detectedLeaks.reduce((s, l) => s + l.monthlyAmount, 0) * 100) / 100;
+  const leakCount = detectedLeaks.length;
+  const leakMonthly =
+    Math.round(detectedLeaks.reduce((s, l) => s + l.monthlyAmount, 0) * 100) /
+    100;
 
   const periodLabel = selectedMonth
     ? formatMonthLabel(selectedMonth)
@@ -369,7 +407,10 @@ function DashboardImpl() {
   const periodLabelFull = selectedMonth
     ? (() => {
         const [year, mo] = selectedMonth.split("-").map(Number);
-        return new Date(year, mo - 1, 1).toLocaleString("en-US", { month: "long", year: "numeric" });
+        return new Date(year, mo - 1, 1).toLocaleString("en-US", {
+          month: "long",
+          year: "numeric",
+        });
       })()
     : "All Time";
 
@@ -382,11 +423,33 @@ function DashboardImpl() {
   );
 
   const headerRow = (
-    <motion.div variants={fadeUp} initial="hidden" animate="visible" custom={0} className="mb-6">
+    <motion.div
+      variants={fadeUp}
+      initial="hidden"
+      animate="visible"
+      custom={0}
+      className="mb-6"
+    >
       <div className="flex items-start justify-between gap-4 mb-3 flex-wrap">
         <div>
           <h1 className="dash-title">
-            <svg className="page-title-icon" style={{flexShrink:0,width:"1.35rem",height:"1.35rem",color:"#2563eb",opacity:0.85}} viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <svg
+              className="page-title-icon"
+              style={{
+                flexShrink: 0,
+                width: "1.35rem",
+                height: "1.35rem",
+                color: "#2563eb",
+                opacity: 0.85,
+              }}
+              viewBox="0 0 20 20"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.8"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
               <rect x="2" y="2" width="7" height="7" rx="1.2" />
               <rect x="11" y="2" width="7" height="7" rx="1.2" />
               <rect x="2" y="11" width="7" height="7" rx="1.2" />
@@ -395,7 +458,10 @@ function DashboardImpl() {
             Dashboard
           </h1>
           <p className="dash-subtitle">
-            Cashflow overview · <span className="font-medium text-slate-600 dark:text-slate-300">{periodLabelFull}</span>
+            Cashflow overview ·{" "}
+            <span className="font-medium text-slate-600 dark:text-slate-300">
+              {periodLabelFull}
+            </span>
           </p>
         </div>
         <Hint
@@ -419,7 +485,12 @@ function DashboardImpl() {
     return (
       <div>
         {headerRow}
-        <div className="dash-loading" role="status" aria-live="polite" data-testid="dashboard-loading">
+        <div
+          className="dash-loading"
+          role="status"
+          aria-live="polite"
+          data-testid="dashboard-loading"
+        >
           <span className="dash-loading-spinner" aria-hidden="true" />
           <span className="dash-loading-text">Loading dashboard…</span>
         </div>
@@ -441,13 +512,22 @@ function DashboardImpl() {
       <div>
         {headerRow}
         <GlassCard index={1} className="dash-empty-card">
-          <p className="dash-empty-msg">No transactions in {periodLabelFull}.</p>
+          <p className="dash-empty-msg">
+            No transactions in {periodLabelFull}.
+          </p>
           {selectedMonth ? (
-            <button className="dash-leaks-link mt-2" onClick={() => setSelectedMonth(null)}>
+            <button
+              className="dash-leaks-link mt-2"
+              onClick={() => setSelectedMonth(null)}
+            >
               View All Time →
             </button>
           ) : (
-            <Link href="/upload" className="dash-empty-link" data-testid="link-upload-first">
+            <Link
+              href="/upload"
+              className="dash-empty-link"
+              data-testid="link-upload-first"
+            >
               Upload your first CSV →
             </Link>
           )}
@@ -466,15 +546,22 @@ function DashboardImpl() {
 
   const safeToSpend = totals.safeToSpend;
   const spendStatus = safeToSpendStatus(safeToSpend, totals.totalInflow);
-  const safeColor = safeToSpend > 0
-    ? "text-emerald-600 dark:text-emerald-400"
-    : safeToSpend > -totals.totalInflow * 0.15
-    ? "text-orange-500 dark:text-orange-400"
-    : "text-red-500 dark:text-red-400";
+  const safeColor =
+    safeToSpend > 0
+      ? "text-emerald-600 dark:text-emerald-400"
+      : safeToSpend > -totals.totalInflow * 0.15
+        ? "text-orange-500 dark:text-orange-400"
+        : "text-red-500 dark:text-red-400";
 
-  const spendRatio = totals.totalInflow > 0
-    ? Math.min(100, (totals.totalOutflow / Math.max(totals.totalInflow, totals.totalOutflow)) * 100)
-    : 0;
+  const spendRatio =
+    totals.totalInflow > 0
+      ? Math.min(
+          100,
+          (totals.totalOutflow /
+            Math.max(totals.totalInflow, totals.totalOutflow)) *
+            100,
+        )
+      : 0;
 
   return (
     <div>
@@ -497,17 +584,22 @@ function DashboardImpl() {
               data-testid="hint-net-cashflow"
             />
           </p>
-          <p data-testid="safe-to-spend-value" className={`dash-hero-value ${safeColor}`}>
+          <p
+            data-testid="safe-to-spend-value"
+            className={`dash-hero-value ${safeColor}`}
+          >
             {currency(safeToSpend)}
           </p>
 
           <div className="flex items-center gap-2 mt-3 flex-wrap">
             <HintIcon
               label="About Safe-to-Spend status"
-              content="Healthy: surplus is more than 20% of income. Tight: between 5% and 20%. Over: spending exceeds income."
+              content="Status compares net cashflow to income for this period: Healthy surplus is above 20%, Positive cashflow is 5–20%, Thin surplus is 0–5%, and Over means spending is higher than income."
               data-testid="hint-safe-to-spend-badge"
             />
-            <span className={`dash-badge ${spendStatus.badge}`}>{spendStatus.label}</span>
+            <span className={`dash-badge ${spendStatus.badge}`}>
+              {spendStatus.label}
+            </span>
             <span className="text-xs text-slate-400">
               Total income minus total spending · {periodLabelFull}
             </span>
@@ -527,8 +619,12 @@ function DashboardImpl() {
               )}
             </div>
             <div className="flex justify-between text-xs mt-1.5">
-              <span className="text-red-500 dark:text-red-400 font-semibold">{currency(totals.totalOutflow)}</span>
-              <span className="text-emerald-600 dark:text-emerald-400 font-semibold">{currency(totals.totalInflow)}</span>
+              <span className="text-red-500 dark:text-red-400 font-semibold">
+                {currency(totals.totalOutflow)}
+              </span>
+              <span className="text-emerald-600 dark:text-emerald-400 font-semibold">
+                {currency(totals.totalInflow)}
+              </span>
             </div>
           </div>
           <p className="kpi-drill mt-4">View all transactions →</p>
@@ -540,7 +636,11 @@ function DashboardImpl() {
             ? `/leaks?startDate=${dateRange.dateFrom}&endDate=${dateRange.dateTo}`
             : "/leaks";
           return (
-            <GlassCard className="flex flex-col justify-between" index={2} href={leaksHref}>
+            <GlassCard
+              className="flex flex-col justify-between"
+              index={2}
+              href={leaksHref}
+            >
               <div>
                 <p className="kpi-label">
                   Leak Detection
@@ -552,11 +652,15 @@ function DashboardImpl() {
                 </p>
                 {leakCount > 0 ? (
                   <>
-                    <p data-testid="leak-count" className="dash-hero-value text-red-500 dark:text-red-400">
+                    <p
+                      data-testid="leak-count"
+                      className="dash-hero-value text-red-500 dark:text-red-400"
+                    >
                       {leakCount}
                     </p>
                     <p className="text-sm text-slate-500 dark:text-slate-300 mt-1">
-                      leak{leakCount !== 1 ? "s" : ""} detected — discretionary spending to review
+                      leak{leakCount !== 1 ? "s" : ""} detected — discretionary
+                      spending to review
                     </p>
                     {leakMonthly > 0 && (
                       <p className="text-sm text-red-500 dark:text-red-400 font-semibold mt-1">
@@ -566,7 +670,10 @@ function DashboardImpl() {
                   </>
                 ) : (
                   <>
-                    <p data-testid="leak-count" className="dash-hero-value text-slate-500 dark:text-slate-300 text-3xl leading-tight mt-1">
+                    <p
+                      data-testid="leak-count"
+                      className="dash-hero-value text-slate-500 dark:text-slate-300 text-3xl leading-tight mt-1"
+                    >
                       None flagged
                     </p>
                     <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
@@ -576,7 +683,9 @@ function DashboardImpl() {
                 )}
               </div>
               <p className="kpi-drill">
-                {leakCount > 0 ? "See leak detections →" : "View leak detection →"}
+                {leakCount > 0
+                  ? "See leak detections →"
+                  : "View leak detection →"}
               </p>
             </GlassCard>
           );
@@ -610,7 +719,10 @@ function DashboardImpl() {
           accent="green"
           data-testid="kpi-recurring-income"
           index={5}
-          href={ledgerUrl({ transactionClass: "income", recurrenceType: "recurring" }, dateRange)}
+          href={ledgerUrl(
+            { transactionClass: "income", recurrenceType: "recurring" },
+            dateRange,
+          )}
         />
         <KpiCard
           label="Recurring Expenses"
@@ -619,7 +731,10 @@ function DashboardImpl() {
           accent="red"
           data-testid="kpi-recurring-expenses"
           index={6}
-          href={ledgerUrl({ transactionClass: "expense", recurrenceType: "recurring" }, dateRange)}
+          href={ledgerUrl(
+            { transactionClass: "expense", recurrenceType: "recurring" },
+            dateRange,
+          )}
         />
       </div>
 
@@ -632,7 +747,10 @@ function DashboardImpl() {
           accent="blue"
           data-testid="kpi-one-time-income"
           index={7}
-          href={ledgerUrl({ transactionClass: "income", recurrenceType: "one-time" }, dateRange)}
+          href={ledgerUrl(
+            { transactionClass: "income", recurrenceType: "one-time" },
+            dateRange,
+          )}
         />
         <KpiCard
           label="One-Time Expenses"
@@ -641,7 +759,10 @@ function DashboardImpl() {
           accent="neutral"
           data-testid="kpi-one-time-expenses"
           index={8}
-          href={ledgerUrl({ transactionClass: "expense", recurrenceType: "one-time" }, dateRange)}
+          href={ledgerUrl(
+            { transactionClass: "expense", recurrenceType: "one-time" },
+            dateRange,
+          )}
         />
         <KpiCard
           label="Discretionary Spend"
@@ -659,21 +780,39 @@ function DashboardImpl() {
       <div className="grid grid-cols-2 gap-4 mb-4">
         <KpiCard
           label={isAllTime ? "Utilities" : "Utilities / Month"}
-          value={isAllTime ? currency(totals.utilitiesTotal) : currency(totals.utilitiesMonthly)}
+          value={
+            isAllTime
+              ? currency(totals.utilitiesTotal)
+              : currency(totals.utilitiesMonthly)
+          }
           sub={isAllTime ? "All-time total" : `${periodLabel} avg`}
           accent="neutral"
           data-testid="kpi-utilities-monthly"
           index={10}
-          href={ledgerUrl({ category: "utilities", transactionClass: "expense" }, dateRange)}
+          href={ledgerUrl(
+            { category: "utilities", transactionClass: "expense" },
+            dateRange,
+          )}
         />
         <KpiCard
-          label={isAllTime ? "Software & Subscriptions" : "Software & Subscriptions / Month"}
-          value={isAllTime ? currency(totals.softwareTotal) : currency(totals.softwareMonthly)}
+          label={
+            isAllTime
+              ? "Software & Subscriptions"
+              : "Software & Subscriptions / Month"
+          }
+          value={
+            isAllTime
+              ? currency(totals.softwareTotal)
+              : currency(totals.softwareMonthly)
+          }
           sub={isAllTime ? "All-time total" : `${periodLabel} avg`}
           accent="neutral"
           data-testid="kpi-software-monthly"
           index={11}
-          href={ledgerUrl({ category: "software", transactionClass: "expense" }, dateRange)}
+          href={ledgerUrl(
+            { category: "software", transactionClass: "expense" },
+            dateRange,
+          )}
         />
       </div>
 

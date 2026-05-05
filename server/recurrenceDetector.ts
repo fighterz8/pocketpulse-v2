@@ -89,20 +89,20 @@ type FrequencyDef = {
 };
 
 const FREQUENCY_DEFS: FrequencyDef[] = [
-  { frequency: "weekly",    expectedDays: 7,     toleranceDays: 2  },
-  { frequency: "biweekly",  expectedDays: 14,    toleranceDays: 3  },
-  { frequency: "monthly",   expectedDays: 30.4,  toleranceDays: 6  },
-  { frequency: "quarterly", expectedDays: 91.3,  toleranceDays: 18 },
-  { frequency: "annual",    expectedDays: 365,   toleranceDays: 30 },
+  { frequency: "weekly", expectedDays: 7, toleranceDays: 2 },
+  { frequency: "biweekly", expectedDays: 14, toleranceDays: 3 },
+  { frequency: "monthly", expectedDays: 30.4, toleranceDays: 6 },
+  { frequency: "quarterly", expectedDays: 91.3, toleranceDays: 18 },
+  { frequency: "annual", expectedDays: 365, toleranceDays: 30 },
 ];
 
 // Monthly multiplier for each frequency
 const MONTHLY_FACTOR: Record<RecurringCandidate["frequency"], number> = {
-  weekly:    4.333,
-  biweekly:  2.167,
-  monthly:   1,
+  weekly: 4.333,
+  biweekly: 2.167,
+  monthly: 1,
   quarterly: 1 / 3,
-  annual:    1 / 12,
+  annual: 1 / 12,
 };
 
 /**
@@ -110,7 +110,11 @@ const MONTHLY_FACTOR: Record<RecurringCandidate["frequency"], number> = {
  * insurance adjustments, etc.). Given generous amount tolerance.
  */
 const VARIABLE_AMOUNT_CATEGORIES = new Set([
-  "utilities", "insurance", "medical", "housing", "debt",
+  "utilities",
+  "insurance",
+  "medical",
+  "housing",
+  "debt",
 ]);
 
 /**
@@ -145,18 +149,74 @@ const LIFESTYLE_BLOCK_CATEGORIES = new Set([
  * Used only for the isSubscriptionLike signal — not for lifestyle gate bypass.
  */
 const SUBSCRIPTION_BRAND_FRAGMENTS = [
-  "netflix", "spotify", "hulu", "disney", "hbo", "max.com", "paramount",
-  "peacock", "peacocktv", "audible", "apple music", "apple tv", "icloud",
-  "google one", "youtube", "amazon prime", "openai", "anthropic", "chatgpt",
-  "replit", "github", "notion", "figma", "canva", "adobe", "dropbox",
-  "box.com", "zoom", "slack", "linear", "loom", "1password", "lastpass",
-  "nordvpn", "expressvpn", "surfshark", "proton", "fastmail", "hey.com",
-  "elevenlabs", "shopify", "quickbooks", "freshbooks", "xero", "squarespace",
-  "wix", "godaddy", "namecheap", "cloudflare", "digitalocean", "linode",
-  "aws", "azure", "heroku", "vercel", "netlify", "twilio",
+  "netflix",
+  "spotify",
+  "hulu",
+  "disney",
+  "hbo",
+  "max.com",
+  "paramount",
+  "peacock",
+  "peacocktv",
+  "audible",
+  "apple music",
+  "apple tv",
+  "icloud",
+  "google one",
+  "youtube",
+  "amazon prime",
+  "openai",
+  "anthropic",
+  "chatgpt",
+  "replit",
+  "github",
+  "notion",
+  "figma",
+  "canva",
+  "adobe",
+  "dropbox",
+  "box.com",
+  "zoom",
+  "slack",
+  "linear",
+  "loom",
+  "1password",
+  "lastpass",
+  "nordvpn",
+  "expressvpn",
+  "surfshark",
+  "proton",
+  "fastmail",
+  "hey.com",
+  "elevenlabs",
+  "shopify",
+  "quickbooks",
+  "freshbooks",
+  "xero",
+  "squarespace",
+  "wix",
+  "godaddy",
+  "namecheap",
+  "cloudflare",
+  "digitalocean",
+  "linode",
+  "aws",
+  "azure",
+  "heroku",
+  "vercel",
+  "netlify",
+  "twilio",
   // Meal-kit subscriptions billed as "delivery" or "shopping"
-  "hellofresh", "hello fresh", "factor", "freshly", "marley spoon",
-  "everyplate", "home chef", "green chef", "dinnerly", "gobble",
+  "hellofresh",
+  "hello fresh",
+  "factor",
+  "freshly",
+  "marley spoon",
+  "everyplate",
+  "home chef",
+  "green chef",
+  "dinnerly",
+  "gobble",
 ];
 
 /**
@@ -169,10 +229,19 @@ const SUBSCRIPTION_BRAND_FRAGMENTS = [
  */
 const LIFESTYLE_SUBSCRIPTION_EXCEPTION_KEYS = new Set([
   // Meal-kit subscriptions (often tagged delivery/shopping)
-  "hellofresh", "factor", "freshly", "marley spoon",
-  "everyplate", "home chef", "green chef", "dinnerly", "gobble",
+  "hellofresh",
+  "factor",
+  "freshly",
+  "marley spoon",
+  "everyplate",
+  "home chef",
+  "green chef",
+  "dinnerly",
+  "gobble",
   // Streaming/digital that occasionally lands in shopping
-  "amazon prime", "amazon prime video", "audible",
+  "amazon prime",
+  "amazon prime video",
+  "audible",
 ]);
 
 /**
@@ -189,12 +258,23 @@ const NEVER_SUBSCRIPTION_FRAGMENTS = [
   "venmo",
   "cash app",
   "cashout",
+  "amex",
+  "american express",
+  "credit card payment",
+  "card payment",
+  "autopay payment",
+  "payment thank you",
+  "payment received",
 ];
 
 /**
  * Transaction categories that are never subscription-like.
  */
-const NEVER_SUBSCRIPTION_CATEGORIES = new Set(["income", "banking", "transfer"]);
+const NEVER_SUBSCRIPTION_CATEGORIES = new Set([
+  "income",
+  "banking",
+  "transfer",
+]);
 
 /** Only look at transactions from the past 18 months */
 const LOOKBACK_DAYS = 548; // ~18 months
@@ -214,9 +294,9 @@ const MONTHLY_COVERAGE_MIN = 0.65;
 
 const WEIGHTS = {
   interval: 0.35,
-  amount:   0.25,
-  count:    0.20,
-  recency:  0.20,
+  amount: 0.25,
+  count: 0.2,
+  recency: 0.2,
 };
 
 // ─── Category-stratified amount tolerance ────────────────────────────────────
@@ -240,10 +320,10 @@ function getAmountTolerance(centroid: number, category: string): number {
     return Math.max(5.0, centroid * 0.25);
   }
   if (SUBSCRIPTION_CATEGORIES.has(category)) {
-    return Math.max(1.0, centroid * 0.10);
+    return Math.max(1.0, centroid * 0.1);
   }
   if (LIFESTYLE_BLOCK_CATEGORIES.has(category)) {
-    return Math.max(0.10, centroid * 0.02);
+    return Math.max(0.1, centroid * 0.02);
   }
   return Math.max(1.5, centroid * 0.15);
 }
@@ -281,7 +361,10 @@ export function recurrenceKey(merchant: string): string {
   //   "EFT PMT ALLSTATE INS"        → "ALLSTATE INS"
   //   "BILLPAY DISCOVER CARD"       → "DISCOVER CARD"
   //   "PYMT*NETFLIX.COM"            → "NETFLIX.COM"
-  k = k.replace(/^(ach\s+(pmt|debit|payment|credit|trnsfr|xfer)\s*[\d]*\s*)/i, "");
+  k = k.replace(
+    /^(ach\s+(pmt|debit|payment|credit|trnsfr|xfer)\s*[\d]*\s*)/i,
+    "",
+  );
   k = k.replace(/^(eft\s+(pmt|debit|payment)\s*[\d]*\s*)/i, "");
   k = k.replace(/^(checkcard|check\s*card)\s+\d+\s*/i, "");
   k = k.replace(/^(billpay|bill\s*pay)\s+/i, "");
@@ -290,7 +373,10 @@ export function recurrenceKey(merchant: string): string {
   k = k.replace(/^debit\s+\d+\s*/i, "");
 
   // Strip payment processor square/toast/stripe/doordash prefixes
-  k = k.replace(/^(sq\s*\*|tst\s*\*|sp\s*\*|pos\s*|pp\s*\*|paypal\s*\*|dd\s*\*)\s*/i, "");
+  k = k.replace(
+    /^(sq\s*\*|tst\s*\*|sp\s*\*|pos\s*|pp\s*\*|paypal\s*\*|dd\s*\*)\s*/i,
+    "",
+  );
 
   // Strip "Payment To " prefix (e.g. "Payment To Tesla Insurance")
   k = k.replace(/^payment\s+(to\s+)?/i, "");
@@ -325,7 +411,10 @@ export function recurrenceKey(merchant: string): string {
     [/\bchuze fitness\b/, "chuze fitness"],
     [/\bplanet fitness\b/, "planet fitness"],
     [/\bcrunchyroll\b/, "crunchyroll"],
-    [/\bat&t\b|\bat and t\b|\batt\s*(wireless|mobility|u-verse|internet|tv)\b/, "at&t"],
+    [
+      /\bat&t\b|\bat and t\b|\batt\s*(wireless|mobility|u-verse|internet|tv)\b/,
+      "at&t",
+    ],
     [/\btesla insurance\b/, "tesla insurance"],
     [/\blumetry\b/, "lumetry"],
     // Common utility/telecom aliases
@@ -347,7 +436,10 @@ export function recurrenceKey(merchant: string): string {
     [/\bdiscover\s*(card|bank|financial)?\b/, "discover card"],
   ];
   for (const [re, canonical] of ALIASES) {
-    if (re.test(k)) { k = canonical; break; }
+    if (re.test(k)) {
+      k = canonical;
+      break;
+    }
   }
 
   return k.replace(/\s+/g, " ").trim();
@@ -356,7 +448,10 @@ export function recurrenceKey(merchant: string): string {
 /**
  * Build a stable candidate key from a merchant key and bucket index.
  */
-export function buildCandidateKey(merchantKey: string, bucketIndex: number): string {
+export function buildCandidateKey(
+  merchantKey: string,
+  bucketIndex: number,
+): string {
   return bucketIndex === 0 ? merchantKey : `${merchantKey}|${bucketIndex}`;
 }
 
@@ -406,17 +501,22 @@ function lookbackCutoff(): string {
  * separate buckets while still grouping the same bill's minor month-to-month
  * fluctuations together.
  */
-const CATEGORY_KEY_OVERRIDES = new Set(["housing", "utilities", "insurance", "debt"]);
+const CATEGORY_KEY_OVERRIDES = new Set([
+  "housing",
+  "utilities",
+  "insurance",
+  "debt",
+]);
 
 /**
  * Dollar-rounding applied when building the category+amount group key.
  * Tighter rounding keeps genuinely different bills in separate groups.
  */
 const CATEGORY_AMOUNT_ROUNDING: Record<string, number> = {
-  housing:   200, // mortgage/rent: round to nearest $200
-  debt:       50, // loan/debt payments: round to nearest $50
-  utilities:  10, // utility bills: round to nearest $10 (usage varies)
-  insurance:  20, // insurance premiums: round to nearest $20 (adjustment cycles)
+  housing: 200, // mortgage/rent: round to nearest $200
+  debt: 50, // loan/debt payments: round to nearest $50
+  utilities: 10, // utility bills: round to nearest $10 (usage varies)
+  insurance: 20, // insurance premiums: round to nearest $20 (adjustment cycles)
 };
 
 // ─── Grouping ────────────────────────────────────────────────────────────────
@@ -459,8 +559,10 @@ function bucketByAmount(txns: TransactionLike[]): AmountBucket[] {
       if (Math.abs(amt - bucket.centroid) <= tolerance) {
         bucket.transactions.push(txn);
         bucket.centroid =
-          bucket.transactions.reduce((s, t) => s + Math.abs(parseFloat(t.amount)), 0) /
-          bucket.transactions.length;
+          bucket.transactions.reduce(
+            (s, t) => s + Math.abs(parseFloat(t.amount)),
+            0,
+          ) / bucket.transactions.length;
         placed = true;
         break;
       }
@@ -524,7 +626,8 @@ function detectFrequency(txns: TransactionLike[]): FrequencyResult | null {
   if (filtered.length === 0) return null;
 
   const mean = filtered.reduce((s, v) => s + v, 0) / filtered.length;
-  const variance = filtered.reduce((s, v) => s + (v - mean) ** 2, 0) / filtered.length;
+  const variance =
+    filtered.reduce((s, v) => s + (v - mean) ** 2, 0) / filtered.length;
   const stdDev = Math.sqrt(variance);
 
   let bestMatch: FrequencyDef | null = null;
@@ -538,11 +641,17 @@ function detectFrequency(txns: TransactionLike[]): FrequencyResult | null {
   }
   if (!bestMatch) return null;
 
-  return { frequency: bestMatch.frequency, medianInterval: med, intervalStdDev: stdDev };
+  return {
+    frequency: bestMatch.frequency,
+    medianInterval: med,
+    intervalStdDev: stdDev,
+  };
 }
 
-function getMinTransactions(frequency: RecurringCandidate["frequency"]): number {
-  if (frequency === "annual")    return 2;
+function getMinTransactions(
+  frequency: RecurringCandidate["frequency"],
+): number {
+  if (frequency === "annual") return 2;
   if (frequency === "quarterly") return 2;
   return 3;
 }
@@ -560,13 +669,15 @@ function scoreConfidence(
   const countScore = Math.min(1.0, (n - 2) / 4);
 
   // Interval regularity: coefficient of variation of intervals
-  const cv = freq.medianInterval > 0 ? freq.intervalStdDev / freq.medianInterval : 0;
+  const cv =
+    freq.medianInterval > 0 ? freq.intervalStdDev / freq.medianInterval : 0;
   const intervalScore = Math.max(0, 1.0 - cv * 2);
 
   // Amount consistency
   const amounts = txns.map((t) => Math.abs(parseFloat(t.amount)));
   const avgAmt = amounts.reduce((s, v) => s + v, 0) / amounts.length;
-  const amtVariance = amounts.reduce((s, v) => s + (v - avgAmt) ** 2, 0) / amounts.length;
+  const amtVariance =
+    amounts.reduce((s, v) => s + (v - avgAmt) ** 2, 0) / amounts.length;
   const amtCv = avgAmt > 0 ? Math.sqrt(amtVariance) / avgAmt : 0;
   const amountScore = VARIABLE_AMOUNT_CATEGORIES.has(category)
     ? Math.max(0, 1.0 - amtCv * 2.0)
@@ -574,17 +685,18 @@ function scoreConfidence(
 
   // Recency: how long since the last charge vs expected interval
   const daysSinceLast = daysBetween(txns[txns.length - 1]!.date, todayISO());
-  const recencyRatio = freq.medianInterval > 0 ? daysSinceLast / freq.medianInterval : 0;
+  const recencyRatio =
+    freq.medianInterval > 0 ? daysSinceLast / freq.medianInterval : 0;
   let recencyScore: number;
-  if (recencyRatio <= 1.5)      recencyScore = 1.0;
+  if (recencyRatio <= 1.5) recencyScore = 1.0;
   else if (recencyRatio >= 3.5) recencyScore = 0;
   else recencyScore = Math.max(0, 1.0 - (recencyRatio - 1.5) / 2.0);
 
   const raw =
-    countScore    * WEIGHTS.count    +
+    countScore * WEIGHTS.count +
     intervalScore * WEIGHTS.interval +
-    amountScore   * WEIGHTS.amount   +
-    recencyScore  * WEIGHTS.recency;
+    amountScore * WEIGHTS.amount +
+    recencyScore * WEIGHTS.recency;
 
   return { score: Math.round(raw * 100) / 100, amountScore, recencyScore };
 }
@@ -601,16 +713,18 @@ function buildReasonFlagged(
   const parts: string[] = [
     `${txnCount} charges of ~$${avgAmount.toFixed(2)} ${frequency}`,
   ];
-  if (amountScore >= 0.9)      parts.push("— consistent amount");
+  if (amountScore >= 0.9) parts.push("— consistent amount");
   else if (amountScore >= 0.6) parts.push("— minor amount variation");
-  else                         parts.push("— variable amounts");
-  if (!isActive)               parts.push("· possibly cancelled");
+  else parts.push("— variable amounts");
+  if (!isActive) parts.push("· possibly cancelled");
   return parts.join(" ");
 }
 
 // ─── Public API ───────────────────────────────────────────────────────────────
 
-export function detectRecurringCandidates(txns: TransactionLike[]): RecurringCandidate[] {
+export function detectRecurringCandidates(
+  txns: TransactionLike[],
+): RecurringCandidate[] {
   if (txns.length === 0) return [];
 
   const today = todayISO();
@@ -624,7 +738,10 @@ export function detectRecurringCandidates(txns: TransactionLike[]): RecurringCan
   const datasetTotalMonths = new Set(
     txns
       .filter(
-        (t) => !t.excludedFromAnalysis && t.flowType === "outflow" && t.date >= cutoff,
+        (t) =>
+          !t.excludedFromAnalysis &&
+          t.flowType === "outflow" &&
+          t.date >= cutoff,
       )
       .map((t) => t.date.slice(0, 7)),
   ).size;
@@ -638,7 +755,9 @@ export function detectRecurringCandidates(txns: TransactionLike[]): RecurringCan
 
     for (let bucketIndex = 0; bucketIndex < buckets.length; bucketIndex++) {
       const bucket = buckets[bucketIndex]!;
-      const sorted = bucket.transactions.sort((a, b) => a.date.localeCompare(b.date));
+      const sorted = bucket.transactions.sort((a, b) =>
+        a.date.localeCompare(b.date),
+      );
 
       // ── Lifestyle category hard block ────────────────────────────────────
       // Use the most recent transaction's category as the representative.
@@ -670,16 +789,21 @@ export function detectRecurringCandidates(txns: TransactionLike[]): RecurringCan
         if (!passesMonthlyDatasetCoverage(sorted, datasetTotalMonths)) continue;
       }
 
-      const { score: confidence, amountScore, recencyScore } = scoreConfidence(sorted, freq, category);
+      const {
+        score: confidence,
+        amountScore,
+        recencyScore,
+      } = scoreConfidence(sorted, freq, category);
       if (confidence < CONFIDENCE_THRESHOLD) continue;
 
       // Suppress if low recency AND low confidence (stale cancelled subscriptions)
       if (recencyScore === 0 && confidence < 0.5) continue;
 
       const amounts = sorted.map((t) => Math.abs(parseFloat(t.amount)));
-      const avgAmt  = amounts.reduce((s, v) => s + v, 0) / amounts.length;
-      const amtVariance = amounts.reduce((s, v) => s + (v - avgAmt) ** 2, 0) / amounts.length;
-      const amtStdDev   = Math.sqrt(amtVariance);
+      const avgAmt = amounts.reduce((s, v) => s + v, 0) / amounts.length;
+      const amtVariance =
+        amounts.reduce((s, v) => s + (v - avgAmt) ** 2, 0) / amounts.length;
+      const amtStdDev = Math.sqrt(amtVariance);
 
       const lastDate = sorted[sorted.length - 1]!.date;
       const nextDate = addDays(lastDate, Math.round(freq.medianInterval));
@@ -688,8 +812,9 @@ export function detectRecurringCandidates(txns: TransactionLike[]): RecurringCan
       // Active = last charge was within 2 full median-intervals of today
       const isActive = daysBetween(lastDate, today) <= freq.medianInterval * 2;
 
-      const monthlyEquivalent = Math.round(avgAmt * MONTHLY_FACTOR[freq.frequency] * 100) / 100;
-      const annualEquivalent  = Math.round(monthlyEquivalent * 12 * 100) / 100;
+      const monthlyEquivalent =
+        Math.round(avgAmt * MONTHLY_FACTOR[freq.frequency] * 100) / 100;
+      const annualEquivalent = Math.round(monthlyEquivalent * 12 * 100) / 100;
 
       const candidateKey = buildCandidateKey(group.key, bucketIndex);
 
@@ -702,7 +827,9 @@ export function detectRecurringCandidates(txns: TransactionLike[]): RecurringCan
           const n = t.merchant.replace(/^[\s\-–—_*#]+/, "").trim();
           nameCounts.set(n, (nameCounts.get(n) ?? 0) + 1);
         }
-        merchantDisplay = [...nameCounts.entries()].sort((a, b) => b[1] - a[1])[0]![0];
+        merchantDisplay = [...nameCounts.entries()].sort(
+          (a, b) => b[1] - a[1],
+        )[0]![0];
       } else {
         merchantDisplay = sorted[sorted.length - 1]!.merchant;
       }
@@ -722,35 +849,43 @@ export function detectRecurringCandidates(txns: TransactionLike[]): RecurringCan
       const neverCategory = NEVER_SUBSCRIPTION_CATEGORIES.has(category);
 
       const roundedAvg = Math.round(avgAmt * 100) / 100;
-      const centsStr   = roundedAvg.toFixed(2).split(".")[1] ?? "";
+      const centsStr = roundedAvg.toFixed(2).split(".")[1] ?? "";
       const isSaasPrice =
         !neverFragment &&
         !neverCategory &&
-        (freq.frequency === "monthly" || freq.frequency === "annual" || freq.frequency === "quarterly") &&
+        (freq.frequency === "monthly" ||
+          freq.frequency === "annual" ||
+          freq.frequency === "quarterly") &&
         (centsStr === "99" || centsStr === "00" || centsStr === "49");
       const isSubscriptionLike =
         !neverFragment &&
         !neverCategory &&
-        (
-          SUBSCRIPTION_CATEGORIES.has(category) ||
-          SUBSCRIPTION_BRAND_FRAGMENTS.some((frag) => candidateKey.includes(frag)) ||
-          isSaasPrice
-        );
+        (SUBSCRIPTION_CATEGORIES.has(category) ||
+          SUBSCRIPTION_BRAND_FRAGMENTS.some((frag) =>
+            candidateKey.includes(frag),
+          ) ||
+          isSaasPrice);
 
       candidates.push({
         candidateKey,
-        merchantKey:     group.key,
+        merchantKey: group.key,
         merchantDisplay,
-        frequency:       freq.frequency,
-        averageAmount:   roundedAvg,
-        amountStdDev:    Math.round(amtStdDev * 100) / 100,
+        frequency: freq.frequency,
+        averageAmount: roundedAvg,
+        amountStdDev: Math.round(amtStdDev * 100) / 100,
         monthlyEquivalent,
         annualEquivalent,
         confidence,
-        reasonFlagged: buildReasonFlagged(sorted.length, avgAmt, freq.frequency, amountScore, isActive),
+        reasonFlagged: buildReasonFlagged(
+          sorted.length,
+          avgAmt,
+          freq.frequency,
+          amountScore,
+          isActive,
+        ),
         transactionIds: sorted.map((t) => t.id),
-        firstSeen:  sorted[0]!.date,
-        lastSeen:   lastDate,
+        firstSeen: sorted[0]!.date,
+        lastSeen: lastDate,
         expectedNextDate: nextDate,
         category,
         isActive,

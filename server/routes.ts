@@ -8,13 +8,21 @@ import helmet from "helmet";
 
 import crypto from "crypto";
 import { parse as csvParseSync } from "csv-parse/sync";
-import { doubleCsrfProtection, generateToken, invalidCsrfTokenError } from "./csrf.js";
+import {
+  doubleCsrfProtection,
+  generateToken,
+  invalidCsrfTokenError,
+} from "./csrf.js";
 import { hashPassword, verifyPassword } from "./auth.js";
 import { classifyPipeline } from "./classifyPipeline.js";
 import { parseCSV } from "./csvParser.js";
 import { detectCsvFormat } from "./csvFormatDetector.js";
 import { ensureUserPreferences, pool } from "./db.js";
-import { AUTO_ESSENTIAL_CATEGORIES, REVIEW_STATUSES, V1_CATEGORIES } from "../shared/schema.js";
+import {
+  AUTO_ESSENTIAL_CATEGORIES,
+  REVIEW_STATUSES,
+  V1_CATEGORIES,
+} from "../shared/schema.js";
 import { DEV_MODE_ENABLED } from "../shared/devConfig.js";
 import {
   consumePasswordResetTokenAndUpdatePassword,
@@ -56,7 +64,10 @@ import { normalizeEmail } from "./auth.js";
 import { and, eq, inArray, ne } from "drizzle-orm";
 import { buildDashboardSummary } from "./dashboardQueries.js";
 import { db } from "./db.js";
-import { detectRecurringCandidates, recurrenceKey } from "./recurrenceDetector.js";
+import {
+  detectRecurringCandidates,
+  recurrenceKey,
+} from "./recurrenceDetector.js";
 import { detectLeaks } from "./cashflow.js";
 import { createDevTestSuiteRouter } from "./devTestSuite.js";
 import { reclassifyTransactions } from "./reclassify.js";
@@ -67,7 +78,10 @@ import {
   buildPasswordResetEmailHtml,
   buildPasswordResetEmailText,
 } from "./passwordResetEmail.js";
-import { transactions as txnTable, users as usersTable } from "../shared/schema.js";
+import {
+  transactions as txnTable,
+  users as usersTable,
+} from "../shared/schema.js";
 
 declare module "express-session" {
   interface SessionData {
@@ -77,6 +91,41 @@ declare module "express-session" {
 }
 
 const IDLE_TIMEOUT_MS = 30 * 60 * 1000;
+
+const CREDIT_CARD_PAYMENT_PATTERN =
+  /\b(amex|american express|card payment|credit card payment|autopay payment|online payment|payment thank you|payment received)\b/i;
+
+function isCreditCardPaymentMerchant(merchant: unknown): boolean {
+  return (
+    typeof merchant === "string" && CREDIT_CARD_PAYMENT_PATTERN.test(merchant)
+  );
+}
+
+function isValidWaitlistEmail(email: string): boolean {
+  const normalized = email.trim().toLowerCase();
+  if (normalized.length > 254) return false;
+  if (/\s/.test(normalized)) return false;
+  const parts = normalized.split("@");
+  if (parts.length !== 2) return false;
+  const [local, domain] = parts;
+  if (!local || !domain || local.length > 64) return false;
+  if (local.startsWith(".") || local.endsWith(".") || local.includes(".."))
+    return false;
+  if (domain.startsWith("-") || domain.endsWith("-") || domain.includes(".."))
+    return false;
+  if (!domain.includes(".")) return false;
+  const labels = domain.split(".");
+  if (
+    labels.some(
+      (label) => !/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(label),
+    )
+  )
+    return false;
+  const tld = labels.at(-1) ?? "";
+  return (
+    /^[a-z]{2,24}$/.test(tld) && /^[a-z0-9.!#$%&'*+/=?^_`{|}~-]+$/.test(local)
+  );
+}
 
 const PgSession = connectPgSimple(session);
 
@@ -186,6 +235,18 @@ async function syncRecurringCandidates(
     for (const id of c.transactionIds) recurringIds.add(id);
   }
 
+  const txnsById = new Map((allTxns as any[]).map((t) => [t.id, t]));
+  const recurringTransferExpenseIds = new Set<number>(
+    [...recurringIds].filter((id) => {
+      const t = txnsById.get(id);
+      return (
+        t?.transactionClass === "transfer" &&
+        t?.flowType === "outflow" &&
+        !isCreditCardPaymentMerchant(t?.merchant)
+      );
+    }),
+  );
+
   // Step 1: reset all outflow transactions to "one-time" / "detected" EXCEPT rows
   // where the user has explicitly set a recurrence value (userCorrected=true →
   // labelSource "manual") or a same-merchant propagation carried that value
@@ -227,8 +288,8 @@ async function syncRecurringCandidates(
   // Step 2: mark detected IDs as "recurring" / "detected". Same user-edit guard
   // as Step 1 — a manually-set "one-time" on a recurring-looking transaction
   // stays "one-time".
-  if (recurringIds.size > 0) {
-    const ids = [...recurringIds];
+  if (recurringTransferExpenseIds.size > 0) {
+    const ids = [...recurringTransferExpenseIds];
     for (let i = 0; i < ids.length; i += 500) {
       await db
         .update(txnTable)
@@ -307,7 +368,9 @@ export function createApp(options?: CreateAppOptions) {
     max: 10,
     standardHeaders: true,
     legacyHeaders: false,
-    message: { error: "Too many authentication attempts, please try again later" },
+    message: {
+      error: "Too many authentication attempts, please try again later",
+    },
   });
 
   // Tighter limiter for password reset flows. The forgot-password endpoint
@@ -319,7 +382,9 @@ export function createApp(options?: CreateAppOptions) {
     max: 5,
     standardHeaders: true,
     legacyHeaders: false,
-    message: { error: "Too many password reset attempts, please try again later" },
+    message: {
+      error: "Too many password reset attempts, please try again later",
+    },
   });
   app.use(globalLimiter);
   app.use(express.json());
@@ -351,7 +416,11 @@ export function createApp(options?: CreateAppOptions) {
       const subscribers = await listAllWaitlistEmails();
 
       if (dryRun) {
-        res.json({ dryRun: true, count: subscribers.length, emails: subscribers.map((s) => s.email) });
+        res.json({
+          dryRun: true,
+          count: subscribers.length,
+          emails: subscribers.map((s) => s.email),
+        });
         return;
       }
 
@@ -377,7 +446,8 @@ export function createApp(options?: CreateAppOptions) {
               await client.emails.send({
                 from: "PocketPulse <noreply@pocket-pulse.com>",
                 to: email,
-                subject: "PocketPulse is live — your finances just got a whole lot clearer 🎉",
+                subject:
+                  "PocketPulse is live — your finances just got a whole lot clearer 🎉",
                 html,
                 text,
               });
@@ -486,12 +556,20 @@ export function createApp(options?: CreateAppOptions) {
     try {
       const { email } = req.body ?? {};
       if (typeof email !== "string" || !email.trim()) {
-        res.status(400).json({ error: "A valid email is required." });
+        res
+          .status(400)
+          .json({
+            error: "Please enter a real email address, like name@example.com.",
+          });
         return;
       }
       const normalized = email.trim().toLowerCase();
-      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized)) {
-        res.status(400).json({ error: "Please enter a valid email address." });
+      if (!isValidWaitlistEmail(normalized)) {
+        res
+          .status(400)
+          .json({
+            error: "Please enter a real email address, like name@example.com.",
+          });
         return;
       }
       await addWaitlistEmail(normalized);
@@ -507,7 +585,8 @@ export function createApp(options?: CreateAppOptions) {
 
   app.post("/api/auth/register", authLimiter, async (req, res, next) => {
     try {
-      const { email, password, displayName, companyName, isDev } = req.body ?? {};
+      const { email, password, displayName, companyName, isDev } =
+        req.body ?? {};
       if (
         typeof email !== "string" ||
         typeof password !== "string" ||
@@ -519,7 +598,11 @@ export function createApp(options?: CreateAppOptions) {
         return;
       }
 
-      if (!email.includes("@") || email.indexOf("@") === 0 || email.indexOf("@") === email.length - 1) {
+      if (
+        !email.includes("@") ||
+        email.indexOf("@") === 0 ||
+        email.indexOf("@") === email.length - 1
+      ) {
         res.status(400).json({ error: "A valid email address is required" });
         return;
       }
@@ -568,10 +651,7 @@ export function createApp(options?: CreateAppOptions) {
       }
 
       const record = await getUserByEmailForAuth(email);
-      if (
-        !record ||
-        !(await verifyPassword(password, record.passwordHash))
-      ) {
+      if (!record || !(await verifyPassword(password, record.passwordHash))) {
         res.status(401).json({ error: "Invalid email or password" });
         return;
       }
@@ -833,9 +913,7 @@ export function createApp(options?: CreateAppOptions) {
       const account = await createAccountForUser(userId, {
         label: label.trim(),
         lastFour:
-          lastFour === undefined || lastFour === null
-            ? null
-            : String(lastFour),
+          lastFour === undefined || lastFour === null ? null : String(lastFour),
         accountType:
           accountType === undefined || accountType === null
             ? null
@@ -955,7 +1033,10 @@ export function createApp(options?: CreateAppOptions) {
           let _cachedSampleRows: string[][] | null = null;
           const getSampleRows = (): string[][] => {
             if (_cachedSampleRows !== null) return _cachedSampleRows;
-            const rawText = file.buffer.toString("utf-8").replace(/^\uFEFF/, "").trimStart();
+            const rawText = file.buffer
+              .toString("utf-8")
+              .replace(/^\uFEFF/, "")
+              .trimStart();
             try {
               _cachedSampleRows = csvParseSync(rawText, {
                 relax_column_count: true,
@@ -977,7 +1058,8 @@ export function createApp(options?: CreateAppOptions) {
           //    Returns null when sample parsing fails — cache is skipped entirely
           //    for that upload (no fingerprint collision on empty string).
           const isDateLike = (c: string) =>
-            /^\d{1,4}[\/\-]\d{1,2}/.test(c) || /^\d{4}[\/\-]\d{2}[\/\-]\d{2}$/.test(c);
+            /^\d{1,4}[\/\-]\d{1,2}/.test(c) ||
+            /^\d{4}[\/\-]\d{2}[\/\-]\d{2}$/.test(c);
           const isAmountLike = (c: string) =>
             /^-?\$?[\d,]+\.?\d*$/.test(c) || /^\([0-9,]+\.?\d*\)$/.test(c);
 
@@ -989,9 +1071,18 @@ export function createApp(options?: CreateAppOptions) {
             for (const row of rows.slice(0, 10)) {
               const nonEmpty = row.filter((c) => c.trim());
               if (nonEmpty.length < 2) continue;
-              if (nonEmpty.every((c) => !isDateLike(c.trim()) && !isAmountLike(c.trim()))) {
-                const normalized = row.map((c) => c.toLowerCase().trim()).join("|");
-                return crypto.createHash("sha256").update(normalized).digest("hex");
+              if (
+                nonEmpty.every(
+                  (c) => !isDateLike(c.trim()) && !isAmountLike(c.trim()),
+                )
+              ) {
+                const normalized = row
+                  .map((c) => c.toLowerCase().trim())
+                  .join("|");
+                return crypto
+                  .createHash("sha256")
+                  .update(normalized)
+                  .digest("hex");
               }
             }
 
@@ -999,7 +1090,9 @@ export function createApp(options?: CreateAppOptions) {
             // across monthly exports. Based on: number of columns + per-column type
             // pattern (D=date, A=amount, T=text, _=empty). Content is NOT used,
             // so this fingerprint does not change when transaction values change.
-            const dataRows = rows.slice(0, 6).filter((r) => r.some((c) => c.trim()));
+            const dataRows = rows
+              .slice(0, 6)
+              .filter((r) => r.some((c) => c.trim()));
             if (dataRows.length === 0) return null;
             const colCount = Math.max(...dataRows.map((r) => r.length));
             const colTypes: string[] = [];
@@ -1016,14 +1109,17 @@ export function createApp(options?: CreateAppOptions) {
                 acc[t] = (acc[t] ?? 0) + 1;
                 return acc;
               }, {});
-              colTypes.push(Object.entries(freq).sort((a, b) => b[1] - a[1])[0][0]);
+              colTypes.push(
+                Object.entries(freq).sort((a, b) => b[1] - a[1])[0][0],
+              );
             }
             const pattern = `${colCount}:${colTypes.join("")}`;
             return crypto.createHash("sha256").update(pattern).digest("hex");
           })();
 
           // The applied format spec for this parse (set after resolution).
-          let appliedSpec: import("../shared/schema.js").CsvFormatSpec | null = null;
+          let appliedSpec: import("../shared/schema.js").CsvFormatSpec | null =
+            null;
 
           // 2. Check for a cached format spec (fast path for repeat uploads).
           //    Skipped when fingerprint is null (sample rows unparseable).
@@ -1043,7 +1139,7 @@ export function createApp(options?: CreateAppOptions) {
           if (!parseResult.ok && cachedSpec) {
             console.warn(
               `[upload] cached spec failed for "${file.originalname}" ` +
-              `(fp=${headerFingerprint?.slice(0, 8)}), retrying heuristic`,
+                `(fp=${headerFingerprint?.slice(0, 8)}), retrying heuristic`,
             );
             parseResult = await parseCSV(file.buffer, file.originalname);
             if (parseResult.ok) appliedSpec = parseResult.detectedSpec ?? null;
@@ -1069,25 +1165,40 @@ export function createApp(options?: CreateAppOptions) {
               if (sampleRecords.length > 0) {
                 const aiSpec = await detectCsvFormat(sampleRecords);
                 if (aiSpec) {
-                  const aiParseResult = await parseCSV(file.buffer, file.originalname, aiSpec);
+                  const aiParseResult = await parseCSV(
+                    file.buffer,
+                    file.originalname,
+                    aiSpec,
+                  );
                   // Accept AI result only if it's better (ok, or same-ok with fewer skips)
                   const aiIsBetter =
                     aiParseResult.ok &&
                     (!parseResult.ok ||
-                      aiParseResult.warnings.filter((w) => w.includes("skipped")).length <
-                        parseResult.warnings.filter((w) => w.includes("skipped")).length);
+                      aiParseResult.warnings.filter((w) =>
+                        w.includes("skipped"),
+                      ).length <
+                        parseResult.warnings.filter((w) =>
+                          w.includes("skipped"),
+                        ).length);
 
                   if (aiIsBetter) {
                     if (headerFingerprint) {
-                      saveFormatSpec(userId, headerFingerprint, aiSpec, "ai").catch((e) => {
-                        console.warn(`[upload] saveFormatSpec (ai) failed: ${e}`);
+                      saveFormatSpec(
+                        userId,
+                        headerFingerprint,
+                        aiSpec,
+                        "ai",
+                      ).catch((e) => {
+                        console.warn(
+                          `[upload] saveFormatSpec (ai) failed: ${e}`,
+                        );
                       });
                     }
                     parseResult = aiParseResult;
                     appliedSpec = aiSpec;
                     console.log(
                       `[upload] AI format detection improved parse for "${file.originalname}" ` +
-                      `(user=${userId}, fp=${headerFingerprint?.slice(0, 8)})`,
+                        `(user=${userId}, fp=${headerFingerprint?.slice(0, 8)})`,
                     );
                   }
                 }
@@ -1103,12 +1214,23 @@ export function createApp(options?: CreateAppOptions) {
             if (!parseResult.ok && priorError !== null) {
               parseResult = { ok: false, error: priorError };
             }
-          } else if (!cachedSpec && parseResult.ok && parseResult.detectedSpec) {
+          } else if (
+            !cachedSpec &&
+            parseResult.ok &&
+            parseResult.detectedSpec
+          ) {
             // 4. Heuristic succeeded with sufficient confidence — save spec for next time.
             if (headerFingerprint) {
-              saveFormatSpec(userId, headerFingerprint, parseResult.detectedSpec, "heuristic").catch(
-                (e) => { console.warn(`[upload] saveFormatSpec (heuristic) failed: ${e}`); },
-              );
+              saveFormatSpec(
+                userId,
+                headerFingerprint,
+                parseResult.detectedSpec,
+                "heuristic",
+              ).catch((e) => {
+                console.warn(
+                  `[upload] saveFormatSpec (heuristic) failed: ${e}`,
+                );
+              });
             }
             appliedSpec = parseResult.detectedSpec;
           }
@@ -1221,8 +1343,10 @@ export function createApp(options?: CreateAppOptions) {
             uploadId: uploadRecord.id,
             status: "complete",
             rowCount: insertedCount,
-            previouslyImported: previouslyImported > 0 ? previouslyImported : undefined,
-            intraBatchDuplicates: intraBatchDuplicates > 0 ? intraBatchDuplicates : undefined,
+            previouslyImported:
+              previouslyImported > 0 ? previouslyImported : undefined,
+            intraBatchDuplicates:
+              intraBatchDuplicates > 0 ? intraBatchDuplicates : undefined,
             warnings:
               parseResult.warnings.length > 0
                 ? parseResult.warnings
@@ -1367,7 +1491,10 @@ export function createApp(options?: CreateAppOptions) {
         recurrenceType: (q.recurrenceType as string) || undefined,
         dateFrom: (q.dateFrom as string) || undefined,
         dateTo: (q.dateTo as string) || undefined,
-        excluded: (q.excluded === "true" || q.excluded === "all") ? (q.excluded as "true" | "all") : "false",
+        excluded:
+          q.excluded === "true" || q.excluded === "all"
+            ? (q.excluded as "true" | "all")
+            : "false",
       });
 
       res.json(result);
@@ -1389,10 +1516,12 @@ export function createApp(options?: CreateAppOptions) {
          ORDER  BY 1 DESC`,
         [userId],
       );
-      res.json(rows.rows.map((r) => ({
-        month: r.month,
-        transactionCount: parseInt(r.txn_count, 10),
-      })));
+      res.json(
+        rows.rows.map((r) => ({
+          month: r.month,
+          transactionCount: parseInt(r.txn_count, 10),
+        })),
+      );
     } catch (e) {
       next(e);
     }
@@ -1403,8 +1532,14 @@ export function createApp(options?: CreateAppOptions) {
       const userId = req.session.userId!;
 
       const q = req.query;
-      const dateFrom = typeof q.dateFrom === "string" && /^\d{4}-\d{2}-\d{2}$/.test(q.dateFrom) ? q.dateFrom : undefined;
-      const dateTo = typeof q.dateTo === "string" && /^\d{4}-\d{2}-\d{2}$/.test(q.dateTo) ? q.dateTo : undefined;
+      const dateFrom =
+        typeof q.dateFrom === "string" && /^\d{4}-\d{2}-\d{2}$/.test(q.dateFrom)
+          ? q.dateFrom
+          : undefined;
+      const dateTo =
+        typeof q.dateTo === "string" && /^\d{4}-\d{2}-\d{2}$/.test(q.dateTo)
+          ? q.dateTo
+          : undefined;
 
       const summary = await buildDashboardSummary(userId, { dateFrom, dateTo });
       res.json(summary);
@@ -1440,7 +1575,10 @@ export function createApp(options?: CreateAppOptions) {
       const errors: string[] = [];
 
       if (body.date !== undefined) {
-        if (typeof body.date !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(body.date)) {
+        if (
+          typeof body.date !== "string" ||
+          !/^\d{4}-\d{2}-\d{2}$/.test(body.date)
+        ) {
           errors.push("date must be YYYY-MM-DD format");
         } else {
           fields.date = body.date;
@@ -1471,19 +1609,26 @@ export function createApp(options?: CreateAppOptions) {
       }
       if (body.transactionClass !== undefined) {
         if (!VALID_CLASSES.includes(body.transactionClass)) {
-          errors.push(`transactionClass must be one of: ${VALID_CLASSES.join(", ")}`);
+          errors.push(
+            `transactionClass must be one of: ${VALID_CLASSES.join(", ")}`,
+          );
         } else {
           fields.transactionClass = body.transactionClass;
           if (body.transactionClass === "expense") {
             fields.flowType = "outflow";
-          } else if (body.transactionClass === "income" || body.transactionClass === "refund") {
+          } else if (
+            body.transactionClass === "income" ||
+            body.transactionClass === "refund"
+          ) {
             fields.flowType = "inflow";
           }
         }
       }
       if (body.recurrenceType !== undefined) {
         if (!VALID_RECURRENCE.includes(body.recurrenceType)) {
-          errors.push(`recurrenceType must be one of: ${VALID_RECURRENCE.join(", ")}`);
+          errors.push(
+            `recurrenceType must be one of: ${VALID_RECURRENCE.join(", ")}`,
+          );
         } else {
           fields.recurrenceType = body.recurrenceType;
         }
@@ -1496,7 +1641,8 @@ export function createApp(options?: CreateAppOptions) {
         }
       }
       if (body.excludedReason !== undefined) {
-        fields.excludedReason = body.excludedReason === null ? null : String(body.excludedReason);
+        fields.excludedReason =
+          body.excludedReason === null ? null : String(body.excludedReason);
       }
 
       if (errors.length > 0) {
@@ -1577,18 +1723,22 @@ export function createApp(options?: CreateAppOptions) {
   // AI re-categorization (Phase 2b)
   // -----------------------------------------------------------------------
 
-  app.post("/api/transactions/reclassify", requireAuth, async (req, res, next) => {
-    try {
-      const userId = req.session.userId!;
-      const result = await reclassifyTransactions(userId);
-      // Re-sync recurring patterns so recurring-transfer promotions are
-      // reapplied after the rules engine may have reset them to "transfer".
-      await syncRecurringCandidates(userId);
-      res.json(result);
-    } catch (e) {
-      next(e);
-    }
-  });
+  app.post(
+    "/api/transactions/reclassify",
+    requireAuth,
+    async (req, res, next) => {
+      try {
+        const userId = req.session.userId!;
+        const result = await reclassifyTransactions(userId);
+        // Re-sync recurring patterns so recurring-transfer promotions are
+        // reapplied after the rules engine may have reset them to "transfer".
+        await syncRecurringCandidates(userId);
+        res.json(result);
+      } catch (e) {
+        next(e);
+      }
+    },
+  );
 
   // Export filtered ledger as CSV
   app.get("/api/transactions/export", requireAuth, async (req, res, next) => {
@@ -1606,7 +1756,10 @@ export function createApp(options?: CreateAppOptions) {
           recurrenceType: q.recurrenceType || undefined,
           dateFrom: q.dateFrom || undefined,
           dateTo: q.dateTo || undefined,
-          excluded: (q.excluded === "true" || q.excluded === "all") ? (q.excluded as "true" | "all") : "false",
+          excluded:
+            q.excluded === "true" || q.excluded === "all"
+              ? (q.excluded as "true" | "all")
+              : "false",
         }),
         listAccountsForUser(userId),
       ]);
@@ -1648,7 +1801,10 @@ export function createApp(options?: CreateAppOptions) {
       const filename = `pocketpulse-ledger-${new Date().toISOString().slice(0, 10)}.csv`;
 
       res.setHeader("Content-Type", "text/csv");
-      res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+      res.setHeader(
+        "Content-Disposition",
+        `attachment; filename="${filename}"`,
+      );
       res.send(csv);
     } catch (e) {
       next(e);
@@ -1663,7 +1819,9 @@ export function createApp(options?: CreateAppOptions) {
     try {
       const userId = req.session.userId!;
       if (req.body?.confirm !== true) {
-        res.status(400).json({ error: "Must send { confirm: true } to wipe data" });
+        res
+          .status(400)
+          .json({ error: "Must send { confirm: true } to wipe data" });
         return;
       }
       const result = await deleteAllTransactionsForUser(userId);
@@ -1677,7 +1835,9 @@ export function createApp(options?: CreateAppOptions) {
     try {
       const userId = req.session.userId!;
       if (req.body?.confirm !== true) {
-        res.status(400).json({ error: "Must send { confirm: true } to reset workspace" });
+        res
+          .status(400)
+          .json({ error: "Must send { confirm: true } to reset workspace" });
         return;
       }
       const result = await deleteWorkspaceDataForUser(userId);
@@ -1704,10 +1864,12 @@ export function createApp(options?: CreateAppOptions) {
       const merged = candidates.map((c) => {
         const review = reviewMap.get(c.candidateKey);
         // Auto-label necessary categories as essential when not yet manually reviewed
-        const autoEssential = AUTO_ESSENTIAL_CATEGORIES.has(c.category) && !review;
+        const autoEssential =
+          AUTO_ESSENTIAL_CATEGORIES.has(c.category) && !review;
         return {
           ...c,
-          reviewStatus: review?.status ?? (autoEssential ? "essential" : "unreviewed"),
+          reviewStatus:
+            review?.status ?? (autoEssential ? "essential" : "unreviewed"),
           reviewNotes: review?.notes ?? null,
           autoEssential,
         };
@@ -1715,7 +1877,8 @@ export function createApp(options?: CreateAppOptions) {
 
       const summary = {
         total: merged.length,
-        unreviewed: merged.filter((c) => c.reviewStatus === "unreviewed").length,
+        unreviewed: merged.filter((c) => c.reviewStatus === "unreviewed")
+          .length,
         essential: merged.filter((c) => c.reviewStatus === "essential").length,
         leak: merged.filter((c) => c.reviewStatus === "leak").length,
         dismissed: merged.filter((c) => c.reviewStatus === "dismissed").length,
@@ -1727,24 +1890,38 @@ export function createApp(options?: CreateAppOptions) {
     }
   });
 
-  app.patch("/api/recurring-reviews/:candidateKey", requireAuth, async (req, res, next) => {
-    try {
-      const userId = req.session.userId!;
-      const candidateKey = decodeURIComponent(req.params.candidateKey as string);
-      const { status, notes } = req.body as { status?: string; notes?: string };
+  app.patch(
+    "/api/recurring-reviews/:candidateKey",
+    requireAuth,
+    async (req, res, next) => {
+      try {
+        const userId = req.session.userId!;
+        const candidateKey = decodeURIComponent(
+          req.params.candidateKey as string,
+        );
+        const { status, notes } = req.body as {
+          status?: string;
+          notes?: string;
+        };
 
-      if (!status || !REVIEW_STATUSES.includes(status as any)) {
-        return res.status(400).json({
-          error: `Invalid status. Must be one of: ${REVIEW_STATUSES.join(", ")}`,
-        });
+        if (!status || !REVIEW_STATUSES.includes(status as any)) {
+          return res.status(400).json({
+            error: `Invalid status. Must be one of: ${REVIEW_STATUSES.join(", ")}`,
+          });
+        }
+
+        const row = await upsertRecurringReview(
+          userId,
+          candidateKey,
+          status,
+          notes,
+        );
+        res.json(row);
+      } catch (e) {
+        next(e);
       }
-
-      const row = await upsertRecurringReview(userId, candidateKey, status, notes);
-      res.json(row);
-    } catch (e) {
-      next(e);
-    }
-  });
+    },
+  );
 
   /**
    * POST /api/recurring-candidates/sync
@@ -1753,15 +1930,19 @@ export function createApp(options?: CreateAppOptions) {
    *   - all other active outflow transactions for this user → "one-time"
    * Returns { recurringCount, oneTimeCount }.
    */
-  app.post("/api/recurring-candidates/sync", requireAuth, async (req, res, next) => {
-    try {
-      const userId = req.session.userId!;
-      const result = await syncRecurringCandidates(userId);
-      res.json(result);
-    } catch (e) {
-      next(e);
-    }
-  });
+  app.post(
+    "/api/recurring-candidates/sync",
+    requireAuth,
+    async (req, res, next) => {
+      try {
+        const userId = req.session.userId!;
+        const result = await syncRecurringCandidates(userId);
+        res.json(result);
+      } catch (e) {
+        next(e);
+      }
+    },
+  );
 
   app.get("/api/recurring-reviews", requireAuth, async (req, res, next) => {
     try {
@@ -1816,13 +1997,13 @@ export function createApp(options?: CreateAppOptions) {
 
       // Map DB rows to the typed TxRow shape expected by detectLeaks.
       const txns = rows.map((t) => ({
-        transactionClass:     t.transactionClass,
-        category:             t.category,
-        merchant:             t.merchant,
-        amount:               t.amount,
-        date:                 t.date,
-        recurrenceType:       t.recurrenceType,
-        recurrenceSource:     t.recurrenceSource,
+        transactionClass: t.transactionClass,
+        category: t.category,
+        merchant: t.merchant,
+        amount: t.amount,
+        date: t.date,
+        recurrenceType: t.recurrenceType,
+        recurrenceSource: t.recurrenceSource,
         excludedFromAnalysis: t.excludedFromAnalysis,
       }));
 
@@ -1832,7 +2013,9 @@ export function createApp(options?: CreateAppOptions) {
       // active subscriptions suppress leak detection.  Inactive/cancelled recurring
       // items (isActive=false) are NOT excluded so they can still surface as leaks
       // if the user's pattern now looks discretionary rather than scheduled.
-      const allTxnsForRecurring = await listAllTransactionsForExport({ userId });
+      const allTxnsForRecurring = await listAllTransactionsForExport({
+        userId,
+      });
       const activeRecurringCandidates = detectRecurringCandidates(
         allTxnsForRecurring as any,
       ).filter((c) => c.isActive);
@@ -1905,13 +2088,18 @@ export function createApp(options?: CreateAppOptions) {
             eq(txnTable.recurrenceType, "recurring"),
           ),
         );
-      console.log(`[startup] recurrenceSource backfill: ${(backfillResult as { rowCount?: number }).rowCount ?? 0} rows promoted to 'hint'`);
+      console.log(
+        `[startup] recurrenceSource backfill: ${(backfillResult as { rowCount?: number } | undefined)?.rowCount ?? 0} rows promoted to 'hint'`,
+      );
 
+      if (typeof db.select !== "function") return;
       const allUsers = await db.select({ id: usersTable.id }).from(usersTable);
       for (const user of allUsers) {
         await syncRecurringCandidates(user.id);
       }
-      console.log(`[startup] recurring-sync complete for ${allUsers.length} user(s)`);
+      console.log(
+        `[startup] recurring-sync complete for ${allUsers.length} user(s)`,
+      );
     } catch (err) {
       console.warn("[startup] recurring-sync skipped:", err);
     }

@@ -23,11 +23,11 @@ type TxRow = {
 function makeTx(overrides: Partial<TxRow> & { merchant: string }): TxRow {
   return {
     transactionClass: "expense",
-    category:         overrides.category ?? "dining",
-    merchant:         overrides.merchant,
-    amount:           overrides.amount ?? "-25.00",
-    date:             overrides.date ?? "2026-01-15",
-    recurrenceType:   overrides.recurrenceType ?? "one-time",
+    category: overrides.category ?? "dining",
+    merchant: overrides.merchant,
+    amount: overrides.amount ?? "-25.00",
+    date: overrides.date ?? "2026-01-15",
+    recurrenceType: overrides.recurrenceType ?? "one-time",
     excludedFromAnalysis: overrides.excludedFromAnalysis ?? false,
   };
 }
@@ -109,8 +109,18 @@ describe("detectLeaks: catch-all repeat-purchase rule", () => {
 
   it("catch-all requires ≥3 transactions — 2 transactions do not qualify", () => {
     const txns = [
-      makeTx({ merchant: "RareSoftwareTool", amount: "-49.99", category: "other", date: "2026-01-15" }),
-      makeTx({ merchant: "RareSoftwareTool", amount: "-49.99", category: "other", date: "2026-02-15" }),
+      makeTx({
+        merchant: "RareSoftwareTool",
+        amount: "-49.99",
+        category: "other",
+        date: "2026-01-15",
+      }),
+      makeTx({
+        merchant: "RareSoftwareTool",
+        amount: "-49.99",
+        category: "other",
+        date: "2026-02-15",
+      }),
     ];
     const leaks = detectLeaks(txns, { rangeDays: 60 });
     expect(leaks.some((l) => l.merchantKey === "raresoftwaretool")).toBe(false);
@@ -148,9 +158,9 @@ describe("detectLeaks: inactive recurring merchants", () => {
   });
 
   it("passing only the active subset in recurringMerchantKeys leaves inactive merchants unblocked", () => {
-    const netflix = monthlyTxns("Netflix.com",  "-15.99", "entertainment", 6);
-    const hulu    = monthlyTxns("Hulu.com",     "-7.99",  "entertainment", 6);
-    const all     = [...netflix, ...hulu];
+    const netflix = monthlyTxns("Netflix.com", "-15.99", "entertainment", 6);
+    const hulu = monthlyTxns("Hulu.com", "-7.99", "entertainment", 6);
+    const all = [...netflix, ...hulu];
 
     // Only netflix is currently active; hulu is inactive (not in the set)
     const leaks = detectLeaks(all, {
@@ -159,7 +169,7 @@ describe("detectLeaks: inactive recurring merchants", () => {
     });
 
     expect(leaks.some((l) => l.merchantKey === "netflix")).toBe(false); // excluded
-    expect(leaks.some((l) => l.merchantKey === "hulu")).toBe(true);     // not excluded
+    expect(leaks.some((l) => l.merchantKey === "hulu")).toBe(true); // not excluded
   });
 });
 
@@ -292,10 +302,30 @@ describe("detectLeaks: rangeDays parameter", () => {
   it("uses the provided rangeDays, not the transactions' date span", () => {
     // 4 transactions clustered in a single week
     const txns = [
-      makeTx({ merchant: "CoffeeBar", amount: "-6.00", category: "coffee", date: "2026-03-01" }),
-      makeTx({ merchant: "CoffeeBar", amount: "-6.00", category: "coffee", date: "2026-03-03" }),
-      makeTx({ merchant: "CoffeeBar", amount: "-6.00", category: "coffee", date: "2026-03-05" }),
-      makeTx({ merchant: "CoffeeBar", amount: "-6.00", category: "coffee", date: "2026-03-07" }),
+      makeTx({
+        merchant: "CoffeeBar",
+        amount: "-6.00",
+        category: "coffee",
+        date: "2026-03-01",
+      }),
+      makeTx({
+        merchant: "CoffeeBar",
+        amount: "-6.00",
+        category: "coffee",
+        date: "2026-03-03",
+      }),
+      makeTx({
+        merchant: "CoffeeBar",
+        amount: "-6.00",
+        category: "coffee",
+        date: "2026-03-05",
+      }),
+      makeTx({
+        merchant: "CoffeeBar",
+        amount: "-6.00",
+        category: "coffee",
+        date: "2026-03-07",
+      }),
     ];
     // Query window = 90 days → monthFactor = 3 → monthlyAmount = $24 / 3 = $8
     const leaks = detectLeaks(txns, { rangeDays: 90 });
@@ -311,5 +341,39 @@ describe("detectLeaks: rangeDays parameter", () => {
     const leak = leaks.find((l) => l.merchantKey === "pizza place");
     expect(leak).toBeDefined();
     expect(leak!.monthlyAmount).toBeCloseTo(leak!.recentSpend, 1);
+  });
+});
+
+describe("detectLeaks: credit card payments", () => {
+  it("does not flag repeated Amex/card payments as leaks", () => {
+    const txns = [
+      makeTx({
+        merchant: "AMEX EPAYMENT ACH PMT",
+        amount: "-225.00",
+        category: "other",
+        date: "2026-01-05",
+      }),
+      makeTx({
+        merchant: "AMEX EPAYMENT ACH PMT",
+        amount: "-180.00",
+        category: "other",
+        date: "2026-02-05",
+      }),
+      makeTx({
+        merchant: "AMEX EPAYMENT ACH PMT",
+        amount: "-240.00",
+        category: "other",
+        date: "2026-03-05",
+      }),
+      makeTx({
+        merchant: "AMEX EPAYMENT ACH PMT",
+        amount: "-210.00",
+        category: "other",
+        date: "2026-04-05",
+      }),
+    ];
+
+    const leaks = detectLeaks(txns, { rangeDays: 120 });
+    expect(leaks.find((l) => l.merchantKey.includes("amex"))).toBeUndefined();
   });
 });

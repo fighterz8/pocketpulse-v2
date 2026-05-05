@@ -54,9 +54,34 @@ const ESSENTIAL_LEAK_EXCLUSIONS = new Set<string>([
  * as "leaks" regardless of frequency or amount.
  */
 const CATCH_ALL_HARD_EXCLUSIONS = new Set<string>([
-  "housing", "utilities", "insurance", "medical", "debt",
-  "income", "groceries", "gas", "auto", "parking", "travel",
+  "housing",
+  "utilities",
+  "insurance",
+  "medical",
+  "debt",
+  "income",
+  "groceries",
+  "gas",
+  "auto",
+  "parking",
+  "travel",
 ]);
+
+const CREDIT_CARD_PAYMENT_PATTERNS: RegExp[] = [
+  /\bamex\b/i,
+  /american\s+express/i,
+  /credit\s+card\s+payment/i,
+  /card\s+payment/i,
+  /autopay\s+payment/i,
+  /payment\s+(thank\s+you|received)/i,
+];
+
+function isCreditCardPaymentLike(merchant: string, category: string): boolean {
+  return (
+    category === "debt" ||
+    CREDIT_CARD_PAYMENT_PATTERNS.some((p) => p.test(merchant))
+  );
+}
 
 // ─── isSubscriptionLike helpers ───────────────────────────────────────────────
 
@@ -67,16 +92,38 @@ const SUBSCRIPTION_LIKE_CATEGORIES = new Set<string>([
 ]);
 
 const SUBSCRIPTION_MERCHANT_PATTERNS: RegExp[] = [
-  /netflix/i, /spotify/i, /hulu/i, /disney/i, /\bhbo\b/i,
-  /apple\s*(tv|music|one|arcade)/i, /youtube\s*premium/i,
-  /amazon\s*prime/i, /amazon\s*music/i, /audible/i,
-  /siriusxm/i, /pandora/i, /tidal/i, /\badobe\b/i,
-  /microsoft\s*365/i, /office\s*365/i, /dropbox/i,
-  /icloud/i, /google\s*(one|storage)/i,
-  /\bslack\b/i, /\bzoom\b/i, /\bnotion\b/i, /\bfigma\b/i,
-  /quickbooks/i, /freshbooks/i, /\bshopify\b/i,
-  /\bpatreon\b/i, /substack/i,
-  /gym\b/i, /planet fitness/i, /anytime fitness/i, /\bcrossfit\b/i,
+  /netflix/i,
+  /spotify/i,
+  /hulu/i,
+  /disney/i,
+  /\bhbo\b/i,
+  /apple\s*(tv|music|one|arcade)/i,
+  /youtube\s*premium/i,
+  /amazon\s*prime/i,
+  /amazon\s*music/i,
+  /audible/i,
+  /siriusxm/i,
+  /pandora/i,
+  /tidal/i,
+  /\badobe\b/i,
+  /microsoft\s*365/i,
+  /office\s*365/i,
+  /dropbox/i,
+  /icloud/i,
+  /google\s*(one|storage)/i,
+  /\bslack\b/i,
+  /\bzoom\b/i,
+  /\bnotion\b/i,
+  /\bfigma\b/i,
+  /quickbooks/i,
+  /freshbooks/i,
+  /\bshopify\b/i,
+  /\bpatreon\b/i,
+  /substack/i,
+  /gym\b/i,
+  /planet fitness/i,
+  /anytime fitness/i,
+  /\bcrossfit\b/i,
   /\bpeloton\b/i,
 ];
 
@@ -88,7 +135,8 @@ function detectSubscriptionLike(
   avgAmount: number,
 ): boolean {
   if (SUBSCRIPTION_LIKE_CATEGORIES.has(category)) return true;
-  if (isRecurring && avgAmount > 0 && amountVariance < avgAmount * 0.2) return true;
+  if (isRecurring && avgAmount > 0 && amountVariance < avgAmount * 0.2)
+    return true;
   return SUBSCRIPTION_MERCHANT_PATTERNS.some((p) => p.test(merchant));
 }
 
@@ -210,6 +258,7 @@ export function detectLeaks(
   const merchantGroups: Record<string, TxEntry[]> = {};
 
   for (const tx of candidates) {
+    if (isCreditCardPaymentLike(tx.merchant, tx.category)) continue;
     const key = recurrenceKey(tx.merchant);
     // Mutual exclusion: skip merchants that are currently tracked as recurring.
     // This prevents the same merchant from appearing on both the Recurring Expenses
@@ -246,9 +295,7 @@ export function detectLeaks(
     const amountVariance =
       amounts.length > 1 ? Math.max(...amounts) - Math.min(...amounts) : 0;
 
-    const isRecurring = entries.some(
-      (e) => e.recurrenceType === "recurring",
-    );
+    const isRecurring = entries.some((e) => e.recurrenceType === "recurring");
 
     // Build per-category breakdown (sorted by count desc, tiebreak by total desc)
     const catMap: Record<string, { total: number; count: number }> = {};

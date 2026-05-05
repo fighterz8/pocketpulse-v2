@@ -20,7 +20,7 @@
  *      mutation resolves (no need to wait for window focus).
  *   2. As the worker advances, the badge's `text-ai-pulse-count` updates
  *      with monotonically non-decreasing percentage.
- *   3. On worker completion the badge shows the "AI enhancement complete"
+ *   3. On worker completion the badge shows a completion message
  *      toast and unmounts within ~2.5s.
  *   4. On worker failure the badge shows the failure variant and unmounts
  *      within ~5s.
@@ -407,7 +407,7 @@ function UploadButton() {
 function TestRoot() {
   return (
     <QueryClientProvider client={queryClient}>
-      <AiEnhancementBadge />
+      <AiEnhancementBadge gradId="test-ai-enhancement-pulse" />
       <LedgerProbe />
       <UploadButton />
     </QueryClientProvider>
@@ -471,7 +471,7 @@ describe("AI enhancement badge end-to-end", () => {
     });
 
     const initialBadge = await screen.findByTestId("text-ai-pulse-count");
-    expect(initialBadge.textContent).toMatch(/Enhancing 4 transactions/);
+    expect(initialBadge.textContent).toMatch(/Enhancing transactions/);
     expect(initialBadge.textContent).toMatch(/0%/);
 
     // Phase 2: worker advances. We script three progress points and each
@@ -530,7 +530,7 @@ describe("AI enhancement badge end-to-end", () => {
 
     await waitFor(() => {
       expect(screen.getByTestId("text-ai-pulse-status").textContent).toMatch(
-        /AI enhancement complete/,
+        /4 transactions enhanced|AI enhancement complete/,
       );
     });
 

@@ -1,4 +1,4 @@
-import { FormEvent, useState } from "react";
+import { FormEvent, useState, type ReactNode } from "react";
 import { apiFetch } from "../lib/api";
 
 function IconDoc() {
@@ -15,8 +15,18 @@ function IconDoc() {
         strokeWidth="1.6"
         strokeLinejoin="round"
       />
-      <path d="M14 3v4h4" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" />
-      <path d="M8.5 12h7M8.5 15.5h5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+      <path
+        d="M14 3v4h4"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M8.5 12h7M8.5 15.5h5"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+      />
     </svg>
   );
 }
@@ -43,8 +53,24 @@ function IconTag() {
 function IconBars() {
   return (
     <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <rect x="3" y="13" width="4" height="8" rx="1" fill="currentColor" opacity="0.5" />
-      <rect x="10" y="8" width="4" height="13" rx="1" fill="currentColor" opacity="0.75" />
+      <rect
+        x="3"
+        y="13"
+        width="4"
+        height="8"
+        rx="1"
+        fill="currentColor"
+        opacity="0.5"
+      />
+      <rect
+        x="10"
+        y="8"
+        width="4"
+        height="13"
+        rx="1"
+        fill="currentColor"
+        opacity="0.75"
+      />
       <rect x="17" y="4" width="4" height="17" rx="1" fill="currentColor" />
     </svg>
   );
@@ -53,8 +79,22 @@ function IconBars() {
 function IconMail() {
   return (
     <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <rect x="3" y="5" width="18" height="14" rx="2.5" stroke="currentColor" strokeWidth="1.6" />
-      <path d="M3.5 7l8.5 6 8.5-6" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+      <rect
+        x="3"
+        y="5"
+        width="18"
+        height="14"
+        rx="2.5"
+        stroke="currentColor"
+        strokeWidth="1.6"
+      />
+      <path
+        d="M3.5 7l8.5 6 8.5-6"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
     </svg>
   );
 }
@@ -62,15 +102,38 @@ function IconMail() {
 function IconArrowRight() {
   return (
     <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <path d="M5 12h14M13 6l6 6-6 6" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+      <path
+        d="M5 12h14M13 6l6 6-6 6"
+        stroke="currentColor"
+        strokeWidth="2"
+        fill="none"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
     </svg>
   );
 }
 
-const FEATURES: { title: string; description: string; icon: () => JSX.Element }[] = [
-  { title: "CSV Import", description: "Bring in your data in seconds", icon: IconDoc },
-  { title: "Auto-Categorization", description: "Accurate categories from the moment you import", icon: IconTag },
-  { title: "Spending Insights", description: "Understand patterns and save more", icon: IconBars },
+const FEATURES: {
+  title: string;
+  description: string;
+  icon: () => ReactNode;
+}[] = [
+  {
+    title: "CSV Import",
+    description: "Bring in your data in seconds",
+    icon: IconDoc,
+  },
+  {
+    title: "Auto-Categorization",
+    description: "Accurate categories from the moment you import",
+    icon: IconTag,
+  },
+  {
+    title: "Spending Insights",
+    description: "Understand patterns and save more",
+    icon: IconBars,
+  },
 ];
 
 function CardDecorations() {
@@ -78,15 +141,25 @@ function CardDecorations() {
     <div className="coming-soon-decor" aria-hidden="true">
       <svg className="cs-decor cs-decor--donut" viewBox="0 0 200 200">
         <circle cx="100" cy="100" r="84" fill="#cbd5e1" />
-        <path d="M 100 100 L 100 16 A 84 84 0 0 1 181.07 121.65 Z" fill="#0ea5e9" />
-        <path d="M 100 100 L 181.07 121.65 A 84 84 0 0 1 132.61 174.46 Z" fill="#38bdf8" />
+        <path
+          d="M 100 100 L 100 16 A 84 84 0 0 1 181.07 121.65 Z"
+          fill="#0ea5e9"
+        />
+        <path
+          d="M 100 100 L 181.07 121.65 A 84 84 0 0 1 132.61 174.46 Z"
+          fill="#38bdf8"
+        />
       </svg>
 
       <div className="cs-decor cs-decor--mini">
         <div className="cs-mini-label">Monthly Overview</div>
         <div className="cs-mini-amount">$4,287.63</div>
         <div className="cs-mini-delta">+12.4% vs last month</div>
-        <svg className="cs-mini-spark" viewBox="0 0 120 36" preserveAspectRatio="none">
+        <svg
+          className="cs-mini-spark"
+          viewBox="0 0 120 36"
+          preserveAspectRatio="none"
+        >
           <defs>
             <linearGradient id="cs-spark-fill" x1="0" y1="0" x2="0" y2="1">
               <stop offset="0%" stopColor="#0ea5e9" stopOpacity="0.32" />
@@ -123,7 +196,14 @@ function CardDecorations() {
             <rect x="110" y="44" width="16" height="70" rx="2" fill="#38bdf8" />
             <rect x="136" y="34" width="16" height="80" rx="2" fill="#38bdf8" />
             <rect x="162" y="22" width="16" height="92" rx="2" fill="#0ea5e9" />
-            <rect x="188" y="12" width="16" height="102" rx="2" fill="#0ea5e9" />
+            <rect
+              x="188"
+              y="12"
+              width="16"
+              height="102"
+              rx="2"
+              fill="#0ea5e9"
+            />
           </g>
           <path
             d="M14,82 L40,72 L66,64 L92,56 L118,48 L144,38 L170,26 L196,16"
@@ -147,7 +227,9 @@ export function ComingSoon({ onUnlock }: { onUnlock: () => void }) {
   const [submitting, setSubmitting] = useState(false);
 
   const [email, setEmail] = useState("");
-  const [waitlistState, setWaitlistState] = useState<"idle" | "loading" | "success" | "error">("idle");
+  const [waitlistState, setWaitlistState] = useState<
+    "idle" | "loading" | "success" | "error"
+  >("idle");
   const [waitlistError, setWaitlistError] = useState("");
 
   function rejectCode() {
@@ -167,7 +249,9 @@ export function ComingSoon({ onUnlock }: { onUnlock: () => void }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ code: code.trim() }),
       });
-      const data = await res.json().catch(() => null) as { ok?: boolean } | null;
+      const data = (await res.json().catch(() => null)) as {
+        ok?: boolean;
+      } | null;
       if (res.ok && data?.ok) {
         onUnlock();
       } else {
@@ -194,7 +278,10 @@ export function ComingSoon({ onUnlock }: { onUnlock: () => void }) {
       if (res.ok && data.ok) {
         setWaitlistState("success");
       } else {
-        setWaitlistError(data.error ?? "Something went wrong. Please try again.");
+        setWaitlistError(
+          data.error ??
+            "Please enter a real email address, like name@example.com.",
+        );
         setWaitlistState("error");
       }
     } catch {
@@ -208,184 +295,234 @@ export function ComingSoon({ onUnlock }: { onUnlock: () => void }) {
       <div className="coming-soon-card">
         <CardDecorations />
         <div className="coming-soon-content">
-        <svg
-          className="coming-soon-logo"
-          aria-hidden="true"
-          viewBox="0 0 32 14"
-          fill="none"
-        >
-          <defs>
-            <linearGradient id="cs-logo-grad" x1="0" y1="0" x2="32" y2="0" gradientUnits="userSpaceOnUse">
-              <stop offset="0%" stopColor="#0ea5e9" />
-              <stop offset="100%" stopColor="#2563eb" />
-            </linearGradient>
-            <filter
-              id="cs-logo-glow"
-              x="-8"
-              y="-8"
-              width="48"
-              height="30"
-              filterUnits="userSpaceOnUse"
-            >
-              <feGaussianBlur in="SourceAlpha" stdDeviation="0.7" result="blur" />
-              <feFlood floodColor="#0ea5e9" floodOpacity="0.85">
-                <animate
-                  attributeName="flood-opacity"
-                  values="0.55;0.95;0.55"
-                  dur="2.8s"
-                  repeatCount="indefinite"
-                />
-              </feFlood>
-              <feComposite in2="blur" operator="in" result="glow" />
-              <feMerge>
-                <feMergeNode in="glow" />
-                <feMergeNode in="SourceGraphic" />
-              </feMerge>
-            </filter>
-          </defs>
-          <polyline
-            points="0,7 6,7 9,1 12,13 15,7 32,7"
-            stroke="url(#cs-logo-grad)"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            filter="url(#cs-logo-glow)"
-          />
-        </svg>
-
-        <div className="coming-soon-wordmark" data-testid="cs-brand">
-          <span className="cs-wordmark-pocket">POCKET</span>
-          <span className="cs-wordmark-pulse">PULSE</span>
-        </div>
-
-        <h1 className="coming-soon-title" data-testid="cs-heading">
-          Coming Soon
-        </h1>
-
-        <p className="coming-soon-tagline" data-testid="cs-tagline">
-          Smart financial clarity for everyday decisions.
-          <br />
-          We're putting the finishing touches on PocketPulse.
-          <br />
-          Launching soon.
-        </p>
-
-        <div className="coming-soon-features">
-          {FEATURES.map(({ title, description, icon: Icon }) => (
-            <div key={title} className="cs-feature">
-              <div className="cs-feature-icon">
-                <Icon />
-              </div>
-              <div className="cs-feature-text">
-                <div className="cs-feature-title">{title}</div>
-                <div className="cs-feature-desc">{description}</div>
-              </div>
-            </div>
-          ))}
-        </div>
-
-        <div className="coming-soon-form-section">
-          {waitlistState === "success" ? (
-            <div data-testid="cs-waitlist-success" className="coming-soon-success">
-              You're on the list! We'll notify you at launch.
-            </div>
-          ) : (
-            <form onSubmit={handleWaitlistSubmit} data-testid="cs-waitlist-form" className="coming-soon-form">
-              <label htmlFor="cs-waitlist-email-input" className="coming-soon-label cs-label-with-icon">
-                <span className="cs-label-icon"><IconMail /></span>
-                Get notified at launch
-              </label>
-              <div className="cs-input-wrap">
-                <span className="cs-input-icon"><IconMail /></span>
-                <input
-                  id="cs-waitlist-email-input"
-                  className="coming-soon-input cs-input--with-icon"
-                  type="email"
-                  value={email}
-                  data-testid="cs-waitlist-email"
-                  onChange={(e) => { setEmail(e.target.value); setWaitlistError(""); if (waitlistState === "error") setWaitlistState("idle"); }}
-                  placeholder="your@email.com"
-                  autoComplete="email"
-                  required
-                />
-              </div>
-              {waitlistState === "error" && waitlistError && (
-                <p role="alert" data-testid="cs-waitlist-error" className="coming-soon-error">
-                  {waitlistError}
-                </p>
-              )}
-              <button
-                className="coming-soon-submit"
-                type="submit"
-                data-testid="cs-waitlist-submit"
-                disabled={waitlistState === "loading"}
+          <svg
+            className="coming-soon-logo"
+            aria-hidden="true"
+            viewBox="0 0 32 14"
+            fill="none"
+          >
+            <defs>
+              <linearGradient
+                id="cs-logo-grad"
+                x1="0"
+                y1="0"
+                x2="32"
+                y2="0"
+                gradientUnits="userSpaceOnUse"
               >
-                <span>{waitlistState === "loading" ? "Saving…" : "Notify me"}</span>
-                {waitlistState !== "loading" && (
-                  <span className="cs-submit-arrow"><IconArrowRight /></span>
+                <stop offset="0%" stopColor="#0ea5e9" />
+                <stop offset="100%" stopColor="#2563eb" />
+              </linearGradient>
+              <filter
+                id="cs-logo-glow"
+                x="-8"
+                y="-8"
+                width="48"
+                height="30"
+                filterUnits="userSpaceOnUse"
+              >
+                <feGaussianBlur
+                  in="SourceAlpha"
+                  stdDeviation="0.7"
+                  result="blur"
+                />
+                <feFlood floodColor="#0ea5e9" floodOpacity="0.85">
+                  <animate
+                    attributeName="flood-opacity"
+                    values="0.55;0.95;0.55"
+                    dur="2.8s"
+                    repeatCount="indefinite"
+                  />
+                </feFlood>
+                <feComposite in2="blur" operator="in" result="glow" />
+                <feMerge>
+                  <feMergeNode in="glow" />
+                  <feMergeNode in="SourceGraphic" />
+                </feMerge>
+              </filter>
+            </defs>
+            <polyline
+              points="0,7 6,7 9,1 12,13 15,7 32,7"
+              stroke="url(#cs-logo-grad)"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              filter="url(#cs-logo-glow)"
+            />
+          </svg>
+
+          <div className="coming-soon-wordmark" data-testid="cs-brand">
+            <span className="cs-wordmark-pocket">POCKET</span>
+            <span className="cs-wordmark-pulse">PULSE</span>
+          </div>
+
+          <h1 className="coming-soon-title" data-testid="cs-heading">
+            Coming Soon
+          </h1>
+
+          <p className="coming-soon-tagline" data-testid="cs-tagline">
+            Smart financial clarity for everyday decisions.
+            <br />
+            We're putting the finishing touches on PocketPulse.
+            <br />
+            Launching soon.
+          </p>
+
+          <div className="coming-soon-features">
+            {FEATURES.map(({ title, description, icon: Icon }) => (
+              <div key={title} className="cs-feature">
+                <div className="cs-feature-icon">
+                  <Icon />
+                </div>
+                <div className="cs-feature-text">
+                  <div className="cs-feature-title">{title}</div>
+                  <div className="cs-feature-desc">{description}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="coming-soon-form-section">
+            {waitlistState === "success" ? (
+              <div
+                data-testid="cs-waitlist-success"
+                className="coming-soon-success"
+              >
+                You're on the list! We'll notify you at launch.
+              </div>
+            ) : (
+              <form
+                onSubmit={handleWaitlistSubmit}
+                data-testid="cs-waitlist-form"
+                className="coming-soon-form"
+              >
+                <label
+                  htmlFor="cs-waitlist-email-input"
+                  className="coming-soon-label cs-label-with-icon"
+                >
+                  <span className="cs-label-icon">
+                    <IconMail />
+                  </span>
+                  Join the launch waitlist
+                </label>
+                <div className="cs-input-wrap">
+                  <span className="cs-input-icon">
+                    <IconMail />
+                  </span>
+                  <input
+                    id="cs-waitlist-email-input"
+                    className="coming-soon-input cs-input--with-icon"
+                    type="email"
+                    value={email}
+                    data-testid="cs-waitlist-email"
+                    onChange={(e) => {
+                      setEmail(e.target.value);
+                      setWaitlistError("");
+                      if (waitlistState === "error") setWaitlistState("idle");
+                    }}
+                    placeholder="name@example.com"
+                    autoComplete="email"
+                    required
+                  />
+                </div>
+                {waitlistState === "error" && waitlistError && (
+                  <p
+                    role="alert"
+                    data-testid="cs-waitlist-error"
+                    className="coming-soon-error"
+                  >
+                    {waitlistError}
+                  </p>
                 )}
-              </button>
-            </form>
-          )}
-        </div>
+                <button
+                  className="coming-soon-submit"
+                  type="submit"
+                  data-testid="cs-waitlist-submit"
+                  disabled={waitlistState === "loading"}
+                >
+                  <span>
+                    {waitlistState === "loading" ? "Saving…" : "Notify me"}
+                  </span>
+                  {waitlistState !== "loading" && (
+                    <span className="cs-submit-arrow">
+                      <IconArrowRight />
+                    </span>
+                  )}
+                </button>
+              </form>
+            )}
+          </div>
 
-        <div className="coming-soon-divider">
-          {!showInput ? (
-            <button
-              type="button"
-              data-testid="cs-beta-toggle"
-              onClick={() => setShowInput(true)}
-              className="coming-soon-link-button"
-            >
-              Have a beta access code?
-            </button>
-          ) : (
-            <form
-              onSubmit={handleSubmit}
-              data-testid="cs-beta-form"
-              className={shaking ? "coming-soon-form coming-soon-form--shake" : "coming-soon-form"}
-            >
-              <label>
-                <span className="coming-soon-label">
-                  Beta Access Code
-                </span>
-                <input
-                  className="coming-soon-input coming-soon-input--code"
-                  type="text"
-                  autoFocus
-                  autoComplete="off"
-                  spellCheck={false}
-                  value={code}
-                  data-testid="cs-code-input"
-                  onChange={(e) => { setCode(e.target.value); setError(false); }}
-                  placeholder="Enter code"
-                />
-              </label>
-              {error && (
-                <p role="alert" data-testid="cs-error" className="coming-soon-error">
-                  Invalid code — try again.
-                </p>
-              )}
-              <button
-                className="coming-soon-submit"
-                type="submit"
-                data-testid="cs-submit"
-                disabled={submitting}
-              >
-                {submitting ? "Checking…" : "Unlock"}
-              </button>
+          <div className="coming-soon-divider">
+            {!showInput ? (
               <button
                 type="button"
-                onClick={() => { setShowInput(false); setCode(""); setError(false); }}
-                className="coming-soon-link-button cs-link-plain"
+                data-testid="cs-beta-toggle"
+                onClick={() => setShowInput(true)}
+                className="coming-soon-link-button"
               >
-                Cancel
+                Have a beta access code?
               </button>
-            </form>
-          )}
+            ) : (
+              <form
+                onSubmit={handleSubmit}
+                data-testid="cs-beta-form"
+                className={
+                  shaking
+                    ? "coming-soon-form coming-soon-form--shake"
+                    : "coming-soon-form"
+                }
+              >
+                <label>
+                  <span className="coming-soon-label">Beta Access Code</span>
+                  <input
+                    className="coming-soon-input coming-soon-input--code"
+                    type="text"
+                    autoFocus
+                    autoComplete="off"
+                    spellCheck={false}
+                    value={code}
+                    data-testid="cs-code-input"
+                    onChange={(e) => {
+                      setCode(e.target.value);
+                      setError(false);
+                    }}
+                    placeholder="Enter code"
+                  />
+                </label>
+                {error && (
+                  <p
+                    role="alert"
+                    data-testid="cs-error"
+                    className="coming-soon-error"
+                  >
+                    Invalid code — try again.
+                  </p>
+                )}
+                <button
+                  className="coming-soon-submit"
+                  type="submit"
+                  data-testid="cs-submit"
+                  disabled={submitting}
+                >
+                  {submitting ? "Checking…" : "Unlock"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowInput(false);
+                    setCode("");
+                    setError(false);
+                  }}
+                  className="coming-soon-link-button cs-link-plain"
+                >
+                  Cancel
+                </button>
+              </form>
+            )}
+          </div>
         </div>
-
-        </div>{/* coming-soon-content */}
+        {/* coming-soon-content */}
       </div>
     </main>
   );
