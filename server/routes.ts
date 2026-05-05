@@ -556,20 +556,16 @@ export function createApp(options?: CreateAppOptions) {
     try {
       const { email } = req.body ?? {};
       if (typeof email !== "string" || !email.trim()) {
-        res
-          .status(400)
-          .json({
-            error: "Please enter a real email address, like name@example.com.",
-          });
+        res.status(400).json({
+          error: "Please enter a real email address, like name@example.com.",
+        });
         return;
       }
       const normalized = email.trim().toLowerCase();
       if (!isValidWaitlistEmail(normalized)) {
-        res
-          .status(400)
-          .json({
-            error: "Please enter a real email address, like name@example.com.",
-          });
+        res.status(400).json({
+          error: "Please enter a real email address, like name@example.com.",
+        });
         return;
       }
       await addWaitlistEmail(normalized);
@@ -1443,6 +1439,15 @@ export function createApp(options?: CreateAppOptions) {
     try {
       const userId = req.session.userId!;
       const rows = await listActiveAiUploadsForUser(userId);
+      for (const row of rows) {
+        if (row.aiStatus === "pending" || row.aiStatus === "processing") {
+          void runUploadAiWorker(userId, row.id).catch((err) => {
+            console.error(
+              `[aiWorker] uncaught error for upload=${row.id}: ${err}`,
+            );
+          });
+        }
+      }
       res.json({
         uploads: rows.map((row) => {
           const pending = row.aiRowsPending ?? 0;
@@ -2073,6 +2078,7 @@ export function createApp(options?: CreateAppOptions) {
   // immediately for all existing users without requiring a manual re-upload.
   setImmediate(async () => {
     try {
+      if (typeof db.update !== "function" || typeof db.select !== "function") return;
       // Step 0: Backfill recurrenceSource for pre-feature rows.
       // Rows with recurrenceSource='none' but recurrenceType='recurring' were
       // written before this column existed — they got their recurring label from
@@ -2092,7 +2098,6 @@ export function createApp(options?: CreateAppOptions) {
         `[startup] recurrenceSource backfill: ${(backfillResult as { rowCount?: number } | undefined)?.rowCount ?? 0} rows promoted to 'hint'`,
       );
 
-      if (typeof db.select !== "function") return;
       const allUsers = await db.select({ id: usersTable.id }).from(usersTable);
       for (const user of allUsers) {
         await syncRecurringCandidates(user.id);

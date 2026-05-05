@@ -67,6 +67,7 @@ const BETA_FLAG = "pp_beta_access";
 // the tab — users with no accounts always see Step 1 again on next login.
 const ONBOARDING_SKIP_FLAG = "pp_onboarding_skipped";
 const ONBOARDING_STEP2_FLAG = "pp_onboarding_step2_pending";
+const WELCOME_SEEN_FLAG = "pp_welcome_seen";
 
 export function AppGate() {
   const auth = useAuth();
@@ -97,6 +98,7 @@ export function AppGate() {
     setStep2Pending(true);
   }
   function exitOnboarding() {
+    localStorage.removeItem(WELCOME_SEEN_FLAG);
     sessionStorage.removeItem(ONBOARDING_STEP2_FLAG);
     setStep2Pending(false);
     setStep2Account(null);
@@ -144,7 +146,9 @@ export function AppGate() {
     onTimeout: () => {
       void auth.logout.mutateAsync().then(
         () => setInactivityLogout(true),
-        () => { /* logout failed — leave session as-is, don't show notice */ },
+        () => {
+          /* logout failed — leave session as-is, don't show notice */
+        },
       );
     },
   });

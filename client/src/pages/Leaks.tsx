@@ -2,10 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { motion } from "framer-motion";
 import { Hint } from "../components/ui/tooltip";
-import {
-  useAvailableMonths,
-  formatMonthLabel,
-} from "../hooks/use-dashboard";
+import { useAvailableMonths, formatMonthLabel } from "../hooks/use-dashboard";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -39,7 +36,13 @@ interface LeakItem {
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function fmt(n: number): string {
-  return "$" + n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return (
+    "$" +
+    n.toLocaleString("en-US", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    })
+  );
 }
 
 function fmtShort(n: number): string {
@@ -51,11 +54,14 @@ function capitalize(s: string): string {
   return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
-function monthToDateRange(month: string): { startDate: string; endDate: string } {
+function monthToDateRange(month: string): {
+  startDate: string;
+  endDate: string;
+} {
   const [y, m] = month.split("-").map(Number);
   const from = new Date(y, m - 1, 1);
-  const to   = new Date(y, m, 0);
-  const pad  = (d: Date) =>
+  const to = new Date(y, m, 0);
+  const pad = (d: Date) =>
     `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
   return { startDate: pad(from), endDate: pad(to) };
 }
@@ -71,31 +77,38 @@ function monthFromIso(iso: string): string {
 
 function shortDate(iso: string): string {
   const [year, mo, day] = iso.split("-").map(Number);
-  return new Date(year, mo - 1, day).toLocaleString("en-US", { month: "short", day: "numeric" });
+  return new Date(year, mo - 1, day).toLocaleString("en-US", {
+    month: "short",
+    day: "numeric",
+  });
 }
 
 const CATEGORY_COLORS: Record<string, string> = {
-  dining:        "bg-orange-100 text-orange-700",
-  coffee:        "bg-amber-100 text-amber-700",
-  delivery:      "bg-yellow-100 text-yellow-700",
-  convenience:   "bg-lime-100 text-lime-700",
-  shopping:      "bg-pink-100 text-pink-700",
+  dining: "bg-orange-100 text-orange-700",
+  coffee: "bg-amber-100 text-amber-700",
+  delivery: "bg-yellow-100 text-yellow-700",
+  convenience: "bg-lime-100 text-lime-700",
+  shopping: "bg-pink-100 text-pink-700",
   entertainment: "bg-purple-100 text-purple-700",
-  fitness:       "bg-green-100 text-green-700",
-  software:      "bg-violet-100 text-violet-700",
-  other:         "bg-slate-100 text-slate-600",
+  fitness: "bg-green-100 text-green-700",
+  software: "bg-violet-100 text-violet-700",
+  other: "bg-slate-100 text-slate-600",
 };
 
 function categoryColor(cat: string): string {
   return CATEGORY_COLORS[cat] ?? "bg-slate-100 text-slate-600";
 }
 
-
 const fadeUp = {
   hidden: { opacity: 0, y: 14 },
   visible: (i: number = 0) => ({
-    opacity: 1, y: 0,
-    transition: { duration: 0.35, delay: i * 0.04, ease: [0.25, 0, 0, 1] as [number, number, number, number] },
+    opacity: 1,
+    y: 0,
+    transition: {
+      duration: 0.35,
+      delay: i * 0.04,
+      ease: [0.25, 0, 0, 1] as [number, number, number, number],
+    },
   }),
 };
 
@@ -113,15 +126,25 @@ function MonthSelector({
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const el = scrollRef.current?.querySelector<HTMLElement>("[data-active='true']");
-    el?.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" });
+    const el = scrollRef.current?.querySelector<HTMLElement>(
+      "[data-active='true']",
+    );
+    el?.scrollIntoView({
+      behavior: "smooth",
+      block: "nearest",
+      inline: "center",
+    });
   }, [selected]);
 
   if (months.length === 0) return null;
 
   return (
-    <div ref={scrollRef} className="period-selector" data-testid="leaks-month-selector">
-      {months.map(({ month, transactionCount }) => (
+    <div
+      ref={scrollRef}
+      className="period-selector"
+      data-testid="leaks-month-selector"
+    >
+      {months.map(({ month }) => (
         <button
           key={month}
           data-testid={`leaks-month-btn-${month}`}
@@ -130,7 +153,6 @@ function MonthSelector({
           className={`period-btn ${selected === month ? "period-btn--active" : ""}`}
         >
           {formatMonthLabel(month)}
-          <span className="ml-1.5 text-[10px] opacity-50 font-normal">{transactionCount}</span>
         </button>
       ))}
     </div>
@@ -161,9 +183,11 @@ function LeakCard({
   const ledgerHref = `/transactions?${ledgerParams.toString()}`;
 
   const bucketBorderColor =
-    l.bucket === "micro_spend"                ? "border-l-amber-400" :
-    l.bucket === "high_frequency_convenience" ? "border-l-orange-400" :
-                                                "border-l-pink-400";
+    l.bucket === "micro_spend"
+      ? "border-l-amber-400"
+      : l.bucket === "high_frequency_convenience"
+        ? "border-l-orange-400"
+        : "border-l-pink-400";
 
   const slug = l.merchantKey.replace(/\W+/g, "-");
 
@@ -189,7 +213,9 @@ function LeakCard({
             <span className="font-semibold text-slate-800 dark:text-slate-100 text-sm leading-snug">
               {l.merchant}
             </span>
-            <span className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium ${categoryColor(l.dominantCategory)}`}>
+            <span
+              className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium ${categoryColor(l.dominantCategory)}`}
+            >
               {capitalize(l.dominantCategory)}
             </span>
           </div>
@@ -200,8 +226,8 @@ function LeakCard({
               l.bucket === "repeat_discretionary"
                 ? "Repeat discretionary: a merchant you spend on regularly in optional categories like dining, coffee, or delivery."
                 : l.bucket === "micro_spend"
-                ? "Micro-spend: small individual charges that add up quickly when they repeat."
-                : "High-frequency convenience: lots of small charges to a convenience-style merchant within the period."
+                  ? "Micro-spend: small individual charges that add up quickly when they repeat."
+                  : "High-frequency convenience: lots of small charges to a convenience-style merchant within the period."
             }
             data-testid={`hint-bucket-${slug}`}
           >
@@ -221,7 +247,9 @@ function LeakCard({
           >
             {l.categoryBreakdown.map((b) => (
               <span key={b.category}>
-                <span className={`inline-block px-1 py-0 rounded text-[10px] font-medium mr-0.5 ${categoryColor(b.category)}`}>
+                <span
+                  className={`inline-block px-1 py-0 rounded text-[10px] font-medium mr-0.5 ${categoryColor(b.category)}`}
+                >
                   {capitalize(b.category)}
                 </span>
                 {b.count}x {fmt(b.total)}
@@ -231,7 +259,9 @@ function LeakCard({
 
           {/* Stats row: occurrences, avg, date span */}
           <div className="flex items-center gap-2 flex-wrap text-xs text-slate-500 dark:text-slate-400">
-            <span data-testid={`leak-occurrences-${slug}`}>{l.occurrences} charges</span>
+            <span data-testid={`leak-occurrences-${slug}`}>
+              {l.occurrences} charges
+            </span>
             <span>·</span>
             <span>avg {fmt(l.averageAmount)}</span>
             <span>·</span>
@@ -252,7 +282,9 @@ function LeakCard({
                 tabIndex={0}
               >
                 {fmt(l.recentSpend)}{" "}
-                <span className="text-xs font-normal text-slate-400 dark:text-slate-500">this month</span>
+                <span className="text-xs font-normal text-slate-400 dark:text-slate-500">
+                  this month
+                </span>
               </p>
             </Hint>
           </div>
@@ -273,12 +305,13 @@ function LeakCard({
 
 export function Leaks() {
   // Read URL params once — used as the initial month hint from Dashboard card links.
-  const urlParams  = new URLSearchParams(window.location.search);
-  const urlStart   = urlParams.get("startDate");
+  const urlParams = new URLSearchParams(window.location.search);
+  const urlStart = urlParams.get("startDate");
   const urlInitial = urlStart ? monthFromIso(urlStart) : null;
 
   // Available months from the server (same source as Dashboard month selector).
-  const { data: availableMonths = [], isLoading: monthsLoading } = useAvailableMonths();
+  const { data: availableMonths = [], isLoading: monthsLoading } =
+    useAvailableMonths();
 
   // Selected month state.
   // Priority: URL param → most recent available month (set via effect) → current month.
@@ -304,10 +337,16 @@ export function Leaks() {
     1,
   ).toLocaleString("en-US", { month: "long", year: "numeric" });
 
-  const { data: leaks = [], isLoading, error } = useQuery<LeakItem[]>({
+  const {
+    data: leaks = [],
+    isLoading,
+    error,
+  } = useQuery<LeakItem[]>({
     queryKey: ["/api/leaks", startDate, endDate],
     queryFn: async () => {
-      const res = await fetch(`/api/leaks?startDate=${startDate}&endDate=${endDate}`);
+      const res = await fetch(
+        `/api/leaks?startDate=${startDate}&endDate=${endDate}`,
+      );
       if (!res.ok) throw new Error("Failed to load leak data");
       return res.json();
     },
@@ -317,36 +356,60 @@ export function Leaks() {
   const totals = leaks.reduce(
     (acc, l) => {
       acc.flagged += l.recentSpend;
-      acc.count   += 1;
+      acc.count += 1;
       return acc;
     },
     { flagged: 0, count: 0 },
   );
 
   const sortedLeaks = [...leaks].sort((a, b) => {
-    const aNew = typeof a.firstDate === "string" && a.firstDate >= startDate ? 1 : 0;
-    const bNew = typeof b.firstDate === "string" && b.firstDate >= startDate ? 1 : 0;
+    const aNew =
+      typeof a.firstDate === "string" && a.firstDate >= startDate ? 1 : 0;
+    const bNew =
+      typeof b.firstDate === "string" && b.firstDate >= startDate ? 1 : 0;
     if (aNew !== bNew) return bNew - aNew;
     return b.recentSpend - a.recentSpend;
   });
 
   const pageHeader = (
-    <motion.div className="mb-4" variants={fadeUp} initial="hidden" animate="visible" custom={0}>
+    <motion.div
+      className="mb-4"
+      variants={fadeUp}
+      initial="hidden"
+      animate="visible"
+      custom={0}
+    >
       <h1 className="app-page-title mb-0.5">
-        <svg className="page-title-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <svg
+          className="page-title-icon"
+          viewBox="0 0 20 20"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.8"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
+        >
           <path d="M10 3C10 3 4 9.5 4 13a6 6 0 0012 0c0-3.5-6-10-6-10z" />
           <path d="M7.5 14.5a2.5 2.5 0 004.5-1.5" strokeWidth="1.4" />
         </svg>
         Leak Detection
       </h1>
       <p className="text-sm text-slate-500 dark:text-slate-400">
-        Automatically detected discretionary spending patterns · no review required.
+        Automatically detected discretionary spending patterns · no review
+        required.
       </p>
     </motion.div>
   );
 
   const monthSelector = monthsLoading ? null : (
-    <motion.div className="mb-5" variants={fadeUp} initial="hidden" animate="visible" custom={1}>
+    <motion.div
+      className="mb-5"
+      variants={fadeUp}
+      initial="hidden"
+      animate="visible"
+      custom={1}
+    >
       <MonthSelector
         months={availableMonths}
         selected={selectedMonth}
@@ -359,49 +422,66 @@ export function Leaks() {
     <motion.p
       className="text-sm text-slate-600 dark:text-slate-300 mb-4 font-medium"
       data-testid="leaks-summary-inline"
-      variants={fadeUp} initial="hidden" animate="visible" custom={2}
+      variants={fadeUp}
+      initial="hidden"
+      animate="visible"
+      custom={2}
     >
       {totals.count} leak{totals.count !== 1 ? "s" : ""} detected in{" "}
-      <span className="text-slate-700 dark:text-slate-200">{monthLabelStr}</span>
-      {" "}·{" "}
-      <span className="text-red-500">{fmt(totals.flagged)} flagged</span>
+      <span className="text-slate-700 dark:text-slate-200">
+        {monthLabelStr}
+      </span>{" "}
+      · <span className="text-red-500">{fmt(totals.flagged)} flagged</span>
     </motion.p>
   );
 
-  if (error) return (
-    <div>
-      {pageHeader}
-      {monthSelector}
-      <p className="leaks-error" data-testid="leaks-error">Failed to load leak data.</p>
-    </div>
-  );
-
-  if (isLoading) return (
-    <div>
-      {pageHeader}
-      {monthSelector}
-      <p className="leaks-loading" data-testid="leaks-loading">Analyzing spending patterns…</p>
-    </div>
-  );
-
-  if (leaks.length === 0) return (
-    <div>
-      {pageHeader}
-      {monthSelector}
-      <motion.div
-        className="glass-card text-center py-10"
-        variants={fadeUp} initial="hidden" animate="visible" custom={2}
-        data-testid="leaks-empty"
-      >
-        <p className="text-2xl mb-2">✓</p>
-        <p className="font-semibold text-slate-700 dark:text-slate-100 mb-1">No leaks detected</p>
-        <p className="text-sm text-slate-500 dark:text-slate-400">
-          No discretionary spending patterns detected for {monthLabelStr}.<br />
-          Upload more statements or select a different month.
+  if (error)
+    return (
+      <div>
+        {pageHeader}
+        {monthSelector}
+        <p className="leaks-error" data-testid="leaks-error">
+          Failed to load leak data.
         </p>
-      </motion.div>
-    </div>
-  );
+      </div>
+    );
+
+  if (isLoading)
+    return (
+      <div>
+        {pageHeader}
+        {monthSelector}
+        <p className="leaks-loading" data-testid="leaks-loading">
+          Analyzing spending patterns…
+        </p>
+      </div>
+    );
+
+  if (leaks.length === 0)
+    return (
+      <div>
+        {pageHeader}
+        {monthSelector}
+        <motion.div
+          className="glass-card text-center py-10"
+          variants={fadeUp}
+          initial="hidden"
+          animate="visible"
+          custom={2}
+          data-testid="leaks-empty"
+        >
+          <p className="text-2xl mb-2">✓</p>
+          <p className="font-semibold text-slate-700 dark:text-slate-100 mb-1">
+            No leaks detected
+          </p>
+          <p className="text-sm text-slate-500 dark:text-slate-400">
+            No discretionary spending patterns detected for {monthLabelStr}.
+            <br />
+            Upload more statements or select a different month.
+          </p>
+        </motion.div>
+      </div>
+    );
 
   return (
     <div>

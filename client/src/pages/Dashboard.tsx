@@ -237,7 +237,7 @@ function MonthSelector({
         All Time
       </button>
 
-      {months.map(({ month, transactionCount }) => (
+      {months.map(({ month }) => (
         <button
           key={month}
           data-testid={`month-btn-${month}`}
@@ -245,10 +245,7 @@ function MonthSelector({
           onClick={() => onSelect(month)}
           className={`period-btn ${selected === month ? "period-btn--active" : ""}`}
         >
-          <span>{formatMonthLabel(month)}</span>
-          <span className="ml-1.5 text-[10px] opacity-60 font-normal">
-            {transactionCount} txns
-          </span>
+          {formatMonthLabel(month)}
         </button>
       ))}
     </div>
