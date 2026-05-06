@@ -237,11 +237,11 @@ async function callAiBatch(
     })),
   );
 
-  const response = await client.chat.completions.create({
-    model: process.env.OPENAI_CLASSIFIER_MODEL ?? "gpt-4o-mini",
+  const model = process.env.OPENAI_CLASSIFIER_MODEL ?? "gpt-5-nano";
+  const isGpt5Family = model.startsWith("gpt-5");
+  const request = {
+    model,
     response_format: AI_BATCH_RESPONSE_FORMAT,
-    temperature: 0,
-    max_tokens: 1500,
     messages: [
       { role: "system", content: systemPrompt },
       {
@@ -249,7 +249,12 @@ async function callAiBatch(
         content: `Classify these transactions and respond with JSON matching this schema: { "results": [ { "index": number, "category": string, "transactionClass": string, "recurrenceType": string, "labelConfidence": number, "labelReason": string } ] }\n\n${userContent}`,
       },
     ],
-  });
+    ...(isGpt5Family
+      ? { max_completion_tokens: 1500 }
+      : { temperature: 0, max_tokens: 1500 }),
+  } as const;
+
+  const response = await client.chat.completions.create(request as any);
 
   const raw = response.choices[0]?.message?.content;
   if (!raw) throw new Error("OpenAI returned an empty classification response");

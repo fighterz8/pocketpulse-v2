@@ -4462,15 +4462,17 @@ html.dark .mobile-hamburger:hover {
   }
 }
 
-/* Tooltip: per-upload progress, hover/focus only. Anchored to the
-   brand-pulse block (active state only). */
+/* Tooltip: per-upload progress, hover/focus only.
+   Desktop uses fixed positioning so the sidebar's scroll container cannot
+   clip the right edge of longer status rows. */
 .ai-pulse-tooltip {
-  position: absolute;
-  top: calc(100% + 0.4rem);
-  left: 0;
+  position: fixed;
+  top: 4.35rem;
+  left: 1.3rem;
   z-index: 50;
-  min-width: 16rem;
-  max-width: 22rem;
+  width: min(22rem, calc(100vw - 2rem));
+  min-width: min(16rem, calc(100vw - 2rem));
+  max-width: calc(100vw - 2rem);
   padding: 0.7rem 0.85rem;
   border-radius: 0.65rem;
   background: rgb(255 255 255 / 0.97);
@@ -4492,6 +4494,8 @@ html.dark .mobile-hamburger:hover {
 
 /* Compact (mobile) tooltip: anchor to the centred brand block. */
 .brand-pulse-block--compact .ai-pulse-tooltip {
+  position: absolute;
+  top: calc(100% + 0.4rem);
   left: 50%;
   transform: translate(-50%, -4px);
 }

@@ -265,11 +265,11 @@ export async function detectCsvFormat(
 
   let raw: string | null = null;
   try {
-    const response = await client.chat.completions.create({
-      model: process.env.OPENAI_CSV_FORMAT_MODEL ?? "gpt-4o-mini",
+    const model = process.env.OPENAI_CSV_FORMAT_MODEL ?? "gpt-5-nano";
+    const isGpt5Family = model.startsWith("gpt-5");
+    const request = {
+      model,
       response_format: CSV_FORMAT_RESPONSE_FORMAT,
-      temperature: 0,
-      max_tokens: 350,
       messages: [
         { role: "system", content: SYSTEM_PROMPT },
         {
@@ -277,7 +277,12 @@ export async function detectCsvFormat(
           content: `Identify the column layout and date format from these CSV rows:\n\n${sampleText}`,
         },
       ],
-    });
+      ...(isGpt5Family
+        ? { max_completion_tokens: 350 }
+        : { temperature: 0, max_tokens: 350 }),
+    } as const;
+
+    const response = await client.chat.completions.create(request as any);
     raw = response.choices[0]?.message?.content ?? null;
   } catch (err) {
     console.warn(
