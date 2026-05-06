@@ -1,5 +1,8 @@
 import { useId, type ReactNode } from "react";
-import { useAiEnhancementStatus } from "../../hooks/use-ai-enhancement-status";
+import {
+  useAiEnhancementStatus,
+  type AiEnhancementSummary,
+} from "../../hooks/use-ai-enhancement-status";
 
 /**
  * Brand-integrated AI pulse status.
@@ -92,21 +95,28 @@ export function BrandPulse({
     ariaLabel = `AI enhancement in progress: ${remaining} transactions remaining, ${percentLabel} complete`;
     interactive = true;
   } else if (visualState === "complete") {
-    const n = lastJustCompleted as number;
+    const summary = lastJustCompleted as AiEnhancementSummary;
+    const n = summary.rows;
+    const rowLabel = n === 1 ? "transaction" : "transactions";
     subtextContent =
       n > 0
-        ? `${n} transaction${n === 1 ? "" : "s"} enhanced`
+        ? `${n} ${rowLabel} enhanced: categories, recurrence & confidence`
         : "AI enhancement complete";
     subtextTestid = "text-ai-pulse-status";
     badgeTestid = "ai-pulse-badge";
     role = "status";
     ariaLive = "polite";
+    titleAttr =
+      n > 0
+        ? `AI enhanced ${n} ${rowLabel}${summary.filenames.length ? ` from ${summary.filenames.join(", ")}` : ""} by adding smarter categories, recurrence labels, confidence scores, and short reasons.`
+        : "AI enhancement complete";
   } else if (visualState === "failed") {
     // Truncate to keep the subtext line readable; the full reason
     // remains accessible via the title attribute on the wrapper.
     const MAX = 80;
     const reason = lastJustFailed ?? "AI enhancement failed";
-    const detail = reason.length > MAX ? `${reason.slice(0, MAX - 1)}…` : reason;
+    const detail =
+      reason.length > MAX ? `${reason.slice(0, MAX - 1)}…` : reason;
     subtextContent = `AI enhancement failed: ${detail}`;
     subtextTestid = "text-ai-pulse-status";
     badgeTestid = "ai-pulse-badge";

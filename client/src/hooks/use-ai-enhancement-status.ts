@@ -15,6 +15,12 @@ export type AiUploadStatusEntry = {
 
 type AiStatusResponse = { uploads: AiUploadStatusEntry[] };
 
+export type AiEnhancementSummary = {
+  rows: number;
+  uploadCount: number;
+  filenames: string[];
+};
+
 export const aiEnhancementStatusKey = ["ai-enhancement-status"] as const;
 
 const POLL_MS = 3000;
@@ -50,7 +56,8 @@ export function useAiEnhancementStatus() {
     },
     refetchInterval: (q) => {
       const data = q.state.data as AiStatusResponse | undefined;
-      const anyActive = data?.uploads?.some((u) => isActive(u.aiStatus)) ?? false;
+      const anyActive =
+        data?.uploads?.some((u) => isActive(u.aiStatus)) ?? false;
       return anyActive ? POLL_MS : false;
     },
     refetchOnWindowFocus: true,
@@ -66,9 +73,16 @@ export function useAiEnhancementStatus() {
   const uploads = query.data?.uploads ?? [];
   const activeUploads = uploads.filter((u) => isActive(u.aiStatus));
   const anyActive = activeUploads.length > 0;
-  const totalPending = activeUploads.reduce((sum, u) => sum + (u.aiRowsPending || 0), 0);
-  const totalDone = activeUploads.reduce((sum, u) => sum + (u.aiRowsDone || 0), 0);
-  const overallProgress = totalPending > 0 ? Math.min(1, totalDone / totalPending) : 0;
+  const totalPending = activeUploads.reduce(
+    (sum, u) => sum + (u.aiRowsPending || 0),
+    0,
+  );
+  const totalDone = activeUploads.reduce(
+    (sum, u) => sum + (u.aiRowsDone || 0),
+    0,
+  );
+  const overallProgress =
+    totalPending > 0 ? Math.min(1, totalDone / totalPending) : 0;
   const remaining = Math.max(0, totalPending - totalDone);
 
   // Edge-trigger detector: true on the single tick where the active set
@@ -82,10 +96,12 @@ export function useAiEnhancementStatus() {
   // the previous tick and only consult terminal state for THOSE IDs at
   // the moment the active set drains.
   const previouslyActiveIdsRef = useRef<Set<number>>(new Set());
-  // Stores the total row count when a batch completes so the UI can
-  // display "N transactions enhanced" instead of a generic message.
+  // Stores a concise summary when a batch completes so the UI can explain
+  // what changed without forcing the user to inspect the ledger.
   // False means no recent completion.
-  const [lastJustCompleted, setLastJustCompleted] = useState<number | false>(false);
+  const [lastJustCompleted, setLastJustCompleted] = useState<
+    AiEnhancementSummary | false
+  >(false);
   const [lastJustFailed, setLastJustFailed] = useState<string | null>(null);
 
   // Re-run whenever the active SET changes, not just when the boolean
@@ -128,7 +144,11 @@ export function useAiEnhancementStatus() {
       (sum, u) => sum + (u.aiRowsDone ?? 0),
       0,
     );
-    setLastJustCompleted(totalEnhanced);
+    setLastJustCompleted({
+      rows: totalEnhanced,
+      uploadCount: trackedTerminal.length,
+      filenames: trackedTerminal.map((u) => u.filename).filter(Boolean),
+    });
     const t = setTimeout(() => setLastJustCompleted(false), 2000);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
