@@ -29,6 +29,42 @@ function getClient(): OpenAI | null {
   return _client;
 }
 
+const CSV_FORMAT_RESPONSE_FORMAT = {
+  type: "json_schema",
+  json_schema: {
+    name: "pocketpulse_csv_format_spec",
+    strict: true,
+    schema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        preambleRows: { type: "number" },
+        hasHeader: { type: "boolean" },
+        dateColumn: { type: "number" },
+        descriptionColumn: { type: "number" },
+        amountColumn: { type: ["number", "null"] },
+        debitColumn: { type: ["number", "null"] },
+        creditColumn: { type: ["number", "null"] },
+        typeColumn: { type: ["number", "null"] },
+        signConvention: { type: "string", enum: ["signed", "unsigned"] },
+        dateFormat: { type: ["string", "null"] },
+      },
+      required: [
+        "preambleRows",
+        "hasHeader",
+        "dateColumn",
+        "descriptionColumn",
+        "amountColumn",
+        "debitColumn",
+        "creditColumn",
+        "typeColumn",
+        "signConvention",
+        "dateFormat",
+      ],
+    },
+  },
+} as const;
+
 const SYSTEM_PROMPT = `You are a CSV format analyzer for a financial transaction parser.
 
 Given the first few rows of a bank CSV export (with text/merchant content already masked),
@@ -120,7 +156,11 @@ function findHeaderRowIndex(rawRows: string[][]): number {
     const row = rawRows[i];
     const nonEmpty = row.filter((c) => c.trim());
     if (nonEmpty.length < 2) continue;
-    if (nonEmpty.every((c) => !looksLikeDate(c.trim()) && !looksLikeAmount(c.trim()))) {
+    if (
+      nonEmpty.every(
+        (c) => !looksLikeDate(c.trim()) && !looksLikeAmount(c.trim()),
+      )
+    ) {
       return i;
     }
   }
@@ -142,9 +182,10 @@ function buildMaskedSampleText(rawRows: string[][]): string {
 
   return rawRows
     .map((row, i) => {
-      const cells = i === headerIdx
-        ? row.map((c) => JSON.stringify(c))  // header row only — verbatim
-        : row.map(maskCell);                  // preamble + data rows — mask text
+      const cells =
+        i === headerIdx
+          ? row.map((c) => JSON.stringify(c)) // header row only — verbatim
+          : row.map(maskCell); // preamble + data rows — mask text
 
       return `[row ${i}]: ${cells.join(", ")}`;
     })
@@ -180,18 +221,27 @@ function isValidSpec(raw: RawSpec): raw is {
   signConvention: "signed" | "unsigned";
   dateFormat: string | null;
 } {
-  if (typeof raw.preambleRows !== "number" || raw.preambleRows < 0) return false;
+  if (typeof raw.preambleRows !== "number" || raw.preambleRows < 0)
+    return false;
   if (typeof raw.hasHeader !== "boolean") return false;
   if (typeof raw.dateColumn !== "number" || raw.dateColumn < 0) return false;
-  if (typeof raw.descriptionColumn !== "number" || raw.descriptionColumn < 0) return false;
+  if (typeof raw.descriptionColumn !== "number" || raw.descriptionColumn < 0)
+    return false;
   if (!isNullableNumber(raw.amountColumn)) return false;
   if (!isNullableNumber(raw.debitColumn)) return false;
   if (!isNullableNumber(raw.creditColumn)) return false;
   if (!isNullableNumber(raw.typeColumn)) return false;
-  if (raw.signConvention !== "signed" && raw.signConvention !== "unsigned") return false;
-  if (raw.dateFormat !== null && typeof raw.dateFormat !== "string") return false;
+  if (raw.signConvention !== "signed" && raw.signConvention !== "unsigned")
+    return false;
+  if (raw.dateFormat !== null && typeof raw.dateFormat !== "string")
+    return false;
   // Must have at least one amount-related column
-  if (raw.amountColumn === null && raw.debitColumn === null && raw.creditColumn === null) return false;
+  if (
+    raw.amountColumn === null &&
+    raw.debitColumn === null &&
+    raw.creditColumn === null
+  )
+    return false;
   return true;
 }
 
@@ -216,8 +266,8 @@ export async function detectCsvFormat(
   let raw: string | null = null;
   try {
     const response = await client.chat.completions.create({
-      model: "gpt-4o-mini",
-      response_format: { type: "json_object" },
+      model: process.env.OPENAI_CSV_FORMAT_MODEL ?? "gpt-4o-mini",
+      response_format: CSV_FORMAT_RESPONSE_FORMAT,
       temperature: 0,
       max_tokens: 350,
       messages: [
@@ -242,7 +292,9 @@ export async function detectCsvFormat(
   try {
     parsed = JSON.parse(raw);
   } catch {
-    console.warn(`[csvFormatDetector] Could not parse AI response as JSON: ${raw.slice(0, 200)}`);
+    console.warn(
+      `[csvFormatDetector] Could not parse AI response as JSON: ${raw.slice(0, 200)}`,
+    );
     return null;
   }
 

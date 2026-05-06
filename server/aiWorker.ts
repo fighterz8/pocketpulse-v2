@@ -9,7 +9,7 @@
  *      (aiAssisted=true AND labelSource != 'ai').
  *   2. Marks the upload `ai_status='processing'` and stamps `ai_started_at`.
  *   3. Processes the pool in chunks of WORKER_CHUNK_SIZE (25), calling the
- *      AI batch with a generous per-chunk timeout (~600s — the worker is
+ *      AI batch with a short per-chunk timeout (~45s — fail fast rather than
  *      not user-blocking).
  *   4. Updates each row in place with the AI verdict and writes successful
  *      results back to the merchant cache so future uploads of the same
@@ -46,8 +46,8 @@ import type { MerchantClassification } from "../shared/schema.js";
 
 /** Rows per AI batch call. Matches the chunk size in ai-classifier.ts. */
 const WORKER_CHUNK_SIZE = 25;
-/** Per-chunk AI timeout — generous because the worker isn't user-blocking. */
-const WORKER_AI_TIMEOUT_MS = 600_000;
+/** Per-chunk AI timeout — fail fast so the UI never appears hung for minutes. */
+const WORKER_AI_TIMEOUT_MS = 45_000;
 /** Cache writeback floor — mirrors classifyPipeline default. */
 const CACHE_WRITE_MIN_CONFIDENCE = 0.7;
 
@@ -79,7 +79,12 @@ export async function runUploadAiWorker(
   uploadId: number,
 ): Promise<WorkerOutcome> {
   if (inFlight.has(uploadId)) {
-    return { uploadId, status: "skipped", rowsProcessed: 0, error: "already in flight" };
+    return {
+      uploadId,
+      status: "skipped",
+      rowsProcessed: 0,
+      error: "already in flight",
+    };
   }
   inFlight.add(uploadId);
 
@@ -104,6 +109,9 @@ export async function runUploadAiWorker(
     // missing key — leaving every row "in progress" forever from the
     // user's perspective. Fail fast with a clear message instead.
     if (!process.env.OPENAI_API_KEY) {
+      console.warn(
+        `[aiWorker] upload=${uploadId} terminal=failed processed=0/${remaining} error=OPENAI_API_KEY is not set`,
+      );
       await updateUploadAiStatus(uploadId, {
         aiStatus: "failed",
         aiRowsPending: remaining,
@@ -143,7 +151,8 @@ export async function runUploadAiWorker(
 
     // User corrections become few-shot examples for the AI prompt.
     // Fetched once, reused across every chunk.
-    let userExamples: Awaited<ReturnType<typeof getUserCorrectionExamples>> = [];
+    let userExamples: Awaited<ReturnType<typeof getUserCorrectionExamples>> =
+      [];
     try {
       userExamples = await getUserCorrectionExamples(userId);
     } catch {
@@ -164,6 +173,9 @@ export async function runUploadAiWorker(
     for (let offset = 0; offset < rows.length; offset += WORKER_CHUNK_SIZE) {
       const chunk = rows.slice(offset, offset + WORKER_CHUNK_SIZE);
       chunksAttempted++;
+      console.log(
+        `[aiWorker] upload=${uploadId} chunk=${chunksAttempted} start rows=${chunk.length} offset=${offset}`,
+      );
 
       const aiInputs: AiClassificationInput[] = chunk.map((row, i) => ({
         index: i,
@@ -175,8 +187,17 @@ export async function runUploadAiWorker(
 
       let aiResults = new Map<number, AiClassificationResult>();
       try {
-        const timeout = new Promise<Map<number, AiClassificationResult>>((resolve) =>
-          setTimeout(() => resolve(new Map()), WORKER_AI_TIMEOUT_MS),
+        const timeout = new Promise<Map<number, AiClassificationResult>>(
+          (_, reject) =>
+            setTimeout(
+              () =>
+                reject(
+                  new Error(
+                    `AI chunk timed out after ${WORKER_AI_TIMEOUT_MS}ms`,
+                  ),
+                ),
+              WORKER_AI_TIMEOUT_MS,
+            ),
         );
         aiResults = await Promise.race([
           aiClassifyBatch(aiInputs, userExamples),
@@ -184,13 +205,24 @@ export async function runUploadAiWorker(
         ]);
       } catch (err) {
         lastError = err instanceof Error ? err.message : String(err);
+        console.warn(
+          `[aiWorker] upload=${uploadId} chunk=${chunksAttempted} failed: ${lastError}`,
+        );
         // Chunk threw — count as attempted, do NOT advance progress (rows
         // still need AI). If every chunk fails this way we surface a
         // terminal "failed" status at the end.
         continue;
       }
 
+      console.log(
+        `[aiWorker] upload=${uploadId} chunk=${chunksAttempted} ai_results=${aiResults.size}`,
+      );
+
       if (aiResults.size === 0) {
+        lastError = "AI classification returned no results for chunk";
+        console.warn(
+          `[aiWorker] upload=${uploadId} chunk=${chunksAttempted} returned no results`,
+        );
         // AI was unavailable / timed out for this chunk. Same treatment as
         // a thrown error: don't advance progress; let the per-chunk soft
         // failure aggregate into a terminal failed status.
@@ -215,7 +247,9 @@ export async function runUploadAiWorker(
           recurrenceSource: "none",
           labelSource: "ai",
           labelConfidence: Number(aiResult.labelConfidence).toFixed(2),
-          labelReason: String(aiResult.labelReason ?? `AI classified as ${aiResult.category}`),
+          labelReason: String(
+            aiResult.labelReason ?? `AI classified as ${aiResult.category}`,
+          ),
           aiAssisted: true,
         });
 
@@ -235,6 +269,10 @@ export async function runUploadAiWorker(
       }
 
       if (updates.length === 0) {
+        lastError = "AI classification returned no usable results for chunk";
+        console.warn(
+          `[aiWorker] upload=${uploadId} chunk=${chunksAttempted} returned no usable updates`,
+        );
         // AI returned a non-empty map but every entry was missing/invalid
         // — same effect as an empty result.
         continue;
@@ -271,6 +309,9 @@ export async function runUploadAiWorker(
       // reclassify or re-upload.
       await incrementUploadAiRowsDone(uploadId, updates.length);
       processedRows += updates.length;
+      console.log(
+        `[aiWorker] upload=${uploadId} chunk=${chunksAttempted} persisted=${updates.length} processed=${processedRows}/${remaining}`,
+      );
     }
 
     // Two terminal failure modes both end as ai_status='failed':
@@ -303,6 +344,9 @@ export async function runUploadAiWorker(
     // reclassify, but for THIS upload we're done attempting them. Setting
     // aiRowsPending = processedRows guarantees pollers always see a
     // self-consistent terminal state (pending == done at complete).
+    console.log(
+      `[aiWorker] upload=${uploadId} terminal=complete processed=${processedRows}/${remaining}`,
+    );
     await updateUploadAiStatus(uploadId, {
       aiStatus: "complete",
       aiRowsPending: processedRows,

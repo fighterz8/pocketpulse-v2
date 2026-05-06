@@ -120,6 +120,44 @@ function getClient(): OpenAI | null {
   return _client;
 }
 
+const AI_BATCH_RESPONSE_FORMAT = {
+  type: "json_schema",
+  json_schema: {
+    name: "pocketpulse_ai_batch_classification",
+    strict: true,
+    schema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        results: {
+          type: "array",
+          items: {
+            type: "object",
+            additionalProperties: false,
+            properties: {
+              index: { type: "number" },
+              category: { type: "string" },
+              transactionClass: { type: "string" },
+              recurrenceType: { type: "string" },
+              labelConfidence: { type: "number" },
+              labelReason: { type: "string" },
+            },
+            required: [
+              "index",
+              "category",
+              "transactionClass",
+              "recurrenceType",
+              "labelConfidence",
+              "labelReason",
+            ],
+          },
+        },
+      },
+      required: ["results"],
+    },
+  },
+} as const;
+
 function isValidCategory(value: string): value is V1Category {
   return (V1_CATEGORIES as readonly string[]).includes(value);
 }
@@ -145,7 +183,12 @@ function isValidRecurrenceType(
  * merchant as "recurring", the AI must honour that for similar transactions.
  */
 function buildSystemPrompt(
-  userExamples: Array<{ merchant: string; category: string; transactionClass: string; recurrenceType: string }>,
+  userExamples: Array<{
+    merchant: string;
+    category: string;
+    transactionClass: string;
+    recurrenceType: string;
+  }>,
 ): string {
   if (userExamples.length === 0) return SYSTEM_PROMPT;
 
@@ -160,7 +203,10 @@ function buildSystemPrompt(
     "\n\n";
 
   // Inject immediately before the "Decision rules:" section.
-  return SYSTEM_PROMPT.replace("Decision rules:\n", examplesBlock + "Decision rules:\n");
+  return SYSTEM_PROMPT.replace(
+    "Decision rules:\n",
+    examplesBlock + "Decision rules:\n",
+  );
 }
 
 /**
@@ -169,10 +215,15 @@ function buildSystemPrompt(
  */
 async function callAiBatch(
   items: AiClassificationInput[],
-  userExamples: Array<{ merchant: string; category: string; transactionClass: string; recurrenceType: string }>,
+  userExamples: Array<{
+    merchant: string;
+    category: string;
+    transactionClass: string;
+    recurrenceType: string;
+  }>,
 ): Promise<AiClassificationResult[] | null> {
   const client = getClient();
-  if (!client) return null;
+  if (!client) throw new Error("OPENAI_API_KEY is not set");
 
   const systemPrompt = buildSystemPrompt(userExamples);
 
@@ -187,8 +238,8 @@ async function callAiBatch(
   );
 
   const response = await client.chat.completions.create({
-    model: "gpt-4o-mini",
-    response_format: { type: "json_object" },
+    model: process.env.OPENAI_CLASSIFIER_MODEL ?? "gpt-4o-mini",
+    response_format: AI_BATCH_RESPONSE_FORMAT,
     temperature: 0,
     max_tokens: 1500,
     messages: [
@@ -201,16 +252,22 @@ async function callAiBatch(
   });
 
   const raw = response.choices[0]?.message?.content;
-  if (!raw) return null;
+  if (!raw) throw new Error("OpenAI returned an empty classification response");
 
   let parsed: AiBatchResponse;
   try {
     parsed = JSON.parse(raw) as AiBatchResponse;
-  } catch {
-    return null;
+  } catch (err) {
+    throw new Error(
+      `Could not parse OpenAI classification JSON: ${err instanceof Error ? err.message : String(err)}; raw=${raw.slice(0, 300)}`,
+    );
   }
 
-  if (!Array.isArray(parsed.results)) return null;
+  if (!Array.isArray(parsed.results)) {
+    throw new Error(
+      `OpenAI classification response missing results array: ${raw.slice(0, 300)}`,
+    );
+  }
 
   const out: AiClassificationResult[] = [];
   for (const row of parsed.results) {
@@ -227,9 +284,18 @@ async function callAiBatch(
         ? Math.min(1, Math.max(0, row.labelConfidence))
         : 0.6;
     const labelReason =
-      typeof row.labelReason === "string" ? row.labelReason : `AI classified as ${category}`;
+      typeof row.labelReason === "string"
+        ? row.labelReason
+        : `AI classified as ${category}`;
 
-    out.push({ index: row.index, category, transactionClass, recurrenceType, labelConfidence, labelReason });
+    out.push({
+      index: row.index,
+      category,
+      transactionClass,
+      recurrenceType,
+      labelConfidence,
+      labelReason,
+    });
   }
 
   return out;
@@ -249,13 +315,21 @@ async function callAiBatch(
  */
 export async function aiClassifyBatch(
   items: AiClassificationInput[],
-  userExamples: Array<{ merchant: string; category: string; transactionClass: string; recurrenceType: string }> = [],
+  userExamples: Array<{
+    merchant: string;
+    category: string;
+    transactionClass: string;
+    recurrenceType: string;
+  }> = [],
 ): Promise<Map<number, AiClassificationResult>> {
   const resultMap = new Map<number, AiClassificationResult>();
   if (items.length === 0) return resultMap;
 
   const client = getClient();
-  if (!client) return resultMap;
+  if (!client) {
+    console.warn("[ai-classifier] OPENAI_API_KEY is not set");
+    throw new Error("OPENAI_API_KEY is not set");
+  }
 
   // Deduplicate by merchant (lowercase) — share result across duplicates
   const merchantToItems = new Map<string, AiClassificationInput[]>();
@@ -289,8 +363,10 @@ export async function aiClassifyBatch(
           canonicalResults.set(r.index, r);
         }
       }
-    } catch {
-      // Silently skip this chunk — callers fall back to rules result
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.warn(`[ai-classifier] batch chunk failed: ${message}`);
+      throw err;
     }
   }
 

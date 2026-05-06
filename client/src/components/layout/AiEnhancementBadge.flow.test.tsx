@@ -52,12 +52,14 @@ import {
 vi.mock("../../../../server/storage.js", async () => {
   return {
     // Auth / users
-    createUser: vi.fn(async (input: { email: string; displayName: string }) => ({
-      id: 42,
-      email: input.email,
-      displayName: input.displayName,
-      companyName: null,
-    })),
+    createUser: vi.fn(
+      async (input: { email: string; displayName: string }) => ({
+        id: 42,
+        email: input.email,
+        displayName: input.displayName,
+        companyName: null,
+      }),
+    ),
     getUserById: vi.fn(async (id: number) => ({
       id,
       email: "test@test.com",
@@ -69,7 +71,13 @@ vi.mock("../../../../server/storage.js", async () => {
 
     // Accounts
     listAccountsForUser: vi.fn(async () => [
-      { id: 7, userId: 42, label: "Checking", lastFour: "1234", accountType: "checking" },
+      {
+        id: 7,
+        userId: 42,
+        label: "Checking",
+        lastFour: "1234",
+        accountType: "checking",
+      },
     ]),
     createAccountForUser: vi.fn(),
 
@@ -114,7 +122,9 @@ vi.mock("../../../../server/aiWorker.js", () => ({
   // The real worker is fire-and-forget after the upload response. The
   // test scripts progression directly via listActiveAiUploadsForUser, so
   // a no-op worker is exactly what we want.
-  runUploadAiWorker: vi.fn().mockResolvedValue({ uploadId: 555, status: "skipped", rowsProcessed: 0 }),
+  runUploadAiWorker: vi
+    .fn()
+    .mockResolvedValue({ uploadId: 555, status: "skipped", rowsProcessed: 0 }),
 }));
 
 vi.mock("../../../../server/csvParser.js", () => ({
@@ -124,7 +134,12 @@ vi.mock("../../../../server/csvParser.js", () => ({
   parseCSV: vi.fn(async () => ({
     ok: true,
     rows: [
-      { date: "2026-04-01", description: "STARBUCKS #1234", amount: -5.5, ambiguous: false },
+      {
+        date: "2026-04-01",
+        description: "STARBUCKS #1234",
+        amount: -5.5,
+        ambiguous: false,
+      },
     ],
     warnings: [],
     detectedSpec: { hasHeader: true, columns: {}, dateFormat: "YYYY-MM-DD" },
@@ -136,20 +151,21 @@ vi.mock("../../../../server/csvFormatDetector.js", () => ({
 }));
 
 vi.mock("../../../../server/classifyPipeline.js", () => ({
-  classifyPipeline: vi.fn(async (rows: Array<{ rawDescription: string; amount: number }>) =>
-    rows.map((r) => ({
-      merchant: "Starbucks",
-      amount: r.amount,
-      flowType: r.amount < 0 ? "outflow" : "inflow",
-      transactionClass: "expense",
-      recurrenceType: "one-time",
-      recurrenceSource: "none",
-      category: "other",
-      labelSource: "rule",
-      labelConfidence: 0.5,
-      labelReason: "rule:test",
-      aiAssisted: true,
-    })),
+  classifyPipeline: vi.fn(
+    async (rows: Array<{ rawDescription: string; amount: number }>) =>
+      rows.map((r) => ({
+        merchant: "Starbucks",
+        amount: r.amount,
+        flowType: r.amount < 0 ? "outflow" : "inflow",
+        transactionClass: "expense",
+        recurrenceType: "one-time",
+        recurrenceSource: "none",
+        category: "other",
+        labelSource: "rule",
+        labelConfidence: 0.5,
+        labelReason: "rule:test",
+        aiAssisted: true,
+      })),
   ),
 }));
 
@@ -161,7 +177,8 @@ vi.mock("../../../../server/recurrenceDetector.js", () => ({
 vi.mock("../../../../server/csrf.js", () => ({
   // Pass-through: we don't want CSRF cookie/state mechanics in the way of
   // the polling assertions. The route exists end-to-end either way.
-  doubleCsrfProtection: (_req: unknown, _res: unknown, next: () => void) => next(),
+  doubleCsrfProtection: (_req: unknown, _res: unknown, next: () => void) =>
+    next(),
   generateToken: () => "test-token",
   invalidCsrfTokenError: new Error("invalid csrf"),
 }));
@@ -196,7 +213,12 @@ vi.mock("../../../../server/cashflow.js", () => ({
 }));
 
 vi.mock("../../../../server/reclassify.js", () => ({
-  reclassifyTransactions: vi.fn(async () => ({ total: 0, updated: 0, skippedUserCorrected: 0, unchanged: 0 })),
+  reclassifyTransactions: vi.fn(async () => ({
+    total: 0,
+    updated: 0,
+    skippedUserCorrected: 0,
+    unchanged: 0,
+  })),
 }));
 
 vi.mock("../../../../server/devTestSuite.js", () => ({
@@ -209,7 +231,10 @@ vi.mock("../../../../server/devTestSuite.js", () => ({
 // ── Imports that depend on the mocks above ──────────────────────────────
 
 import { createApp } from "../../../../server/routes.js";
-import { listActiveAiUploadsForUser, listTransactionsForUser } from "../../../../server/storage.js";
+import {
+  listActiveAiUploadsForUser,
+  listTransactionsForUser,
+} from "../../../../server/storage.js";
 // Main rebased onto a refactor that replaced AiEnhancementBadge with the
 // brand-integrated BrandPulse component. BrandPulse preserves the same
 // data-testid contract (`ai-pulse-badge`, `text-ai-pulse-count`,
@@ -332,7 +357,9 @@ type StatusEntry = {
 };
 
 function setActiveStatus(entries: StatusEntry[]) {
-  vi.mocked(listActiveAiUploadsForUser).mockImplementation(async () => entries as never);
+  vi.mocked(listActiveAiUploadsForUser).mockImplementation(
+    async () => entries as never,
+  );
 }
 
 // ── Test wiring ─────────────────────────────────────────────────────────
@@ -394,7 +421,10 @@ function UploadButton() {
     // their internal microtask scheduling sometimes never settles. The
     // fetchShim looks for this side-channel buffer first and only falls
     // back to async Blob reads when it's absent.
-    (file as unknown as { __buffer: Buffer }).__buffer = Buffer.from(csv, "utf-8");
+    (file as unknown as { __buffer: Buffer }).__buffer = Buffer.from(
+      csv,
+      "utf-8",
+    );
     upload.mutate({ files: [file], metadata: { "feb.csv": { accountId: 7 } } });
   };
   return (
@@ -420,7 +450,11 @@ async function authenticate() {
   const res = await agent
     .post("/api/auth/register")
     .set("X-CSRF-Token", "test-token")
-    .send({ email: "flow@test.com", password: "password123", displayName: "Flow" });
+    .send({
+      email: "flow@test.com",
+      password: "password123",
+      displayName: "Flow",
+    });
   expect(res.status).toBe(201);
 }
 
@@ -609,7 +643,9 @@ describe("AI enhancement badge end-to-end", () => {
     await waitFor(
       async () => {
         await vi.advanceTimersByTimeAsync(50);
-        expect(vi.mocked(listTransactionsForUser).mock.calls.length).toBeGreaterThan(0);
+        expect(
+          vi.mocked(listTransactionsForUser).mock.calls.length,
+        ).toBeGreaterThan(0);
       },
       { timeout: 2000 },
     );
@@ -695,6 +731,8 @@ describe("AI enhancement badge end-to-end", () => {
     await act(async () => {
       await vi.advanceTimersByTimeAsync(5100);
     });
-    expect(vi.mocked(listTransactionsForUser).mock.calls.length).toBe(afterIdle);
+    expect(vi.mocked(listTransactionsForUser).mock.calls.length).toBe(
+      afterIdle,
+    );
   });
 });

@@ -1440,7 +1440,7 @@ export function createApp(options?: CreateAppOptions) {
       const userId = req.session.userId!;
       const rows = await listActiveAiUploadsForUser(userId);
       for (const row of rows) {
-        if (row.aiStatus === "pending" || row.aiStatus === "processing") {
+        if (row.aiStatus === "pending") {
           void runUploadAiWorker(userId, row.id).catch((err) => {
             console.error(
               `[aiWorker] uncaught error for upload=${row.id}: ${err}`,
@@ -2078,7 +2078,8 @@ export function createApp(options?: CreateAppOptions) {
   // immediately for all existing users without requiring a manual re-upload.
   setImmediate(async () => {
     try {
-      if (typeof db.update !== "function" || typeof db.select !== "function") return;
+      if (typeof db.update !== "function" || typeof db.select !== "function")
+        return;
       // Step 0: Backfill recurrenceSource for pre-feature rows.
       // Rows with recurrenceSource='none' but recurrenceType='recurring' were
       // written before this column existed — they got their recurring label from
