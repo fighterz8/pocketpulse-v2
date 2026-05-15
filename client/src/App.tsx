@@ -12,6 +12,7 @@ import { ComingSoon } from "./pages/ComingSoon";
 import { Dashboard } from "./pages/Dashboard";
 import { Ledger } from "./pages/Ledger";
 import { Leaks } from "./pages/Leaks";
+import { PrivacyPolicy, TermsOfService } from "./pages/Legal";
 import { NotFoundPage } from "./pages/not-found";
 import { OnboardingUpload } from "./pages/OnboardingUpload";
 import { ResetPassword } from "./pages/ResetPassword";
@@ -261,6 +262,12 @@ export function App() {
           <Switch>
             <Route path="/reset-password">
               <ResetPassword />
+            </Route>
+            <Route path="/privacy">
+              <PrivacyPolicy />
+            </Route>
+            <Route path="/terms">
+              <TermsOfService />
             </Route>
             <Route>
               <AppGate />

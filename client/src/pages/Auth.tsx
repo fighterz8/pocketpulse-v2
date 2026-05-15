@@ -363,6 +363,12 @@ export function Auth({ inactivityLogout = false }: { inactivityLogout?: boolean 
             ← Back to coming soon
           </button>
         ) : null}
+
+        <nav className="legal-footer-links legal-footer-links--auth" aria-label="Legal links">
+          <a href="/privacy">Privacy Policy</a>
+          <span aria-hidden="true">·</span>
+          <a href="/terms">Terms of Service</a>
+        </nav>
       </div>
     </main>
   );

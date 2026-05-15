@@ -521,6 +521,12 @@ export function ComingSoon({ onUnlock }: { onUnlock: () => void }) {
               </form>
             )}
           </div>
+
+          <nav className="legal-footer-links" aria-label="Legal links">
+            <a href="/privacy">Privacy Policy</a>
+            <span aria-hidden="true">·</span>
+            <a href="/terms">Terms of Service</a>
+          </nav>
         </div>
         {/* coming-soon-content */}
       </div>

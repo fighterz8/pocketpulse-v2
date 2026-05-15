@@ -522,6 +522,106 @@ body {
   backdrop-filter: blur(24px);
 }
 
+.legal-footer-links {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  width: 100%;
+  margin-top: 1rem;
+  font-size: 0.78rem;
+  color: #64748b;
+}
+
+.legal-footer-links a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.legal-footer-links a:hover {
+  color: #2563eb;
+  text-decoration: underline;
+}
+
+.legal-footer-links--auth {
+  margin-top: 1.2rem;
+}
+
+.legal-main {
+  min-height: 100vh;
+  padding: clamp(1rem, 4vw, 3rem);
+  background:
+    radial-gradient(circle at 12% 12%, rgb(125 211 252 / 0.24), transparent 28%),
+    linear-gradient(145deg, #f8fafc 0%, #e0f2fe 50%, #dbeafe 100%);
+  color: #0f172a;
+}
+
+.legal-card {
+  width: min(52rem, 100%);
+  margin: 0 auto;
+  padding: clamp(1.4rem, 4vw, 2.75rem);
+  border: 1px solid rgb(15 23 42 / 0.08);
+  border-radius: 1.4rem;
+  background: rgb(255 255 255 / 0.86);
+  box-shadow: 0 1.5rem 4rem rgb(15 23 42 / 0.12);
+}
+
+.legal-back {
+  display: inline-flex;
+  margin-bottom: 1.35rem;
+  color: #2563eb;
+  font-size: 0.9rem;
+  font-weight: 650;
+  text-decoration: none;
+}
+
+.legal-back:hover {
+  text-decoration: underline;
+}
+
+.legal-eyebrow {
+  margin: 0 0 0.35rem;
+  color: #0284c7;
+  font-size: 0.76rem;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.legal-title {
+  margin: 0;
+  font-size: clamp(2rem, 5vw, 3rem);
+  line-height: 1;
+  letter-spacing: -0.045em;
+}
+
+.legal-updated {
+  margin: 0.7rem 0 1.5rem;
+  color: #64748b;
+}
+
+.legal-copy {
+  color: #334155;
+  font-size: 1rem;
+  line-height: 1.68;
+}
+
+.legal-copy h2 {
+  margin: 1.65rem 0 0.35rem;
+  color: #0f172a;
+  font-size: 1.15rem;
+}
+
+.legal-copy p,
+.legal-copy ul {
+  margin: 0.65rem 0;
+}
+
+.legal-copy a {
+  color: #2563eb;
+  font-weight: 650;
+}
+
 .auth-brand-row {
   display: flex;
   align-items: center;
