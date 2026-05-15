@@ -848,16 +848,6 @@ function DashboardImpl() {
         )}
       </GlassCard>
 
-      {/* ── Tech-stack footer ──────────────────────────────────────────── */}
-      <motion.p
-        variants={fadeUp}
-        initial="hidden"
-        animate="visible"
-        custom={14}
-        className="dash-tech-footer"
-      >
-        React · TailwindCSS · Framer Motion · Glass UI
-      </motion.p>
     </div>
   );
 }

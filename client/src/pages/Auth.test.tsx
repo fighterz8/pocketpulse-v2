@@ -173,6 +173,26 @@ describe("Auth back-to-coming-soon button", () => {
   });
 });
 
+describe("Auth Google option", () => {
+  beforeEach(() => {
+    mockApiFetch.mockReset();
+  });
+
+  it("shows Continue with Google for sign in and sign up, but not password reset", () => {
+    renderAuth();
+    expect(screen.getByTestId("button-google-auth")).toHaveTextContent(
+      /continue with google/i,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /create an account/i }));
+    expect(screen.getByTestId("button-google-auth")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /already have an account/i }));
+    fireEvent.click(screen.getByTestId("link-forgot-password"));
+    expect(screen.queryByTestId("button-google-auth")).not.toBeInTheDocument();
+  });
+});
+
 describe("Auth tooltips", () => {
   beforeEach(() => {
     mockAuthState.login.mutateAsync.mockReset();

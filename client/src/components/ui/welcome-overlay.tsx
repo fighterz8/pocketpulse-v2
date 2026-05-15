@@ -218,17 +218,14 @@ export function WelcomeOverlay({
           data-testid="welcome-overlay-body"
         >
           <p>
-            PocketPulse turns your bank statements into a clear picture of
-            where your money actually goes — quietly, and on your terms.
+            PocketPulse turns bank statements into clear spending insights.
           </p>
           <p>
-            <strong>Every category, recurring tag, and leak is rule-based
-            and inspectable</strong> — not an opaque AI guess. You can see
-            exactly why a transaction was labelled the way it was.
+            <strong>Categories, recurring tags, and leaks are rule-based
+            and inspectable</strong> — not an opaque AI guess.
           </p>
           <p>
-            When something looks wrong, fix it once. Your corrections are
-            how PocketPulse gets sharper for you over time.
+            Fix anything once; PocketPulse learns from your corrections over time.
           </p>
         </div>
         <button

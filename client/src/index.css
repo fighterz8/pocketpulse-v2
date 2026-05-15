@@ -667,6 +667,71 @@ body {
   opacity: 0.7;
 }
 
+.auth-divider {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  gap: 0.75rem;
+  align-items: center;
+  margin: 0.65rem 0 0.1rem;
+  color: #94a3b8;
+}
+
+.auth-divider span {
+  height: 1px;
+  background: rgb(15 23 42 / 0.1);
+}
+
+.auth-divider small {
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.auth-google {
+  display: inline-flex;
+  width: 100%;
+  align-items: center;
+  justify-content: center;
+  gap: 0.65rem;
+  padding: 0.86rem 1rem;
+  font: inherit;
+  font-weight: 650;
+  color: #0f172a;
+  background: #fff;
+  border: 1px solid rgb(15 23 42 / 0.13);
+  border-radius: 0.9rem;
+  cursor: pointer;
+  box-shadow: 0 0.5rem 1.5rem rgb(15 23 42 / 0.06);
+  transition:
+    transform 120ms ease,
+    box-shadow 120ms ease,
+    border-color 120ms ease,
+    opacity 120ms ease;
+}
+
+.auth-google:hover:not(:disabled) {
+  transform: translateY(-1px);
+  border-color: rgb(37 99 235 / 0.35);
+  box-shadow: 0 0.75rem 1.8rem rgb(15 23 42 / 0.09);
+}
+
+.auth-google:disabled {
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+.auth-google-mark {
+  display: inline-grid;
+  width: 1.35rem;
+  height: 1.35rem;
+  place-items: center;
+  border-radius: 999px;
+  color: #2563eb;
+  background: #eff6ff;
+  font-weight: 800;
+}
+
 .auth-switch {
   margin-top: 1.35rem;
   padding-top: 1rem;
@@ -1830,6 +1895,23 @@ html.dark .upload-new-account-cancel:hover:not(:disabled) {
   font-size: 0.92rem;
 }
 
+.ledger-empty-cta {
+  margin-top: 1rem;
+  padding: 0.72rem 1.05rem;
+  font: inherit;
+  font-weight: 700;
+  color: #fff;
+  background: linear-gradient(135deg, #0ea5e9 0%, #2563eb 100%);
+  border: 0;
+  border-radius: 0.75rem;
+  cursor: pointer;
+  box-shadow: 0 0.625rem 1.5rem rgb(37 99 235 / 0.18);
+}
+
+.ledger-empty-cta:hover {
+  transform: translateY(-1px);
+}
+
 .ledger-filters {
   margin-bottom: 0.75rem;
 }
@@ -2458,19 +2540,30 @@ html.dark .ledger-export-btn {
 .ledger-danger-zone {
   margin-top: 3rem;
   padding: 1.25rem;
-  border: 1px solid color-mix(in srgb, #dc2626 18%, transparent);
+  border: 1px solid color-mix(in srgb, currentColor 10%, transparent);
   border-radius: 0.625rem;
-  background: color-mix(in srgb, #dc2626 3%, transparent);
+  background: color-mix(in srgb, currentColor 2%, transparent);
 }
 
 .ledger-danger-title {
-  margin: 0 0 0.75rem;
+  margin: 0;
   font-size: 0.92rem;
   font-weight: 700;
+  color: #64748b;
+  cursor: pointer;
+  list-style-position: inside;
+}
+
+.ledger-danger-zone[open] .ledger-danger-title {
+  margin-bottom: 0.75rem;
   color: #dc2626;
 }
 
 html.dark .ledger-danger-title {
+  color: #94a3b8;
+}
+
+html.dark .ledger-danger-zone[open] .ledger-danger-title {
   color: #f87171;
 }
 
@@ -5099,6 +5192,7 @@ html.dark .pp-hint-icon:focus-visible {
 .welcome-overlay-backdrop {
   position: fixed;
   inset: 0;
+  min-height: 100dvh;
   z-index: 80;
   display: flex;
   align-items: center;
@@ -5113,7 +5207,7 @@ html.dark .pp-hint-icon:focus-visible {
 .welcome-overlay-card {
   position: relative;
   width: min(32rem, 100%);
-  max-height: 90vh;
+  max-height: calc(100dvh - 2rem);
   overflow: auto;
   padding: clamp(1.5rem, 4vw, 2.25rem);
   border-radius: 1.25rem;

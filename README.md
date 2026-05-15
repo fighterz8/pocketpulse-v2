@@ -72,6 +72,7 @@ Optional:
 |---|---|
 | `PORT` | Server port (default `5000`) |
 | `OPENAI_API_KEY` | Enables AI-assisted CSV detection and classification fallback |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Enables Google sign-in/sign-up. Add `${APP_ORIGIN}/api/auth/google/callback` as an authorized redirect URI in Google Cloud Console. |
 
 ### Install and run
 

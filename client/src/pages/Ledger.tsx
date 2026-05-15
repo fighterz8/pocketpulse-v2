@@ -35,7 +35,7 @@ function currency(n: number): string {
 
 export function Ledger() {
   const { accounts } = useAuth();
-  const [location] = useLocation();
+  const [location, setLocation] = useLocation();
 
   // Initialise filters from URL search params so dashboard cards can deep-link here.
   // The useState initialiser handles fresh mounts; the useEffect handles the case
@@ -301,6 +301,15 @@ export function Ledger() {
           <p className="ledger-empty-hint">
             {hasAnyFilter ? "Try adjusting or clearing your filters." : "Upload CSV statements to get started."}
           </p>
+          {!hasAnyFilter ? (
+            <button
+              type="button"
+              className="ledger-empty-cta"
+              onClick={() => setLocation("/upload")}
+            >
+              Upload CSV
+            </button>
+          ) : null}
         </div>
       )}
 
@@ -423,8 +432,8 @@ export function Ledger() {
       )}
 
       {/* Danger zone */}
-      <div className="ledger-danger-zone glass-card">
-        <h3 className="ledger-danger-title">Data Management</h3>
+      <details className="ledger-danger-zone glass-card">
+        <summary className="ledger-danger-title">Advanced data management</summary>
         <div className="ledger-danger-actions">
           {!wipeConfirm ? (
             <Hint
@@ -516,7 +525,7 @@ export function Ledger() {
             </div>
           )}
         </div>
-      </div>
+      </details>
 
       {propagationNotice && (
         <motion.div

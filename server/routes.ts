@@ -41,6 +41,7 @@ import {
   getFormatSpec,
   getTransactionById,
   getUploadAiStatusForUser,
+  getUserByEmail,
   getUserByEmailForAuth,
   getUserById,
   issuePasswordResetToken,
@@ -129,6 +130,22 @@ function isValidWaitlistEmail(email: string): boolean {
 
 const PgSession = connectPgSimple(session);
 
+type GoogleTokenResponse = {
+  access_token?: string;
+  id_token?: string;
+  token_type?: string;
+  expires_in?: number;
+  error?: string;
+  error_description?: string;
+};
+
+type GoogleUserInfo = {
+  email?: string;
+  email_verified?: boolean;
+  name?: string;
+  given_name?: string;
+};
+
 export type CreateAppOptions = {
   /** Override session store (route tests use `MemoryStore` so PostgreSQL `session` is not required). */
   sessionStore?: session.Store;
@@ -186,6 +203,85 @@ function destroySession(req: express.Request): Promise<void> {
   return new Promise((resolve, reject) => {
     req.session.destroy((err) => (err ? reject(err) : resolve()));
   });
+}
+
+function getPublicOrigin(req: express.Request): string {
+  return (
+    process.env.PUBLIC_APP_URL ??
+    process.env.APP_ORIGIN ??
+    `${req.protocol}://${req.get("host")}`
+  ).replace(/\/$/, "");
+}
+
+function getGoogleRedirectUri(req: express.Request): string {
+  return `${getPublicOrigin(req)}/api/auth/google/callback`;
+}
+
+function signGoogleOAuthState(payload: string): string {
+  return crypto
+    .createHmac("sha256", getSessionSecret())
+    .update(payload)
+    .digest("base64url");
+}
+
+function createGoogleOAuthState(): string {
+  const payload = JSON.stringify({
+    nonce: crypto.randomBytes(16).toString("base64url"),
+    ts: Date.now(),
+  });
+  const encoded = Buffer.from(payload, "utf8").toString("base64url");
+  return `${encoded}.${signGoogleOAuthState(encoded)}`;
+}
+
+function verifyGoogleOAuthState(state: unknown): boolean {
+  if (typeof state !== "string") return false;
+  const [encoded, signature] = state.split(".");
+  if (!encoded || !signature) return false;
+  const expected = signGoogleOAuthState(encoded);
+  const a = Buffer.from(signature);
+  const b = Buffer.from(expected);
+  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return false;
+  try {
+    const parsed = JSON.parse(Buffer.from(encoded, "base64url").toString("utf8"));
+    return typeof parsed.ts === "number" && Date.now() - parsed.ts < 10 * 60 * 1000;
+  } catch {
+    return false;
+  }
+}
+
+async function fetchGoogleUserInfo(
+  req: express.Request,
+  code: string,
+): Promise<GoogleUserInfo> {
+  const clientId = process.env.GOOGLE_CLIENT_ID;
+  const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
+  if (!clientId || !clientSecret) {
+    throw new Error("Google sign-in is not configured");
+  }
+
+  const tokenRes = await fetch("https://oauth2.googleapis.com/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      code,
+      client_id: clientId,
+      client_secret: clientSecret,
+      redirect_uri: getGoogleRedirectUri(req),
+      grant_type: "authorization_code",
+    }),
+  });
+  const tokenJson = (await tokenRes.json()) as GoogleTokenResponse;
+  if (!tokenRes.ok || !tokenJson.access_token) {
+    throw new Error(tokenJson.error_description ?? "Google token exchange failed");
+  }
+
+  const profileRes = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
+    headers: { Authorization: `Bearer ${tokenJson.access_token}` },
+  });
+  if (!profileRes.ok) {
+    throw new Error("Google profile lookup failed");
+  }
+  return (await profileRes.json()) as GoogleUserInfo;
 }
 
 const requireAuth: RequestHandler = (req, res, next) => {
@@ -667,6 +763,62 @@ export function createApp(options?: CreateAppOptions) {
       // and skip a sequential fetch after the session is established.
       const userAccounts = await listAccountsForUser(record.id);
       res.json({ user, accounts: userAccounts });
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  app.get("/api/auth/google/start", authLimiter, (req, res) => {
+    const clientId = process.env.GOOGLE_CLIENT_ID;
+    if (!clientId) {
+      res.status(503).json({ error: "Google sign-in is not configured yet" });
+      return;
+    }
+
+    const url = new URL("https://accounts.google.com/o/oauth2/v2/auth");
+    url.searchParams.set("client_id", clientId);
+    url.searchParams.set("redirect_uri", getGoogleRedirectUri(req));
+    url.searchParams.set("response_type", "code");
+    url.searchParams.set("scope", "openid email profile");
+    url.searchParams.set("prompt", "select_account");
+    url.searchParams.set("state", createGoogleOAuthState());
+    res.redirect(url.toString());
+  });
+
+  app.get("/api/auth/google/callback", authLimiter, async (req, res, next) => {
+    try {
+      const { code, state } = req.query;
+      if (typeof code !== "string" || !verifyGoogleOAuthState(state)) {
+        res.redirect("/?auth=google_failed");
+        return;
+      }
+
+      const profile = await fetchGoogleUserInfo(req, code);
+      if (!profile.email || profile.email_verified !== true) {
+        res.redirect("/?auth=google_unverified");
+        return;
+      }
+
+      const email = normalizeEmail(profile.email);
+      let user = await getUserByEmail(email);
+      if (!user) {
+        const randomPasswordHash = await hashPassword(
+          crypto.randomBytes(32).toString("base64url"),
+        );
+        user = await createUser({
+          email,
+          passwordHash: randomPasswordHash,
+          displayName: profile.name?.trim() || profile.given_name?.trim() || email.split("@")[0]!,
+        });
+      } else {
+        await ensureUserPreferences(user.id);
+      }
+
+      await regenerateSession(req);
+      req.session.userId = user.id;
+      req.session.lastActivity = Date.now();
+      await saveSession(req);
+      res.redirect("/");
     } catch (e) {
       next(e);
     }

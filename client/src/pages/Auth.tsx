@@ -111,6 +111,10 @@ export function Auth({ inactivityLogout = false }: { inactivityLogout?: boolean 
     register.reset();
   }
 
+  function continueWithGoogle() {
+    window.location.assign("/api/auth/google/start");
+  }
+
   return (
     <main className="app-main auth-main auth-main--centered auth-main--editorial">
       <div className="auth-card auth-card--capture">
@@ -274,8 +278,28 @@ export function Auth({ inactivityLogout = false }: { inactivityLogout?: boolean 
                   ? "Sign in"
                   : mode === "register"
                     ? "Create account"
-                    : "Send reset link"}
+                : "Send reset link"}
             </button>
+
+            {mode !== "forgot" ? (
+              <>
+                <div className="auth-divider" aria-hidden="true">
+                  <span />
+                  <small>or</small>
+                  <span />
+                </div>
+                <button
+                  className="auth-google"
+                  type="button"
+                  onClick={continueWithGoogle}
+                  disabled={busy}
+                  data-testid="button-google-auth"
+                >
+                  <span className="auth-google-mark" aria-hidden="true">G</span>
+                  Continue with Google
+                </button>
+              </>
+            ) : null}
           </form>
         )}
 

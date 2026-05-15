@@ -9,5 +9,6 @@ dist
 .cache
 .worktrees
 coverage
+tmp
 *.tsbuildinfo
 .vite

@@ -107,9 +107,9 @@ describe("Ledger page", () => {
     expect(screen.getByText("All recurrence")).toBeInTheDocument();
   });
 
-  it("renders the danger zone", () => {
+  it("renders advanced data management collapsed behind a summary", () => {
     renderLedger();
-    expect(screen.getByText("Data Management")).toBeInTheDocument();
+    expect(screen.getByText("Advanced data management")).toBeInTheDocument();
     expect(screen.getByText("Wipe Imported Data")).toBeInTheDocument();
     expect(screen.getByText("Reset Workspace")).toBeInTheDocument();
   });
