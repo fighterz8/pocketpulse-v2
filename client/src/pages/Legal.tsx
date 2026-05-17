@@ -1,6 +1,6 @@
 import { Link } from "wouter";
 
-const UPDATED = "May 14, 2026";
+const UPDATED = "May 17, 2026";
 
 function LegalShell({ title, children }: { title: string; children: React.ReactNode }) {
   return (
