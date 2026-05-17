@@ -225,7 +225,7 @@ export function WelcomeOverlay({
             and inspectable</strong> — not an opaque AI guess.
           </p>
           <p>
-            Fix anything once; PocketPulse learns from your corrections over time.
+            Fix anything once; Pocket Pulse saves that rule for future imports.
           </p>
         </div>
         <button

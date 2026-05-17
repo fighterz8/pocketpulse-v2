@@ -2166,10 +2166,14 @@ html.dark .upload-new-account-cancel:hover:not(:disabled) {
 }
 
 .ledger-td-merchant {
-  max-width: 16rem;
+  max-width: 17rem;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.ledger-td-merchant > span:first-child {
+  vertical-align: middle;
 }
 
 .ledger-td-amount {
@@ -2184,14 +2188,14 @@ html.dark .upload-new-account-cancel:hover:not(:disabled) {
 }
 
 .ledger-amount--outflow {
-  color: #dc2626;
+  color: #b91c1c;
 }
 
 html.dark .ledger-amount--inflow {
   color: #4ade80;
 }
 html.dark .ledger-amount--outflow {
-  color: #f87171;
+  color: #fca5a5;
 }
 
 .ledger-ai-section {
@@ -2287,19 +2291,19 @@ html.dark .ledger-amount--outflow {
 .ledger-inline-select {
   appearance: none;
   -webkit-appearance: none;
-  background: color-mix(in srgb, #2563eb 10%, transparent);
+  background: color-mix(in srgb, #2563eb 9%, transparent);
   color: #1d4ed8;
-  border: none;
+  border: 1px solid color-mix(in srgb, #2563eb 14%, transparent);
   border-radius: 999px;
   font-size: 0.72rem;
   font-weight: 600;
-  letter-spacing: 0.02em;
-  padding: 0.15rem 1.4rem 0.15rem 0.55rem;
+  letter-spacing: 0.01em;
+  padding: 0.18rem 1.35rem 0.18rem 0.58rem;
   cursor: pointer;
   outline: none;
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath fill='%231d4ed8' d='M0 0l5 6 5-6z'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
-  background-position: right 0.4rem center;
+  background-position: right 0.42rem center;
   background-size: 8px 5px;
   max-width: 9rem;
 }
@@ -2330,12 +2334,6 @@ html.dark .ledger-amount--outflow {
   background-color: color-mix(in srgb, #0891b2 18%, transparent);
 }
 
-.ledger-td-status {
-  display: flex;
-  gap: 0.35rem;
-  flex-wrap: wrap;
-}
-
 .ledger-badge {
   display: inline-block;
   padding: 0.15rem 0.55rem;
@@ -2359,6 +2357,13 @@ html.dark .ledger-amount--outflow {
 .ledger-badge--edited {
   background: color-mix(in srgb, #8b5cf6 12%, transparent);
   color: #6d28d9;
+}
+
+.ledger-badge--merchant {
+  margin-left: 0.45rem;
+  vertical-align: middle;
+  font-size: 0.65rem;
+  padding: 0.1rem 0.42rem;
 }
 
 
@@ -4826,16 +4831,16 @@ html.dark .ai-pulse-tooltip-progress { color: #94a3b8; }
 }
 
 .cs-decor--mini {
-  top: 32%;
-  left: 4%;
-  width: 13rem;
+  top: 9%;
+  left: 5%;
+  width: 12rem;
   padding: 0.85rem 1rem 0.7rem;
   border-radius: 0.9rem;
   background: #ffffff;
   border: 1px solid rgb(15 23 42 / 0.05);
   box-shadow: 0 1.25rem 2.5rem -0.75rem rgb(15 23 42 / 0.18);
   text-align: left;
-  opacity: 0.3;
+  opacity: 0.2;
 }
 
 .cs-mini-label {
@@ -4869,11 +4874,11 @@ html.dark .ai-pulse-tooltip-progress { color: #94a3b8; }
 }
 
 .cs-decor--bars {
-  top: 30%;
+  top: 13%;
   right: 4%;
-  width: 14rem;
-  height: 8rem;
-  opacity: 0.3;
+  width: 13rem;
+  height: 7rem;
+  opacity: 0.18;
 }
 
 .cs-decor--bars svg {
@@ -4882,8 +4887,8 @@ html.dark .ai-pulse-tooltip-progress { color: #94a3b8; }
 }
 
 .cs-ontrack-pill {
-  top: 22%;
-  right: 5%;
+  top: 8%;
+  right: 6%;
   display: inline-flex;
   align-items: center;
   gap: 0.4rem;
@@ -4895,7 +4900,7 @@ html.dark .ai-pulse-tooltip-progress { color: #94a3b8; }
   font-size: 0.72rem;
   font-weight: 600;
   color: #0f172a;
-  opacity: 0.3;
+  opacity: 0.2;
 }
 
 .cs-ontrack-dot {

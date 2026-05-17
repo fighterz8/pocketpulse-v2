@@ -29,7 +29,7 @@ describe("WelcomeOverlay", () => {
     // Must explicitly contrast rule-based vs AI guess.
     expect(body).toHaveTextContent(/rule-based/i);
     expect(body).toHaveTextContent(/not an opaque AI guess/i);
-    expect(body).toHaveTextContent(/your corrections/i);
+    expect(body).toHaveTextContent(/saves that rule/i);
   });
 
   it("focuses the dismiss CTA on mount", () => {

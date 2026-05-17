@@ -29,6 +29,29 @@ function amountColorClass(txnClass: string): string {
   return "";
 }
 
+function formatDate(iso: string): string {
+  const [year, month, day] = iso.split("-").map(Number);
+  if (!year || !month || !day) return iso;
+  return new Date(year, month - 1, day).toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
+function formatMerchant(name: string): string {
+  return name
+    .split(/(\s+|-)/)
+    .map((part) => {
+      if (/^\s+$|^-$/.test(part)) return part;
+      if (part.length <= 3 && part === part.toUpperCase()) return part;
+      return part.charAt(0).toUpperCase() + part.slice(1).toLowerCase();
+    })
+    .join("")
+    .replace(/\bCvs\b/g, "CVS")
+    .replace(/\bAtm\b/g, "ATM");
+}
+
 function currency(n: number): string {
   return "$" + n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
@@ -330,7 +353,6 @@ export function Ledger() {
                   <th>Category</th>
                   <th>Class</th>
                   <th>Recurrence</th>
-                  <th>Status</th>
                 </tr>
               </thead>
               <tbody>
@@ -565,9 +587,23 @@ function TransactionRow({ txn, isEditing, onRowClick, onQuickUpdate, onSave, onC
         className={`ledger-row--clickable ${isEditing ? "ledger-row--selected" : ""}`}
         onClick={onRowClick}
       >
-        <td className="ledger-td-date">{txn.date}</td>
+        <td className="ledger-td-date">{formatDate(txn.date)}</td>
         <td className="ledger-td-merchant" title={txn.rawDescription}>
-          {txn.merchant}
+          <span>{formatMerchant(txn.merchant)}</span>
+          {txn.userCorrected && (
+            <Hint
+              content="Manually corrected — this kind of edit is used to improve future automatic categorization."
+              data-testid={`hint-edited-${txn.id}`}
+            >
+              <span
+                className="ledger-badge ledger-badge--edited ledger-badge--merchant"
+                tabIndex={0}
+                data-testid={`badge-edited-${txn.id}`}
+              >
+                edited
+              </span>
+            </Hint>
+          )}
         </td>
         <td className={`ledger-td-amount ${amountColorClass(txn.transactionClass)}`}>
           {formatAmount(txn.amount, txn.transactionClass)}
@@ -624,26 +660,10 @@ function TransactionRow({ txn, isEditing, onRowClick, onQuickUpdate, onSave, onC
             </select>
           </Hint>
         </td>
-        <td className="ledger-td-status">
-          {txn.userCorrected && (
-            <Hint
-              content="Manually corrected — this kind of edit is used to improve future automatic categorization."
-              data-testid={`hint-edited-${txn.id}`}
-            >
-              <span
-                className="ledger-badge ledger-badge--edited"
-                tabIndex={0}
-                data-testid={`badge-edited-${txn.id}`}
-              >
-                edited
-              </span>
-            </Hint>
-          )}
-        </td>
       </tr>
       {isEditing && (
         <tr className="ledger-edit-row">
-          <td colSpan={7}>
+          <td colSpan={6}>
             <EditPanel txn={txn} onSave={onSave} onCancel={onCancel} isSaving={isSaving} />
           </td>
         </tr>

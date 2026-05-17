@@ -131,7 +131,7 @@ const FEATURES: {
   },
   {
     title: "Spending Insights",
-    description: "Understand patterns and save more",
+    description: "Understand patterns and spot waste",
     icon: IconBars,
   },
 ];
@@ -357,15 +357,15 @@ export function ComingSoon({ onUnlock }: { onUnlock: () => void }) {
           </div>
 
           <h1 className="coming-soon-title" data-testid="cs-heading">
-            Coming Soon
+            Pocket Pulse beta is open.
           </h1>
 
           <p className="coming-soon-tagline" data-testid="cs-tagline">
-            Smart financial clarity for everyday decisions.
+            Turn bank CSV exports into clean cashflow clarity.
             <br />
-            We're putting the finishing touches on PocketPulse.
+            Categorize transactions, review spending leaks, and keep your bank login private.
             <br />
-            Launching soon.
+            Join the waitlist or enter a beta code to try it now.
           </p>
 
           <div className="coming-soon-features">
@@ -388,7 +388,7 @@ export function ComingSoon({ onUnlock }: { onUnlock: () => void }) {
                 data-testid="cs-waitlist-success"
                 className="coming-soon-success"
               >
-                You're on the list! We'll notify you at launch.
+                You're on the list! We'll send an invite when the next beta wave opens.
               </div>
             ) : (
               <form
@@ -403,7 +403,7 @@ export function ComingSoon({ onUnlock }: { onUnlock: () => void }) {
                   <span className="cs-label-icon">
                     <IconMail />
                   </span>
-                  Join the launch waitlist
+                  Join the beta waitlist
                 </label>
                 <div className="cs-input-wrap">
                   <span className="cs-input-icon">
